@@ -1,0 +1,605 @@
+//--------------------------------------------------------------------------------
+// Company: Neusoft Medical Systems
+// Engineer: 
+// 
+// Create Date:     15/1/2019 
+// Design Name:    
+// Module Name:    header_frame_gen 
+// Project Name:   H71
+// Target Devices:  
+// Tool versions: 
+// Description: 
+//
+// Dependencies:     Frame  generation 
+//
+// Revision: 
+// Revision 0.01 - File Created
+// Additional Comments: make
+//
+//--------------------------------------------------------------------------------
+
+`timescale 1ns/1ps
+module header_frame_gen(/*AUTOARG*/
+   // Outputs
+   rx_fifo_rd_en, header_data_out, header_data_out_en, crc_clear,
+   crc_en, crc_0_in, crc_1_in, crc_2_in, crc_3_in, view_Reading_Done,
+   header_tp, wr_view_counter, header_state,
+   // Inputs
+   clk, RESET, rx_fifo_dout, rx_fifo_empty, crc_0_out, crc_1_out,
+   crc_2_out, crc_3_out, slice_sel, make_data_p_edge,
+   fault_s_crc_inject, slice_length_odd, slice_length_even,
+   HEADER_000, HEADER_001, HEADER_002, HEADER_003, HEADER_004,
+   HEADER_005, HEADER_006, HEADER_007, HEADER_008, HEADER_009,
+   HEADER_010, HEADER_011, HEADER_012, HEADER_013, HEADER_014,
+   HEADER_015, HEADER_016, HEADER_017, HEADER_018, HEADER_019,
+   HEADER_020, HEADER_021, HEADER_022, HEADER_023, HEADER_024,
+   HEADER_025, HEADER_026, HEADER_027, HEADER_028, HEADER_029,
+   HEADER_030, HEADER_031, HEADER_032, HEADER_033, HEADER_034,
+   HEADER_035, HEADER_036, HEADER_037, HEADER_038, HEADER_039,
+   HEADER_040, HEADER_041, HEADER_042, HEADER_043, HEADER_044,
+   HEADER_045, HEADER_046, HEADER_047, HEADER_048, HEADER_049,
+   HEADER_050, HEADER_051, HEADER_052, HEADER_053, HEADER_054,
+   HEADER_055, HEADER_056, HEADER_057, HEADER_058, HEADER_059,
+   HEADER_060, HEADER_061, HEADER_062, HEADER_063, HEADER_064,
+   HEADER_065, HEADER_066, HEADER_067, HEADER_068, HEADER_069,
+   HEADER_070, HEADER_071, HEADER_072, HEADER_073, HEADER_074,
+   HEADER_075, HEADER_076, HEADER_077, HEADER_078, HEADER_079,
+   HEADER_080, HEADER_081, HEADER_082, HEADER_083, HEADER_084,
+   HEADER_085, HEADER_086, HEADER_087, HEADER_088, HEADER_089,
+   HEADER_090, HEADER_091, HEADER_092, HEADER_093, HEADER_094,
+   HEADER_095, HEADER_096, HEADER_097, HEADER_098, HEADER_099,
+   HEADER_100, HEADER_101, HEADER_102, HEADER_103, HEADER_104,
+   HEADER_105, HEADER_106, HEADER_107, HEADER_108, HEADER_109,
+   HEADER_110, HEADER_111, HEADER_112, HEADER_113, HEADER_114,
+   HEADER_115, HEADER_116, HEADER_117, HEADER_118, HEADER_119,
+   HEADER_120, HEADER_121, HEADER_122, HEADER_123, HEADER_124,
+   HEADER_125, HEADER_126, HEADER_127
+   );
+
+   //parameter                       SLICE_DATA_NUM = 704; 
+                                             
+   input                           clk  ;
+   input                           RESET;
+                                   
+   input  [127:0] 		           rx_fifo_dout;
+   output                          rx_fifo_rd_en;
+   input                           rx_fifo_empty;
+                                   
+   output [127:0] 		           header_data_out;
+   output                          header_data_out_en;
+   
+   output                          crc_clear;
+   output                          crc_en;
+   output [15:0]                   crc_0_in;
+   output [15:0]                   crc_1_in;
+   output [15:0]                   crc_2_in;
+   output [15:0]                   crc_3_in;
+   input  [15:0]                   crc_0_out;
+   input  [15:0]                   crc_1_out;
+   input  [15:0]                   crc_2_out;
+   input  [15:0]                   crc_3_out;
+   
+
+   
+   output                          view_Reading_Done; //   : out std_logic;
+   output [31:0] 		              header_tp ; // : out std_logic
+   output [31:0]                   wr_view_counter;
+   
+   //frome header_parameter.v
+   input [8:0]                     slice_sel;
+   input 			                 make_data_p_edge;
+
+   input                           fault_s_crc_inject;
+   input [11:0] 		              slice_length_odd;
+   input [11:0] 		              slice_length_even;
+   
+   input [15:0]                    HEADER_000;
+   input [15:0]                    HEADER_001;
+   input [15:0]                    HEADER_002;
+   input [15:0]                    HEADER_003;
+   input [15:0]                    HEADER_004;
+   input [15:0]                    HEADER_005;
+   input [15:0]                    HEADER_006;
+   input [15:0]                    HEADER_007;
+   input [15:0]                    HEADER_008;
+   input [15:0]                    HEADER_009;
+   
+   input [15:0]                    HEADER_010;
+   input [15:0]                    HEADER_011;
+   input [15:0]                    HEADER_012;
+   input [15:0]                    HEADER_013;
+   input [15:0]                    HEADER_014;
+   input [15:0]                    HEADER_015;
+   input [15:0]                    HEADER_016;
+   input [15:0]                    HEADER_017;
+   input [15:0]                    HEADER_018;
+   input [15:0]                    HEADER_019;
+                                   
+   input [15:0]                    HEADER_020;
+   input [15:0]                    HEADER_021;
+   input [15:0]                    HEADER_022;
+   input [15:0]                    HEADER_023;
+   input [15:0]                    HEADER_024;
+   input [15:0]                    HEADER_025;
+   input [15:0]                    HEADER_026;
+   input [15:0]                    HEADER_027;
+   input [15:0]                    HEADER_028;
+   input [15:0]                    HEADER_029;
+                                   
+   input [15:0]                    HEADER_030;
+   input [15:0]                    HEADER_031;
+   input [15:0]                    HEADER_032;
+   input [15:0]                    HEADER_033;
+   input [15:0]                    HEADER_034;
+   input [15:0]                    HEADER_035;
+   input [15:0]                    HEADER_036;
+   input [15:0]                    HEADER_037;
+   input [15:0]                    HEADER_038;
+   input [15:0]                    HEADER_039;
+                                   
+   input [15:0]                    HEADER_040;
+   input [15:0]                    HEADER_041;
+   input [15:0]                    HEADER_042;
+   input [15:0]                    HEADER_043;
+   input [15:0]                    HEADER_044;
+   input [15:0]                    HEADER_045;
+   input [15:0]                    HEADER_046;
+   input [15:0]                    HEADER_047;
+   input [15:0]                    HEADER_048;
+   input [15:0]                    HEADER_049;
+                                   
+   input [15:0]                    HEADER_050;
+   input [15:0]                    HEADER_051;
+   input [15:0]                    HEADER_052;
+   input [15:0]                    HEADER_053;
+   input [15:0]                    HEADER_054;
+   input [15:0]                    HEADER_055;
+   input [15:0]                    HEADER_056;
+   input [15:0]                    HEADER_057;
+   input [15:0]                    HEADER_058;
+   input [15:0]                    HEADER_059;
+                                   
+   input [15:0]                    HEADER_060;
+   input [15:0]                    HEADER_061;
+   input [15:0]                    HEADER_062;
+   input [15:0]                    HEADER_063;
+   input [15:0]                    HEADER_064;
+   input [15:0]                    HEADER_065;
+   input [15:0]                    HEADER_066;
+   input [15:0]                    HEADER_067;
+   input [15:0]                    HEADER_068;
+   input [15:0]                    HEADER_069;
+                                   
+   input [15:0]                    HEADER_070;
+   input [15:0]                    HEADER_071;
+   input [15:0]                    HEADER_072;
+   input [15:0]                    HEADER_073;
+   input [15:0]                    HEADER_074;
+   input [15:0]                    HEADER_075;
+   input [15:0]                    HEADER_076;
+   input [15:0]                    HEADER_077;
+   input [15:0]                    HEADER_078;
+   input [15:0]                    HEADER_079;
+                                   
+   input [15:0]                    HEADER_080;
+   input [15:0]                    HEADER_081;
+   input [15:0]                    HEADER_082;
+   input [15:0]                    HEADER_083;
+   input [15:0]                    HEADER_084;
+   input [15:0]                    HEADER_085;
+   input [15:0]                    HEADER_086;
+   input [15:0]                    HEADER_087;
+   input [15:0]                    HEADER_088;
+   input [15:0]                    HEADER_089;
+                                   
+   input [15:0]                    HEADER_090;
+   input [15:0]                    HEADER_091;
+   input [15:0]                    HEADER_092;
+   input [15:0]                    HEADER_093;
+   input [15:0]                    HEADER_094;
+   input [15:0]                    HEADER_095;
+   input [15:0]                    HEADER_096;
+   input [15:0]                    HEADER_097;
+   input [15:0]                    HEADER_098;
+   input [15:0]                    HEADER_099;
+                                   
+   input [15:0]                    HEADER_100;
+   input [15:0]                    HEADER_101;
+   input [15:0]                    HEADER_102;
+   input [15:0]                    HEADER_103;
+   input [15:0]                    HEADER_104;
+   input [15:0]                    HEADER_105;
+   input [15:0]                    HEADER_106;
+   input [15:0]                    HEADER_107;
+   input [15:0]                    HEADER_108;
+   input [15:0]                    HEADER_109;
+                                   
+   input [15:0]                    HEADER_110;
+   input [15:0]                    HEADER_111;
+   input [15:0]                    HEADER_112;
+   input [15:0]                    HEADER_113;
+   input [15:0]                    HEADER_114;
+   input [15:0]                    HEADER_115;
+   input [15:0]                    HEADER_116;
+   input [15:0]                    HEADER_117;
+   input [15:0]                    HEADER_118;
+   input [15:0]                    HEADER_119;
+                                   
+   input [15:0]                    HEADER_120;
+   input [15:0]                    HEADER_121;
+   input [15:0]                    HEADER_122;
+   input [15:0]                    HEADER_123;
+   input [15:0]                    HEADER_124;
+   input [15:0]                    HEADER_125;
+   input [15:0]                    HEADER_126;
+   input [15:0]                    HEADER_127;
+
+   output [3:0] 		              header_state;
+   
+   
+   wire [31:0] 			           header_tp = 'h0;
+   
+   wire                            view_Reading_Done ;
+   
+
+   
+   parameter                       IDLE           = 'h1;
+   parameter                       START          = 'h2;
+   parameter                       H_SYNC_HEADER  = 'h3;   // header sync 64'h5a5a5a5a5a5a5a5a;
+   parameter                       H_FRAME_HEADER = 'h4;  // header frame head  64'h....;
+   parameter                       H_DATA         = 'h5;  
+   parameter                       H_CRC          = 'h6;  
+                                   
+   parameter                       S_SYNC_HEADER  = 'h7;  // slice sync 64'h5a5a5a5a5a5a5a5a;
+   parameter                       S_FRAME_HEADER = 'h8; // slice frame head  64'h....;
+   parameter                       S_DATA         = 'h9;  
+   parameter                       S_DATA_DLY     = 'ha;  
+   parameter                       S_FOOTER       = 'hb;  
+   parameter                       S_CRC          = 'hc;  
+   parameter                       V_DONE         = 'hd;  
+                                   
+                                   
+   reg  [3:0]                      h_state;
+   wire [3:0] 			              header_state;
+   reg  [3:0]                      h_state_d;
+   reg  [3:0]                      h_state_next;
+
+   assign header_state = h_state_d;
+   
+   always @(posedge clk ) begin
+      h_state_d  <= h_state;
+   end
+   
+   always @(posedge clk ) begin
+      if (RESET) begin
+         h_state   <= IDLE;
+      end
+      else if (make_data_p_edge) begin
+	      h_state   <= IDLE;
+      end
+      else begin
+         h_state   <= h_state_next;
+      end
+   end
+
+   wire                            header_cnt_rch;
+   wire                            slice_cnt_rch;
+   wire                            slice_data_cnt_rch;
+   
+   
+   always @(/*AS*/h_state or header_cnt_rch or rx_fifo_empty
+	    or slice_cnt_rch or slice_data_cnt_rch) begin
+      h_state_next  = h_state;
+      case (h_state)
+         IDLE : begin
+            if(~rx_fifo_empty) begin
+               h_state_next    = START;
+            end
+         end
+         START : begin
+            h_state_next       = H_SYNC_HEADER;
+         end
+         H_SYNC_HEADER : begin
+            h_state_next       = H_FRAME_HEADER;
+         end
+         H_FRAME_HEADER : begin
+            h_state_next       = H_DATA;
+         end
+         H_DATA : begin
+            if(header_cnt_rch) begin 
+               h_state_next    = H_CRC;
+            end
+         end
+         H_CRC : begin
+            h_state_next       = S_SYNC_HEADER;
+         end
+         S_SYNC_HEADER : begin
+            h_state_next       = S_FRAME_HEADER;
+         end
+         S_FRAME_HEADER : begin
+            h_state_next       = S_DATA;
+         end
+         S_DATA : begin
+            if(slice_data_cnt_rch) begin
+               h_state_next    = S_DATA_DLY;
+            end
+         end
+         S_DATA_DLY : begin
+               //h_state_next    = S_FOOTER;
+            if(slice_cnt_rch ) begin
+               h_state_next    = V_DONE;
+            end
+            else begin
+               h_state_next    = S_SYNC_HEADER;
+            end
+         end
+       /* S_FOOTER : begin
+            h_state_next    = S_CRC;
+        end
+        S_CRC : begin
+           if(slice_cnt_rch ) begin
+              h_state_next    = V_DONE;
+           end
+           else begin
+              h_state_next    = S_SYNC_HEADER;
+           end
+        end*/
+         V_DONE : begin
+            h_state_next       = IDLE;
+         end
+         default : begin
+            h_state_next       = IDLE;
+         end
+      endcase // case (h_state)
+   end // always @ (...
+
+   reg [4:0]                       header_cnt;
+
+   assign    header_cnt_rch = header_cnt == 'h1E;
+   
+   
+   always @(posedge clk ) begin
+      if(RESET) begin
+         header_cnt   <= 'h0;
+      end
+      else if(h_state != H_DATA)begin
+         header_cnt   <= 'h0;
+      end
+      else begin
+         header_cnt   <= header_cnt + 1'h1;
+      end
+   end
+
+   reg  [11:0]    slice_data_cnt;
+   reg  [7:0] 		slice_cnt;
+   wire 			   rx_fifo_rd_en;
+   reg 				rx_fifo_rd_en_d;
+
+   wire [11:0] 	slice_length_lim;
+
+   assign 			slice_length_lim  = slice_cnt[0] ? slice_length_even : slice_length_odd;
+  
+   
+   assign     rx_fifo_rd_en = (h_state == S_DATA) & (~rx_fifo_empty);
+   
+   assign     slice_data_cnt_rch = rx_fifo_rd_en & (slice_data_cnt == (slice_length_lim[11:3]));
+   
+   always @(posedge clk ) begin
+      if (RESET) begin
+         slice_data_cnt   <= 'h0;
+      end
+      else if(h_state != S_DATA)begin
+         slice_data_cnt   <= 'h0;
+      end
+      else if(rx_fifo_rd_en)begin
+         slice_data_cnt  <= slice_data_cnt + 1'h1;
+      end
+   end
+   
+   always @(posedge clk ) begin
+      if (RESET) begin
+         rx_fifo_rd_en_d   <= 'h0;
+      end
+      else begin
+         rx_fifo_rd_en_d   <=  rx_fifo_rd_en ;
+      end
+   end
+   
+   assign     slice_cnt_rch = (slice_cnt == (slice_sel));
+      
+   always @(posedge clk ) begin
+      if (RESET) begin 
+         slice_cnt   <= 'h0;
+      end
+      else if (h_state == IDLE)  begin
+         slice_cnt   <= 'h0;
+      end
+      else if (slice_data_cnt_rch) begin
+         slice_cnt   <= slice_cnt + 'h1;
+      end
+   end
+   
+   assign crc_clear = (h_state    == H_FRAME_HEADER) |
+                      (h_state    == S_FRAME_HEADER);
+   
+   assign crc_en    = (h_state    == H_DATA)  | 
+                      (h_state    == S_FOOTER) ;
+   
+   /*(* mark_debug="true" *)*/reg [31:0] wr_view_counter;
+   
+   always @(posedge clk ) begin
+      if(RESET) begin
+         wr_view_counter  <= 'h0;
+      end
+      else if(make_data_p_edge) begin
+	      wr_view_counter  <= 'h0;
+      end
+      else if(h_state    == V_DONE) begin
+         wr_view_counter <= wr_view_counter + 1'h1;
+      end
+   end
+   
+   
+   /////////////////data ////////////////////////////////////
+
+   wire [11:0]  all_slice_number;
+   assign       all_slice_number = slice_cnt;
+
+   wire [9:0] 	data_slice_length;
+
+   assign 	data_slice_length = slice_length_lim[11:2]+3;
+   
+   wire [63:0] sync_header_data       = 64'h5a5a5a5aa5a5a5a5;
+   wire [63:0] h_frame_header_data    = 64'h0433100000002100;
+   wire [63:0] s_frame_header_data    = {20'h04330,all_slice_number,14'h0,data_slice_length,8'h00};
+   wire [63:0] footer_data 	        = 64'hBACECACEEACEFACE;
+   
+   //wire [63:0]  h_frame_header_data    = 64'h00002100_04331000;
+   //wire [63:0]  s_frame_header_data    = {32'h0000b300,20'h04330,all_slice_number};
+   //wire [63:0]  footer_data 	       = 64'hEACEFACEBACECACE;
+                
+   reg  [63:0]   header_data;
+   
+   
+   
+   always @(/*AS*/HEADER_000 or HEADER_001 or HEADER_002 or HEADER_003
+	    or HEADER_004 or HEADER_005 or HEADER_006 or HEADER_007
+	    or HEADER_008 or HEADER_009 or HEADER_010 or HEADER_011
+	    or HEADER_012 or HEADER_013 or HEADER_014 or HEADER_015
+	    or HEADER_016 or HEADER_017 or HEADER_018 or HEADER_019
+	    or HEADER_020 or HEADER_021 or HEADER_022 or HEADER_023
+	    or HEADER_024 or HEADER_025 or HEADER_026 or HEADER_027
+	    or HEADER_028 or HEADER_029 or HEADER_030 or HEADER_031
+	    or HEADER_032 or HEADER_033 or HEADER_034 or HEADER_035
+	    or HEADER_036 or HEADER_037 or HEADER_038 or HEADER_039
+	    or HEADER_040 or HEADER_041 or HEADER_042 or HEADER_043
+	    or HEADER_044 or HEADER_045 or HEADER_046 or HEADER_047
+	    or HEADER_048 or HEADER_049 or HEADER_050 or HEADER_051
+	    or HEADER_052 or HEADER_053 or HEADER_054 or HEADER_055
+	    or HEADER_056 or HEADER_057 or HEADER_058 or HEADER_059
+	    or HEADER_060 or HEADER_061 or HEADER_062 or HEADER_063
+	    or HEADER_064 or HEADER_065 or HEADER_066 or HEADER_067
+	    or HEADER_068 or HEADER_069 or HEADER_070 or HEADER_071
+	    or HEADER_072 or HEADER_073 or HEADER_074 or HEADER_075
+	    or HEADER_076 or HEADER_077 or HEADER_078 or HEADER_079
+	    or HEADER_080 or HEADER_081 or HEADER_082 or HEADER_083
+	    or HEADER_084 or HEADER_085 or HEADER_086 or HEADER_087
+	    or HEADER_088 or HEADER_089 or HEADER_090 or HEADER_091
+	    or HEADER_092 or HEADER_093 or HEADER_094 or HEADER_095
+	    or HEADER_096 or HEADER_097 or HEADER_098 or HEADER_099
+	    or HEADER_100 or HEADER_101 or HEADER_102 or HEADER_103
+	    or HEADER_104 or HEADER_105 or HEADER_106 or HEADER_107
+	    or HEADER_108 or HEADER_109 or HEADER_110 or HEADER_111
+	    or HEADER_112 or HEADER_113 or HEADER_114 or HEADER_115
+	    or HEADER_116 or HEADER_117 or HEADER_118 or HEADER_119
+	    or HEADER_120 or HEADER_121 or HEADER_122 or HEADER_123
+	    or HEADER_124 or HEADER_125 or HEADER_126 or HEADER_127
+	    or header_cnt) begin
+      case (header_cnt)
+         'd0: header_data        = {HEADER_003,HEADER_002,HEADER_001,HEADER_000};   
+         'd1: header_data        = {HEADER_007,HEADER_006,HEADER_005,HEADER_004};   
+         'd2: header_data        = {HEADER_011,HEADER_010,HEADER_009,HEADER_008};   
+         'd3: header_data        = {HEADER_015,HEADER_014,HEADER_013,HEADER_012};   
+         'd4: header_data        = {HEADER_019,HEADER_018,HEADER_017,HEADER_016};   
+         'd5: header_data        = {HEADER_023,HEADER_022,HEADER_021,HEADER_020};   
+         'd6: header_data        = {HEADER_027,HEADER_026,HEADER_025,HEADER_024};   
+         'd7: header_data        = {HEADER_031,HEADER_030,HEADER_029,HEADER_028};   
+         'd8: header_data        = {HEADER_035,HEADER_034,HEADER_033,HEADER_032};   
+         'd9: header_data        = {HEADER_039,HEADER_038,HEADER_037,HEADER_036};   
+         'd10: header_data       = {HEADER_043,HEADER_042,HEADER_041,HEADER_040};   
+         'd11: header_data       = {HEADER_047,HEADER_046,HEADER_045,HEADER_044};   
+         'd12: header_data       = {HEADER_051,HEADER_050,HEADER_049,HEADER_048};   
+         'd13: header_data       = {HEADER_055,HEADER_054,HEADER_053,HEADER_052};   
+         'd14: header_data       = {HEADER_059,HEADER_058,HEADER_057,HEADER_056};   
+         'd15: header_data       = {HEADER_063,HEADER_062,HEADER_061,HEADER_060};   
+         'd16: header_data       = {HEADER_067,HEADER_066,HEADER_065,HEADER_064};   
+         'd17: header_data       = {HEADER_071,HEADER_070,HEADER_069,HEADER_068};   
+         'd18: header_data       = {HEADER_075,HEADER_074,HEADER_073,HEADER_072};   
+         'd19: header_data       = {HEADER_079,HEADER_078,HEADER_077,HEADER_076};   
+         'd20: header_data       = {HEADER_083,HEADER_082,HEADER_081,HEADER_080};   
+         'd21: header_data       = {HEADER_087,HEADER_086,HEADER_085,HEADER_084};   
+         'd22: header_data       = {HEADER_091,HEADER_090,HEADER_089,HEADER_088};   
+         'd23: header_data       = {HEADER_095,HEADER_094,HEADER_093,HEADER_092};   
+         'd24: header_data       = {HEADER_099,HEADER_098,HEADER_097,HEADER_096};   
+         'd25: header_data       = {HEADER_103,HEADER_102,HEADER_101,HEADER_100};   
+         'd26: header_data       = {HEADER_107,HEADER_106,HEADER_105,HEADER_104};   
+         'd27: header_data       = {HEADER_111,HEADER_110,HEADER_109,HEADER_108};   
+         'd28: header_data       = {HEADER_115,HEADER_114,HEADER_113,HEADER_112};   
+         'd29: header_data       = {HEADER_119,HEADER_118,HEADER_117,HEADER_116};   
+         'd30: header_data       = {HEADER_123,HEADER_122,HEADER_121,HEADER_120};   
+         'd31: header_data       = {HEADER_127,HEADER_126,HEADER_125,HEADER_124}; 
+         default :  header_data    = {HEADER_003,HEADER_002,HEADER_001,HEADER_000};
+      endcase // case (header_cnt)
+   end // always @ (...
+
+   reg [63:0] header_data_d;
+
+   always @(posedge clk ) begin
+      header_data_d   <= header_data;
+   end
+      
+   
+   reg  [127:0] header_data_out;
+
+   
+   wire [63:0]  crc_out;
+   wire [63:0]  fault_crc_out;
+   
+   
+   always @(/*AS*/crc_out or h_frame_header_data or h_state
+	    or header_data or header_data_d or rx_fifo_dout
+	    or s_frame_header_data or sync_header_data) begin
+      case (h_state)
+         //H_SYNC_HEADER  :     header_data_out    = sync_header_data;
+         H_FRAME_HEADER :     header_data_out    = {h_frame_header_data,sync_header_data};
+         H_DATA         :     header_data_out    = {header_data,header_data_d};
+         H_CRC          :     header_data_out    = {crc_out,    header_data_d};
+         //S_SYNC_HEADER  :     header_data_out    = sync_header_data;
+         S_FRAME_HEADER :     header_data_out    = {s_frame_header_data,sync_header_data};
+         S_DATA         :     header_data_out    = rx_fifo_dout;
+         S_DATA_DLY     :     header_data_out    = rx_fifo_dout;
+         //S_FOOTER       :     header_data_out    = footer_data;
+         /*S_CRC          :     begin 
+            if(fault_s_crc_inject) begin 
+               header_data_out    = fault_crc_out;
+            end
+            else begin
+               header_data_out    = crc_out;
+            end
+         end */
+         default :   header_data_out    = 128'h0;
+      endcase // case (h_state)
+   end
+   
+   assign header_data_out_en     = //(h_state == H_SYNC_HEADER) | 
+                                   (h_state 	== H_FRAME_HEADER) |
+                                   ((h_state 	== H_DATA) & header_cnt[0]) |
+                                   (h_state 	== H_CRC)  |
+                                 //(h_state 	== S_SYNC_HEADER) | 
+                                   (h_state 	== S_FRAME_HEADER) |
+                                   ((h_state 	== S_DATA) & rx_fifo_rd_en_d ) |
+                                   (h_state 	== S_DATA_DLY) ;
+   
+                                   //(h_state 	== S_FOOTER)  |
+                                   //(h_state 	== S_CRC)  ;
+
+   assign crc_0_in = header_data[15:0];
+   assign crc_1_in = header_data[31:16];
+   assign crc_2_in = header_data[47:32];
+   assign crc_3_in = header_data[63:48];
+   
+   //assign crc_out = {crc_1_out,crc_0_out,crc_3_out,crc_2_out};
+   assign crc_out       = { crc_3_out  ,crc_2_out,crc_1_out,crc_0_out};
+   assign fault_crc_out = {(~crc_3_out),crc_2_out,crc_1_out,crc_0_out};
+
+   
+   //////////////////output signal generate ///////////////////////////
+   assign view_Reading_Done = (h_state == V_DONE) ;
+    
+endmodule // header_frame_gen
+
+
+
+
+
+

@@ -1,0 +1,232 @@
+//--------------------------------------------------------------------------------
+// Company: Neusoft Medical Systems
+// Engineer: 
+// 
+// Create Date:     15/1/2019 
+// Design Name:    
+// Module Name:    user_app_top 
+// Project Name:   H71
+// Target Devices:  
+// Tool versions: 
+// Description: 
+//
+// Dependencies:    ddr3 controller application top 
+//
+// Revision: 
+// Revision 0.01 - File Created
+// Additional Comments: make
+//
+//--------------------------------------------------------------------------------
+
+`timescale 1ns/1ps
+module  user_app_top(/*AUTOARG*/
+   // Outputs
+   app_addr, app_cmd, app_en, app_wdf_data, app_wdf_end, app_wdf_wren,
+   app_sr_req, app_ref_req, app_zq_req, qdr_dataout, qdr_dataout_en,
+   ddr_overrun, ddr_warning, wr_fifo_overrun, ddr_wr_fifo_empty,
+   ddr_rd_empty, make_data_p_edge_ddr_clk,
+   // Inputs
+   app_rd_data, app_rd_data_valid, app_rdy, app_wdf_rdy, ui_clk,
+   ui_clk_sync_rst, init_calib_complete, clk, RESET, data_from_ddr_en,
+   data_from_ddr_dd, qdr_rd_req, req_stop, rst_local_t_ddr_clk,
+   cache_fifo_prog_full, fault_ddr_overrun, fault_ddr_warning,
+   make_data_on, make_data_p_edge, view_size, rp_back_en,
+   rp_back_view_addr
+   );
+
+   //parameter               ADDR_WIDTH = 25;  //4g ddr
+   parameter              ADDR_WIDTH = 24;  //2g ddr 
+    
+   
+   // user interface signals
+   output [30:0]           app_addr;
+   output [2:0]            app_cmd;
+   output                  app_en;
+   output [127:0]          app_wdf_data;
+   output                  app_wdf_end;
+   //output [15:0]           app_wdf_mask;
+   output                  app_wdf_wren;
+                           
+   input [127:0]           app_rd_data;
+   //input                   app_rd_data_end;
+   input                   app_rd_data_valid;
+   input                   app_rdy;
+   input                   app_wdf_rdy;
+                           
+   output                  app_sr_req;
+   //input                   app_sr_active;
+                           
+   output                  app_ref_req;
+   //input                   app_ref_ack;
+                           
+   output                  app_zq_req;
+   //input                   app_zq_ack;
+                           
+   input                   ui_clk;
+   input                   ui_clk_sync_rst;
+                           
+   input                   init_calib_complete;
+                           
+   input                   clk;
+   input                   RESET;
+   
+   
+   // from reading_header
+   input                   data_from_ddr_en;
+   input [127:0]           data_from_ddr_dd;
+   
+   
+   input                   qdr_rd_req ;      //: in  std_logic;
+   input 		               req_stop;
+   
+   input                   rst_local_t_ddr_clk;
+    //input from rd_coache
+   input                   cache_fifo_prog_full;
+    //output to qdriiplus_rd_top module 
+   output [127:0]          qdr_dataout;
+   output                  qdr_dataout_en;
+   output                  ddr_overrun ;
+   output                  ddr_warning;
+   output                  wr_fifo_overrun;
+   output                  ddr_wr_fifo_empty;
+
+   input                   fault_ddr_overrun;
+   input                   fault_ddr_warning;
+   
+   input                   make_data_on;
+   input 		               make_data_p_edge;
+   input [15:0] 	         view_size;
+   output 		             ddr_rd_empty;
+   
+   output		               make_data_p_edge_ddr_clk;
+   
+   //output [ADDR_WIDTH-1 : 0] user_ad_rd;
+   //input [ADDR_WIDTH-1:0]    rp_user_ad_rd;     //  from user_rw_cmd_gen.v 
+   input 		               rp_back_en;        //  from rd_cache_ctrl.v 
+   input [ADDR_WIDTH-1:0]  rp_back_view_addr;
+
+   //input 		   clr_cache_view_cnt;//  from user_rw_cmd_gen.v 
+   //input [11:0] 	   view_size;         //  from user_rw_cmd_gen.v
+   
+   
+   wire [127:0]            ddr_wr_dout;
+                           
+   wire                    ddr_wr_fifo_prog_empty;
+   
+   wire [127:0]            ddr_wr_fifo_dout;
+                           
+   wire                    ddr_wr_fifo_dout_valid;
+   
+   wire                    ddr_wr_fifo_empty;
+  
+   // Beginning of automatic wires (for undeclared instantiated-module outputs)
+   wire                    ddr_wr_fifo_rd_en;   // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
+   wire                    qdr_rd_empty;        // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
+   //wire [ADDR_WIDTH-1:0]   user_ad_rd;      // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
+   //wire [ADDR_WIDTH-1:0]   user_ad_wr;      // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
+   // End of automatics
+   
+   //wire 		   wr_fifo_underrun;
+   
+   reg                     user_w_n ;       
+   reg [63 :0]             user_w_data_h ;    
+   wire [127 :0]           user_w_data ;    
+   
+   reg                     user_w_cnt;
+   wire                    wr_en;
+
+   wire [13:0] 		         rd_data_count;
+
+   wire [15:0]             app_wdf_mask;
+    
+     ddr_wr_fifo                ddr_wr_fifo_uut  (
+                                                // Outputs
+                                                 .dout                          (ddr_wr_fifo_dout[127:0]),
+                                                 .full                          (full),
+                                                 .empty                         (ddr_wr_fifo_empty),
+                                                 .valid                         (ddr_wr_fifo_dout_valid),
+                                                 .prog_empty                    (ddr_wr_fifo_prog_empty),
+                                                 .rd_data_count                 (rd_data_count),
+                                                 .wr_rst_busy                   ( ),
+                                                 .rd_rst_busy                   ( ),
+                                                 // Inputs
+                                                 .wr_clk                        (clk),
+                                                 .rd_clk                        (ui_clk),
+                                                 .rst                           (RESET),
+                                                 .din                           (data_from_ddr_dd[127:0]),
+                                                 .wr_en                         (data_from_ddr_en),
+                                                 .rd_en                         (ddr_wr_fifo_rd_en));
+   
+   
+   user_rw_cmd_gen  
+                                               #(.ADDR_WIDTH  (ADDR_WIDTH))
+                             user_rw_cmd_gen_uut(/*AUTOINST*/
+						 // Outputs
+						 .app_addr		(app_addr[30:0]),
+						 .app_cmd		(app_cmd[2:0]),
+						 .app_en		(app_en),
+						 .app_wdf_data		(app_wdf_data[127:0]),
+						 .app_wdf_end		(app_wdf_end),
+						 .app_wdf_mask		(app_wdf_mask[15:0]),
+						 .app_wdf_wren		(app_wdf_wren),
+						 .app_sr_req		(app_sr_req),
+						 .app_ref_req		(app_ref_req),
+						 .app_zq_req		(app_zq_req),
+						 .make_data_p_edge_ddr_clk(make_data_p_edge_ddr_clk),
+						 .ddr_rd_empty		(ddr_rd_empty),
+						 .ddr_overrun		(ddr_overrun),
+						 .ddr_warning		(ddr_warning),
+						 .ddr_wr_fifo_rd_en	(ddr_wr_fifo_rd_en),
+						 .qdr_dataout		(qdr_dataout[127:0]),
+						 .qdr_dataout_en	(qdr_dataout_en),
+						 // Inputs
+						 .init_calib_complete	(init_calib_complete),
+						 .ui_clk		(ui_clk),
+						 .ui_clk_sync_rst	(ui_clk_sync_rst),
+						 .app_rd_data		(app_rd_data[127:0]),
+						 .app_rd_data_valid	(app_rd_data_valid),
+						 .app_rdy		(app_rdy),
+						 .app_wdf_rdy		(app_wdf_rdy),
+						 .qdr_rd_req		(qdr_rd_req),
+						 .req_stop		(req_stop),
+						 .make_data_on		(make_data_on),
+						 .view_size		(view_size[15:0]),
+						 .rst_local_t_ddr_clk	(rst_local_t_ddr_clk),
+						 .fault_ddr_overrun	(fault_ddr_overrun),
+						 .fault_ddr_warning	(fault_ddr_warning),
+						 .ddr_wr_fifo_empty	(ddr_wr_fifo_empty),
+						 .ddr_wr_fifo_prog_empty(ddr_wr_fifo_prog_empty),
+						 .rd_data_count		(rd_data_count[13:0]),
+						 .wr_fifo_overrun	(wr_fifo_overrun),
+						 .ddr_wr_fifo_dout	(ddr_wr_fifo_dout[127:0]),
+						 .cache_fifo_prog_full	(cache_fifo_prog_full),
+						 .rp_back_en		(rp_back_en),
+						 .rp_back_view_addr	(rp_back_view_addr[ADDR_WIDTH-1:0]));
+  
+
+   reg    wr_fifo_overrun;
+
+   always @(posedge clk)  begin
+      if(RESET) begin
+        wr_fifo_overrun    <= 'h0;
+      end
+      else if (make_data_p_edge) begin
+        wr_fifo_overrun    <= 'h0;
+      end
+      else if(full && data_from_ddr_en) begin
+        wr_fifo_overrun    <= 'h1;
+      end
+      else  begin
+        wr_fifo_overrun    <= 'h0;
+      end
+   end
+   
+ 
+   
+   
+   
+
+   
+endmodule // user_app_top
+
+
