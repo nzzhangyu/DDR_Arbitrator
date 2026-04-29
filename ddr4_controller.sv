@@ -42,7 +42,7 @@ module ddr4_controller #(
    input  logic                  rst_local_t_ddr_clk,
    input  logic                  data_from_ddr_en,
    input  logic [127:0]          data_from_ddr_dd,
-   input  logic                  qdr_rd_req,
+   input  logic                  ddr_rd_req,
    input  logic                  req_stop,
    input  logic                  rp_back_en,
    input  logic [ADDR_WIDTH-1:0] rp_back_view_addr,
@@ -62,11 +62,11 @@ module ddr4_controller #(
    assign fault_ddr_warning = Fault_inject_en;
    assign clk_backbone      = '0;
 
-   logic [127:0] qdr_dataout;
-   logic         qdr_dataout_en;
+   logic [127:0] ddr_dataout;
+   logic         ddr_dataout_en;
 
-   assign user_r_valid = qdr_dataout_en;
-   assign user_r_data  = qdr_dataout;
+   assign user_r_valid = ddr_dataout_en;
+   assign user_r_data  = ddr_dataout;
 
    logic sys_rst;
    assign sys_rst = RESET;
@@ -153,8 +153,8 @@ module ddr4_controller #(
       .m_axi_rlast             (axi_rlast),
       .m_axi_rvalid            (axi_rvalid),
       .m_axi_rready            (axi_rready),
-      .qdr_dataout             (qdr_dataout),
-      .qdr_dataout_en          (qdr_dataout_en),
+      .ddr_dataout             (ddr_dataout),
+      .ddr_dataout_en          (ddr_dataout_en),
       .ddr_overrun             (ddr_overrun),
       .ddr_warning             (ddr_warning),
       .wr_fifo_overrun         (wr_fifo_overrun),
@@ -168,7 +168,7 @@ module ddr4_controller #(
       .RESET                   (RESET),
       .data_from_ddr_en        (data_from_ddr_en),
       .data_from_ddr_dd        (data_from_ddr_dd),
-      .qdr_rd_req              (qdr_rd_req),
+      .ddr_rd_req              (ddr_rd_req),
       .req_stop                (req_stop),
       .rst_local_t_ddr_clk     (rst_local_t_ddr_clk),
       .cache_fifo_prog_full    (cache_fifo_prog_full),

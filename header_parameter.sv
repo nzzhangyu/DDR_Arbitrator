@@ -4,7 +4,7 @@ module header_parameter(/*AUTOARG*/
    sampling_data_on_out, LastViewFlag_reg_out, make_data_on, TablePos,
    REF_XDetA, REF_XDetB, conv_edge_out, reading_number,
    FirstViewFlag_reg_out, DOM_header_latch_pulse_en,
-   wr_qdr_reading_num, wr_number_err, time_2000us_en_out,
+   wr_ddr_reading_num, wr_number_err, time_2000us_en_out,
    last_view_wr_done, make_data_p_edge, HEADER_000, HEADER_001,
    HEADER_002, HEADER_003, HEADER_004, HEADER_005, HEADER_006,
    HEADER_007, HEADER_008, HEADER_009, HEADER_010, HEADER_011,
@@ -175,7 +175,7 @@ module header_parameter(/*AUTOARG*/
    output                          DOM_header_latch_pulse_en;
    
    input                           view_Reading_Done;
-   output [31:0]                   wr_qdr_reading_num;
+   output [31:0]                   wr_ddr_reading_num;
    output 			                 wr_number_err;
    
    output                          time_2000us_en_out;
@@ -1675,14 +1675,14 @@ module header_parameter(/*AUTOARG*/
    
    
    //////////////////output signal generate ///////////////////////////
-   reg [31:0]  wr_qdr_reading_num;
+   reg [31:0]  wr_ddr_reading_num;
 
    always @(posedge clk) begin 
       if(make_data_p_edge ) begin 
-         wr_qdr_reading_num     <= 'h0;
+         wr_ddr_reading_num     <= 'h0;
       end
       else if (view_Reading_Done) begin 
-         wr_qdr_reading_num   <= wr_qdr_reading_num + 1'h1;
+         wr_ddr_reading_num   <= wr_ddr_reading_num + 1'h1;
       end
    end
 
@@ -1739,7 +1739,7 @@ module header_parameter(/*AUTOARG*/
    
    reg 	  wr_number_err;
 
-   assign set_wr_number_err = last_view_wr_done & (wr_qdr_reading_num != Reading_Num_Reg);
+   assign set_wr_number_err = last_view_wr_done & (wr_ddr_reading_num != Reading_Num_Reg);
    
    
    always  @(posedge clk) begin 

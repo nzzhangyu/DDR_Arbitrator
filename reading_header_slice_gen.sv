@@ -2,7 +2,7 @@
 module reading_header_slice_gen(/*AUTOARG*/
    // Outputs
    header_data_out, header_data_out_en, DOM_header_latch_pulse_en,
-   reading_number, TablePos, REF_XDetA, REF_XDetB, wr_qdr_reading_num,
+   reading_number, TablePos, REF_XDetA, REF_XDetB, wr_ddr_reading_num,
    wr_number_err, make_data_on, view_Reading_Done,
    sampling_data_on_out, conv_edge_out, last_view_wr_done,
    time_2000us_en_out, view_header_overrun, rx_fifo_empty,
@@ -35,7 +35,7 @@ module reading_header_slice_gen(/*AUTOARG*/
    input                           clk;
    input                           RESET;
    input                           clk_1us;
-   //input                           new_reading_in_qdr_flag_in  ;
+   //input                           new_reading_in_ddr_flag_in  ;
    input                           MAKE_DATA  ;
    //input                           tx_channel_up_sysclk_in;
    input                           conv ;  
@@ -153,7 +153,7 @@ module reading_header_slice_gen(/*AUTOARG*/
    output [15:0]                    REF_XDetA ; //           : out std_logic_vector(15 downto 0);
    output [15:0]                    REF_XDetB ; //           : out std_logic_vector(15 downto 0);
    
-   output [31:0]                   wr_qdr_reading_num ; //   : out std_logic_vector(15 downto 0);
+   output [31:0]                   wr_ddr_reading_num ; //   : out std_logic_vector(15 downto 0);
    output                          wr_number_err;
    output                          make_data_on ; //   : out std_logic;
    output                          view_Reading_Done ; //   : out std_logic;
@@ -172,7 +172,7 @@ module reading_header_slice_gen(/*AUTOARG*/
    output                          LastViewFlag_reg_out ; // :out STD_LOGIC;   
    output [31:0]                   header_tp ; // : out std_logic
    
-   //output [31:0] Wrqdr_slice_counter_in;
+   //output [31:0] Wrddr_slice_counter_in;
    output [31:0]           wr_view_counter;
    
    input                   Fault_inject_en;
@@ -525,7 +525,7 @@ module reading_header_slice_gen(/*AUTOARG*/
                       .reading_number   (reading_number[31:0]),
                       .FirstViewFlag_reg_out(FirstViewFlag_reg_out),
                       .DOM_header_latch_pulse_en(DOM_header_latch_pulse_en),
-                      .wr_qdr_reading_num(wr_qdr_reading_num[31:0]),
+                      .wr_ddr_reading_num(wr_ddr_reading_num[31:0]),
                       .wr_number_err    (wr_number_err),
                       .time_2000us_en_out(time_2000us_en_out),
                       .last_view_wr_done(last_view_wr_done),

@@ -57,13 +57,13 @@ module user_rw_cmd_gen #(
    output logic                      ddr_overrun,
    output logic                      ddr_warning,
    output logic                      ddr_wr_fifo_rd_en,
-   output logic [127:0]              qdr_dataout,
-   output logic                      qdr_dataout_en,
+   output logic [127:0]              ddr_dataout,
+   output logic                      ddr_dataout_en,
 
    input  logic                      init_calib_complete,
    input  logic                      ui_clk,
    input  logic                      ui_clk_sync_rst,
-   input  logic                      qdr_rd_req,
+   input  logic                      ddr_rd_req,
    input  logic                      req_stop,
    input  logic                      make_data_on,
    input  logic [15:0]               view_size,
@@ -196,9 +196,9 @@ module user_rw_cmd_gen #(
    // Request gating.
    // Qualify write and read requests before arbitration.
    logic ddr_wr_req;
-   logic ddr_rd_req;
-   logic qdr_rd_req_d;
-   logic qdr_rd_req_dd;
+   logic ddr_rd_req_qual;
+   logic ddr_rd_req_d;
+   logic ddr_rd_req_dd;
 
    assign ddr_wr_req = (~ddr_wr_fifo_empty) &
                        (wr_level_low | wr_fifo_has_burst |
@@ -206,16 +206,16 @@ module user_rw_cmd_gen #(
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst || rst_local_t_ddr_clk) begin
-         qdr_rd_req_d  <= '0;
-         qdr_rd_req_dd <= '0;
+         ddr_rd_req_d  <= '0;
+         ddr_rd_req_dd <= '0;
       end
       else begin
-         qdr_rd_req_d  <= qdr_rd_req;
-         qdr_rd_req_dd <= qdr_rd_req_d;
+         ddr_rd_req_d  <= ddr_rd_req;
+         ddr_rd_req_dd <= ddr_rd_req_d;
       end
    end
 
-   assign ddr_rd_req = (~ddr_rd_empty) & qdr_rd_req_dd & rd_cache_can_prefetch;
+   assign ddr_rd_req_qual = (~ddr_rd_empty) & ddr_rd_req_dd & rd_cache_can_prefetch;
 
    // Arbitration state.
    // Track the current grant and remember the last selected direction.
@@ -313,8 +313,8 @@ module user_rw_cmd_gen #(
                   clear_last_grant = 1'b1;
                end
                // Refill the read cache if it is urgent and write pressure is not urgent.
-               else if (rd_level_urgent && ddr_rd_req &&
-                        rd_cache_has_grant_space && (~wr_level_urgent)) begin
+               else if (rd_level_urgent && ddr_rd_req_qual &&
+                         rd_cache_has_grant_space && (~wr_level_urgent)) begin
                   rw_next_state    = RW_READ_AR;
                   clear_last_grant = 1'b1;
                end
@@ -324,11 +324,11 @@ module user_rw_cmd_gen #(
                   clear_last_grant = 1'b1;
                end
                // Both sides request service; use the remembered last grant below.
-               else if (ddr_rd_req && ddr_wr_req) begin
+               else if (ddr_rd_req_qual && ddr_wr_req) begin
                   rw_next_state    = RW_ARB;
                end
                // Single-sided read request.
-               else if (ddr_rd_req && rd_cache_has_grant_space && (~wr_level_urgent)) begin
+               else if (ddr_rd_req_qual && rd_cache_has_grant_space && (~wr_level_urgent)) begin
                   rw_next_state    = RW_READ_AR;
                   clear_last_grant = 1'b1;
                end
@@ -346,8 +346,8 @@ module user_rw_cmd_gen #(
                   remember_write_grant = 1'b1;
                end
                // Low or urgent cache level can pull service toward reads.
-               else if ((rd_level_low || rd_level_urgent) && ddr_rd_req &&
-                        rd_cache_has_grant_space && (~wr_level_urgent)) begin
+               else if ((rd_level_low || rd_level_urgent) && ddr_rd_req_qual &&
+                         rd_cache_has_grant_space && (~wr_level_urgent)) begin
                   rw_next_state       = RW_READ_AR;
                   remember_read_grant = 1'b1;
                end
@@ -362,8 +362,8 @@ module user_rw_cmd_gen #(
                   remember_write_grant = 1'b1;
                end
                // Normal fairness path for read service.
-               else if (ddr_rd_req && rd_cache_has_grant_space &&
-                        (~last_grant_was_read) && (~wr_level_urgent)) begin
+               else if (ddr_rd_req_qual && rd_cache_has_grant_space &&
+                         (~last_grant_was_read) && (~wr_level_urgent)) begin
                   rw_next_state       = RW_READ_AR;
                   remember_read_grant = 1'b1;
                end
@@ -373,7 +373,7 @@ module user_rw_cmd_gen #(
                   remember_write_grant = 1'b1;
                end
                // Fallback read grant if writes are not urgent and cache space is available.
-               else if (ddr_rd_req && rd_cache_has_grant_space && (~wr_level_urgent)) begin
+               else if (ddr_rd_req_qual && rd_cache_has_grant_space && (~wr_level_urgent)) begin
                   rw_next_state       = RW_READ_AR;
                   remember_read_grant = 1'b1;
                end
@@ -613,8 +613,8 @@ module user_rw_cmd_gen #(
                           rd_cache_has_grant_space;
    assign m_axi_rready  = (rw_state == RW_READ_R);
 
-   assign qdr_dataout    = m_axi_rdata;
-   assign qdr_dataout_en = read_data_fire;
+   assign ddr_dataout    = m_axi_rdata;
+   assign ddr_dataout_en = read_data_fire;
 
    logic [ADDR_WIDTH:0] wr_sub_rd;
    logic [ADDR_WIDTH:0] wr_sub_rd_diff;
