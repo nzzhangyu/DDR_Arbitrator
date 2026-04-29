@@ -1,23 +1,3 @@
-//--------------------------------------------------------------------------------
-// Company: Neusoft Medical Systems
-// Engineer: 
-// 
-// Create Date:     15/1/2019 
-// Design Name:    
-// Module Name:    user_app_top 
-// Project Name:   H71
-// Target Devices:  
-// Tool versions: 
-// Description: 
-//
-// Dependencies:    ddr3 controller application top 
-//
-// Revision: 
-// Revision 0.01 - File Created
-// Additional Comments: make
-//
-//--------------------------------------------------------------------------------
-
 `timescale 1ns/1ps
 module  user_app_top(/*AUTOARG*/
    // Outputs
@@ -29,7 +9,8 @@ module  user_app_top(/*AUTOARG*/
    app_rd_data, app_rd_data_valid, app_rdy, app_wdf_rdy, ui_clk,
    ui_clk_sync_rst, init_calib_complete, clk, RESET, data_from_ddr_en,
    data_from_ddr_dd, qdr_rd_req, req_stop, rst_local_t_ddr_clk,
-   cache_fifo_prog_full, fault_ddr_overrun, fault_ddr_warning,
+   cache_fifo_prog_full, cache_fifo_almost_empty, cache_fifo_data_count,
+   fault_ddr_overrun, fault_ddr_warning,
    make_data_on, make_data_p_edge, view_size, rp_back_en,
    rp_back_view_addr
    );
@@ -82,6 +63,8 @@ module  user_app_top(/*AUTOARG*/
    input                   rst_local_t_ddr_clk;
     //input from rd_coache
    input                   cache_fifo_prog_full;
+   input                   cache_fifo_almost_empty;
+   input [13:0]            cache_fifo_data_count;
     //output to qdriiplus_rd_top module 
    output [127:0]          qdr_dataout;
    output                  qdr_dataout_en;
@@ -109,44 +92,45 @@ module  user_app_top(/*AUTOARG*/
    //input [11:0] 	   view_size;         //  from user_rw_cmd_gen.v
    
    
-   wire [127:0]            ddr_wr_dout;
+   logic [127:0]           ddr_wr_dout;
                            
-   wire                    ddr_wr_fifo_prog_empty;
+   logic                   ddr_wr_fifo_prog_empty;
    
-   wire [127:0]            ddr_wr_fifo_dout;
+   logic [127:0]           ddr_wr_fifo_dout;
                            
-   wire                    ddr_wr_fifo_dout_valid;
+   logic                   ddr_wr_fifo_dout_valid;
    
-   wire                    ddr_wr_fifo_empty;
+   logic                   ddr_wr_fifo_empty;
+   logic                   ddr_wr_fifo_full;
   
    // Beginning of automatic wires (for undeclared instantiated-module outputs)
-   wire                    ddr_wr_fifo_rd_en;   // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
-   wire                    qdr_rd_empty;        // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
+   logic                   ddr_wr_fifo_rd_en;   // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
+   logic                   qdr_rd_empty;        // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
    //wire [ADDR_WIDTH-1:0]   user_ad_rd;      // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
    //wire [ADDR_WIDTH-1:0]   user_ad_wr;      // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
    // End of automatics
    
    //wire 		   wr_fifo_underrun;
    
-   reg                     user_w_n ;       
-   reg [63 :0]             user_w_data_h ;    
-   wire [127 :0]           user_w_data ;    
+   logic                   user_w_n ;       
+   logic [63 :0]           user_w_data_h ;    
+   logic [127 :0]          user_w_data ;    
    
-   reg                     user_w_cnt;
-   wire                    wr_en;
+   logic                   user_w_cnt;
+   logic                   wr_en;
 
-   wire [13:0] 		         rd_data_count;
+   logic [13:0] 		      ddr_wr_fifo_level;
 
-   wire [15:0]             app_wdf_mask;
+   logic [15:0]            app_wdf_mask;
     
      ddr_wr_fifo                ddr_wr_fifo_uut  (
                                                 // Outputs
                                                  .dout                          (ddr_wr_fifo_dout[127:0]),
-                                                 .full                          (full),
+                                                 .full                          (ddr_wr_fifo_full),
                                                  .empty                         (ddr_wr_fifo_empty),
                                                  .valid                         (ddr_wr_fifo_dout_valid),
                                                  .prog_empty                    (ddr_wr_fifo_prog_empty),
-                                                 .rd_data_count                 (rd_data_count),
+                                                 .rd_data_count                 (ddr_wr_fifo_level),
                                                  .wr_rst_busy                   ( ),
                                                  .rd_rst_busy                   ( ),
                                                  // Inputs
@@ -196,24 +180,26 @@ module  user_app_top(/*AUTOARG*/
 						 .fault_ddr_warning	(fault_ddr_warning),
 						 .ddr_wr_fifo_empty	(ddr_wr_fifo_empty),
 						 .ddr_wr_fifo_prog_empty(ddr_wr_fifo_prog_empty),
-						 .rd_data_count		(rd_data_count[13:0]),
+						 .ddr_wr_fifo_level	(ddr_wr_fifo_level[13:0]),
 						 .wr_fifo_overrun	(wr_fifo_overrun),
 						 .ddr_wr_fifo_dout	(ddr_wr_fifo_dout[127:0]),
 						 .cache_fifo_prog_full	(cache_fifo_prog_full),
+						 .cache_fifo_almost_empty(cache_fifo_almost_empty),
+						 .cache_fifo_data_count(cache_fifo_data_count[13:0]),
 						 .rp_back_en		(rp_back_en),
 						 .rp_back_view_addr	(rp_back_view_addr[ADDR_WIDTH-1:0]));
   
 
-   reg    wr_fifo_overrun;
+   logic  wr_fifo_overrun;
 
-   always @(posedge clk)  begin
+   always_ff @(posedge clk)  begin
       if(RESET) begin
         wr_fifo_overrun    <= 'h0;
       end
       else if (make_data_p_edge) begin
         wr_fifo_overrun    <= 'h0;
       end
-      else if(full && data_from_ddr_en) begin
+      else if(ddr_wr_fifo_full && data_from_ddr_en) begin
         wr_fifo_overrun    <= 'h1;
       end
       else  begin

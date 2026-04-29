@@ -1,22 +1,3 @@
-//--------------------------------------------------------------------------------
-// Company: Neusoft Medical Systems
-// Engineer: 
-// 
-// Create Date:     15/1/2019 
-// Design Name:     
-// Module Name:    user_rw_cmd_gen 
-// Project Name:   H71
-// Target Devices: 
-// Tool versions: 
-// Description: 
-//
-// Dependencies:    user write and read command generate 
-//
-// Revision: 
-// Revision 0.01 - File Created
-// Additional Comments: make
-//
-//--------------------------------------------------------------------------------
 `timescale 1ns/1ps
 module user_rw_cmd_gen(/*AUTOARG*/
    // Outputs
@@ -29,8 +10,9 @@ module user_rw_cmd_gen(/*AUTOARG*/
    app_rd_data_valid, app_rdy, app_wdf_rdy, qdr_rd_req, req_stop,
    make_data_on, view_size, rst_local_t_ddr_clk, fault_ddr_overrun,
    fault_ddr_warning, ddr_wr_fifo_empty, ddr_wr_fifo_prog_empty,
-   rd_data_count, wr_fifo_overrun, ddr_wr_fifo_dout,
-   cache_fifo_prog_full, rp_back_en, rp_back_view_addr
+   ddr_wr_fifo_level, wr_fifo_overrun, ddr_wr_fifo_dout,
+   cache_fifo_prog_full, cache_fifo_almost_empty, cache_fifo_data_count,
+   rp_back_en, rp_back_view_addr
    );
    
     //parameter                      ADDR_WIDTH = 25;  //4g ddr
@@ -93,7 +75,7 @@ module user_rw_cmd_gen(/*AUTOARG*/
    input                           ddr_wr_fifo_empty;
                                    
    input                           ddr_wr_fifo_prog_empty;
-   input  [13:0] 		              rd_data_count;  //need to change 
+   input  [13:0] 		              ddr_wr_fifo_level;
    input 			                 wr_fifo_overrun;
    //output 			   wr_fifo_underrun;
    
@@ -104,6 +86,8 @@ module user_rw_cmd_gen(/*AUTOARG*/
    
    //input from rd_coache
    input                           cache_fifo_prog_full;
+   input                           cache_fifo_almost_empty;
+   input  [13:0]                   cache_fifo_data_count;
 
    
    //output to qdriiplus_rd_top module 
@@ -120,17 +104,23 @@ module user_rw_cmd_gen(/*AUTOARG*/
    //input [11:0] 		   view_size;         //  from user_rw_cmd_gen.v 
    //input 			   update_view_size;  //  from user_rw_cmd_gen.v 
 
-   localparam logic [2:0]          IDLE        = 3'd0;
-   localparam logic [2:0]          ARB_PRE_STA = 3'd1;
-   localparam logic [2:0]          ARB_STA     = 3'd2;
-   localparam logic [2:0]          RD_STA      = 3'd3;
-   localparam logic [2:0]          WR_STA      = 3'd4;
-   localparam logic [2:0]          WR_POST_STA = 3'd5;
+   typedef enum logic [2:0] {
+      RW_IDLE,
+      RW_ARB_PRE,
+      RW_ARB,
+      RW_READ,
+      RW_WRITE,
+      RW_WRITE_POST
+   } rw_state_t;
 
    localparam logic [13:0]         WR_LEVEL_LOW      = 14'd2048;
    localparam logic [13:0]         WR_LEVEL_HIGH     = 14'd8192;
    localparam logic [13:0]         WR_LEVEL_URGENT   = 14'd12288;
    localparam logic [13:0]         WR_LEVEL_CRITICAL = 14'd14336;
+
+   localparam logic [13:0]         RD_LEVEL_URGENT   = 14'd4096;
+   localparam logic [13:0]         RD_LEVEL_LOW      = 14'd8192;
+   localparam logic [13:0]         RD_LEVEL_HIGH     = 14'd12288;
 
    localparam logic [8:0]          WR_GRANT_MAX      = 9'd256;
    localparam logic [9:0]          RD_GRANT_MAX      = 10'd512;
@@ -142,8 +132,9 @@ module user_rw_cmd_gen(/*AUTOARG*/
    (* ASYNC_REG = "true" *) reg make_data_on_rcom_cdc_to_d;
    (* ASYNC_REG = "true" *) reg make_data_on_dd;
    (* ASYNC_REG = "true" *) reg make_data_on_ddd;
+   logic                           make_data_on_edge;
    
-   always @(posedge ui_clk)  begin 
+   always_ff @(posedge ui_clk)  begin 
       if (ui_clk_sync_rst) begin
          make_data_on_rcom_cdc_to_d   <= 'h0;
          make_data_on_dd 	      <= 'h0;
@@ -161,9 +152,9 @@ module user_rw_cmd_gen(/*AUTOARG*/
    
 
    //delay rp_back_en 256 cycle to wait ddr3_mig in idle state .
-   reg [7:0]	  rp_back_en_dly_cnt;
+   logic [7:0]	  rp_back_en_dly_cnt;
    
-   always @(posedge ui_clk ) begin
+   always_ff @(posedge ui_clk ) begin
       if (ui_clk_sync_rst) begin
          rp_back_en_dly_cnt  <= 'h0;
       end
@@ -176,25 +167,49 @@ module user_rw_cmd_gen(/*AUTOARG*/
    end
 
    //write requist generate
-   wire       ddr_wr_req;
-   reg 	     clr_wr_req;
-   wire       wr_burst_cnt_rch;
-   reg  [8:0] wr_burst_cnt;
+   logic      ddr_wr_req;
+   logic      clr_wr_req;
+   logic      wr_burst_cnt_rch;
+   logic [8:0] wr_burst_cnt;
 
 
-   reg [10:0] ddr_wr_fifo_notempty_cnt;
+   logic [10:0] ddr_wr_fifo_notempty_cnt;
+   logic      ddr_wr_fifo_notempty_cnt_rch;
 
    assign ddr_wr_fifo_notempty_cnt_rch = ddr_wr_fifo_notempty_cnt[10];
+
+   logic      wr_level_low;
+   logic      wr_level_high;
+   logic      wr_level_urgent;
+   logic      wr_level_critical;
+   logic      wr_fifo_has_burst;
+   logic      rd_level_low;
+   logic      rd_level_urgent;
+   logic      rd_cache_can_prefetch;
+
+   assign wr_level_low      = ddr_wr_fifo_level >= WR_LEVEL_LOW;
+   assign wr_level_high     = ddr_wr_fifo_level >= WR_LEVEL_HIGH;
+   assign wr_level_urgent   = ddr_wr_fifo_level >= WR_LEVEL_URGENT;
+   assign wr_level_critical = ddr_wr_fifo_level >= WR_LEVEL_CRITICAL;
+   assign wr_fifo_has_burst = ~ddr_wr_fifo_prog_empty;
+
+   assign rd_level_urgent   = cache_fifo_almost_empty |
+                              (cache_fifo_data_count <= RD_LEVEL_URGENT);
+   assign rd_level_low      = cache_fifo_data_count <= RD_LEVEL_LOW;
+   assign rd_cache_can_prefetch = (~cache_fifo_prog_full) &
+                                  (cache_fifo_data_count < RD_LEVEL_HIGH);
    
-   assign ddr_wr_req = (rd_data_count > 255) | ddr_wr_fifo_notempty_cnt_rch;
+   assign ddr_wr_req = (~ddr_wr_fifo_empty) &
+                       (wr_level_low | wr_fifo_has_burst |
+                        ddr_wr_fifo_notempty_cnt_rch);
    //assign    wr_burst_cnt_rch = wr_burst_cnt[6] ;
 
    //simulate ddr3 read and write arbitor
-   //assign    ddr_wr_req = (rd_data_count > 20) | ddr_wr_fifo_notempty_cnt_rch;
+   //assign    ddr_wr_req = (ddr_wr_fifo_level > 20) | ddr_wr_fifo_notempty_cnt_rch;
    //assign    wr_burst_cnt_rch = wr_burst_cnt[3] ;
    
    
-   always @(posedge ui_clk ) begin
+   always_ff @(posedge ui_clk ) begin
       if (ui_clk_sync_rst) begin
 	      ddr_wr_fifo_notempty_cnt 	 <= 'h0;
       end
@@ -214,60 +229,60 @@ module user_rw_cmd_gen(/*AUTOARG*/
    
    
    //read and write arbit
-   wire              wr_cmd_rdy ;
+   logic             wr_cmd_rdy ;
   
-   reg [2:0]         rw_state;
-   reg [2:0]         rw_next_state;
+   rw_state_t        rw_state;
+   rw_state_t        rw_next_state;
                                    
-   wire              ddr_rd_req;
-   wire              ddr_rd_empty;
-   wire              rd_burst_cnt_rch;
+   logic             ddr_rd_req;
+   logic             ddr_rd_empty;
+   logic             rd_burst_cnt_rch;
 
-   reg 				   set_last_wr_sta_sel;
-   reg 				   set_last_rd_sta_sel;
-   reg 				   clr_last_sta_sel;
-   reg 				   last_wr_sta_sel;
-   reg 				   last_rd_sta_sel;
+   logic 				remember_write_grant;
+   logic 				remember_read_grant;
+   logic 				clear_last_grant;
+   logic 				last_grant_was_write;
+   logic 				last_grant_was_read;
    
     
-   always @(posedge ui_clk ) begin
+   always_ff @(posedge ui_clk ) begin
       if (ui_clk_sync_rst) begin
-         last_wr_sta_sel  <= 'h0;
+         last_grant_was_write  <= 'h0;
       end
-      else if (clr_last_sta_sel) begin
-         last_wr_sta_sel  <= 'h0;
+      else if (clear_last_grant) begin
+         last_grant_was_write  <= 'h0;
       end
-      else if (set_last_rd_sta_sel) begin
-         last_wr_sta_sel  <= 'h0;
+      else if (remember_read_grant) begin
+         last_grant_was_write  <= 'h0;
       end
-      else if (set_last_wr_sta_sel) begin
-         last_wr_sta_sel  <= 'h1;
+      else if (remember_write_grant) begin
+         last_grant_was_write  <= 'h1;
       end
    end
 
-    always @(posedge ui_clk ) begin
+    always_ff @(posedge ui_clk ) begin
       if(ui_clk_sync_rst) begin
-         last_rd_sta_sel  <= 'h0;
+         last_grant_was_read  <= 'h0;
       end
-      else if (clr_last_sta_sel) begin
-         last_rd_sta_sel  <= 'h0;
+      else if (clear_last_grant) begin
+         last_grant_was_read  <= 'h0;
       end
-      else if (set_last_wr_sta_sel) begin
-         last_rd_sta_sel  <= 'h0;
+      else if (remember_write_grant) begin
+         last_grant_was_read  <= 'h0;
       end
-      else if (set_last_rd_sta_sel) begin
-         last_rd_sta_sel  <= 'h1;
+      else if (remember_read_grant) begin
+         last_grant_was_read  <= 'h1;
       end
    end
 
    
    
-   always @(posedge ui_clk ) begin
+   always_ff @(posedge ui_clk ) begin
       if (ui_clk_sync_rst) begin
-         rw_state   <= IDLE;
+         rw_state   <= RW_IDLE;
       end
       else if (rst_local_t_ddr_clk || make_data_on_edge) begin
-         rw_state   <= IDLE;
+         rw_state   <= RW_IDLE;
       end
       else begin
          rw_state   <= rw_next_state;
@@ -275,103 +290,115 @@ module user_rw_cmd_gen(/*AUTOARG*/
    end
 
 
-   always @(/*AS*/ddr_rd_empty or ddr_rd_req or ddr_wr_fifo_empty
-	    or ddr_wr_fifo_prog_empty or ddr_wr_req
-	    or init_calib_complete or last_rd_sta_sel
-	    or last_wr_sta_sel or rd_burst_cnt_rch or req_stop
-	    or rp_back_en or rp_back_en_dly_cnt or rw_state
-	    or wr_burst_cnt_rch or wr_cmd_rdy) begin
+   always_comb begin
       if ((~init_calib_complete) ) begin
-         rw_next_state 		   = IDLE;
-         set_last_wr_sta_sel 	= 'h0;
-         set_last_rd_sta_sel 	= 'h0;
-         clr_last_sta_sel  	= 'h0;
+         rw_next_state 		   = RW_IDLE;
+         remember_write_grant 	= 'h0;
+         remember_read_grant 	= 'h0;
+         clear_last_grant  	= 'h0;
          clr_wr_req 		      = 'h0;
 	 
       end
       else begin
-         set_last_wr_sta_sel 	= 'h0;
-         set_last_rd_sta_sel 	= 'h0;
-         clr_last_sta_sel 	   = 'h0;
+         remember_write_grant 	= 'h0;
+         remember_read_grant 	= 'h0;
+         clear_last_grant 	   = 'h0;
          clr_wr_req 		      = 'h0;
          case (rw_state)
-            IDLE : begin
+            RW_IDLE : begin
                if (rp_back_en || (|rp_back_en_dly_cnt)) begin
-                  rw_next_state = IDLE;
+                  rw_next_state = RW_IDLE;
                end
                else begin
-                  rw_next_state 	= ARB_PRE_STA;
+                  rw_next_state 	= RW_ARB_PRE;
                end
-               clr_last_sta_sel 	= 'h1;
+               clear_last_grant 	= 'h1;
             end
-            ARB_PRE_STA : begin
+            RW_ARB_PRE : begin
                if (rp_back_en || (|rp_back_en_dly_cnt)) begin
-                  rw_next_state 	    = IDLE;
-                  clr_last_sta_sel   = 'h1;
+                  rw_next_state 	    = RW_IDLE;
+                  clear_last_grant   = 'h1;
+               end
+               else if ((wr_level_urgent || wr_level_critical) && ddr_wr_req) begin
+                  rw_next_state       = RW_WRITE;
+                  clear_last_grant    = 'h1;
+               end
+               else if (rd_level_urgent && ddr_rd_req && (~wr_level_high)) begin
+                  rw_next_state       = RW_READ;
+                  clear_last_grant    = 'h1;
                end
                else if (~ddr_wr_fifo_prog_empty) begin
-                  rw_next_state 	    = WR_STA;
-                  clr_last_sta_sel   = 'h1;
+                  rw_next_state 	    = RW_WRITE;
+                  clear_last_grant   = 'h1;
                end
                else if (ddr_rd_req && ddr_wr_req) begin
-                  rw_next_state      = ARB_STA;
-                  clr_last_sta_sel   = 'h0;
+                  rw_next_state      = RW_ARB;
+                  clear_last_grant   = 'h0;
                end
                else if (ddr_rd_req) begin
-                  rw_next_state      = RD_STA;
-                  clr_last_sta_sel   = 'h1;
+                  rw_next_state      = RW_READ;
+                  clear_last_grant   = 'h1;
                end
                else if (ddr_wr_req) begin
-                  rw_next_state      = WR_STA;
-                  clr_last_sta_sel   = 'h1;
+                  rw_next_state      = RW_WRITE;
+                  clear_last_grant   = 'h1;
                end
                else begin
-                  rw_next_state  	 = ARB_PRE_STA;
-                  clr_last_sta_sel   = 'h0;
+                  rw_next_state  	 = RW_ARB_PRE;
+                  clear_last_grant   = 'h0;
                end
             end
-            ARB_STA : begin
-               if (ddr_wr_req && (~last_wr_sta_sel)) begin
-                  rw_next_state 	       = WR_STA;
-                  set_last_wr_sta_sel   = 'h1;
+            RW_ARB : begin
+               if ((wr_level_high || wr_level_urgent || wr_level_critical) && ddr_wr_req) begin
+                  rw_next_state        = RW_WRITE;
+                  remember_write_grant  = 'h1;
                end
-               else if (ddr_rd_req && (~last_rd_sta_sel)) begin
-                  rw_next_state 	       = RD_STA;
-                  set_last_rd_sta_sel   = 'h1;
+               else if ((rd_level_low || rd_level_urgent) && ddr_rd_req && (~wr_level_high)) begin
+                  rw_next_state        = RW_READ;
+                  remember_read_grant  = 'h1;
+               end
+               else if (ddr_wr_req && (~last_grant_was_write)) begin
+                  rw_next_state 	       = RW_WRITE;
+                  remember_write_grant   = 'h1;
+               end
+               else if (ddr_rd_req && (~last_grant_was_read)) begin
+                  rw_next_state 	       = RW_READ;
+                  remember_read_grant   = 'h1;
                end
                else begin
-                  rw_next_state 	       = WR_STA;
-                  clr_last_sta_sel      = 'h1;
+                  rw_next_state 	       = RW_WRITE;
+                  clear_last_grant      = 'h1;
                end
             end
          
-            WR_STA : begin
+            RW_WRITE : begin
                if (wr_burst_cnt_rch || (ddr_wr_fifo_empty)) begin
-                  rw_next_state 	 = WR_POST_STA;
+                  rw_next_state 	 = RW_WRITE_POST;
                end
                else begin
-                  rw_next_state 	 = WR_STA;
+                  rw_next_state 	 = RW_WRITE;
                end
                clr_wr_req 		= 'h1;
             end
-            WR_POST_STA : begin
+            RW_WRITE_POST : begin
                if (wr_cmd_rdy) begin
-                  rw_next_state 	 = ARB_PRE_STA;
+                  rw_next_state 	 = RW_ARB_PRE;
                end
                else begin
-                  rw_next_state 	 = WR_POST_STA;
+                  rw_next_state 	 = RW_WRITE_POST;
                end
             end
-            RD_STA : begin
-               if (rd_burst_cnt_rch || req_stop || ddr_rd_empty || rp_back_en || (|rp_back_en_dly_cnt)) begin
-                  rw_next_state 	 = ARB_PRE_STA;
+            RW_READ : begin
+               if (rd_burst_cnt_rch || wr_level_urgent || wr_level_critical ||
+                   req_stop || ddr_rd_empty || rp_back_en || (|rp_back_en_dly_cnt)) begin
+                  rw_next_state 	 = RW_ARB_PRE;
                end
                else begin
-                  rw_next_state   = RD_STA;
+                  rw_next_state   = RW_READ;
                end
             end
             default : begin
-               rw_next_state      = IDLE;
+               rw_next_state      = RW_IDLE;
             end
          endcase // case (rw_state)
       end
@@ -380,25 +407,31 @@ module user_rw_cmd_gen(/*AUTOARG*/
 
    //write command generate
    
-   reg                             fifo_data_rdy;
+   logic                           fifo_data_rdy;
                                    
-   wire                            update_fifo_data_rdy;
+   logic                           update_fifo_data_rdy;
                                    
-   wire                            wr_cmd_en;
-   wire                            wr_cmd_en_valid;
+   logic                           wr_cmd_en;
+   logic                           wr_cmd_en_valid;
+   logic                           wr_burst_cnt_add;
+   logic                           wr_sta_wr_cmd_en;
+   logic                           wr_post_sta_wr_cmd_en;
+   logic                           wr_sta_wr_cmd_en_valid;
+   logic                           wr_post_sta_wr_cmd_en_valid;
    
    
    assign wr_cmd_rdy  = app_rdy & app_wdf_rdy;
      
          
   
-   assign ddr_wr_fifo_rd_en = (rw_state    == WR_STA) & 
+   assign ddr_wr_fifo_rd_en = (rw_state    == RW_WRITE) & 
                               (~ddr_wr_fifo_empty) & 
+                              (~wr_burst_cnt_rch) &
                               wr_cmd_rdy ;
      
-   assign update_fifo_data_rdy = wr_cmd_rdy &  (rw_state    == WR_STA);
+   assign update_fifo_data_rdy = wr_cmd_rdy &  (rw_state    == RW_WRITE);
    
-   always @(posedge ui_clk ) begin
+   always_ff @(posedge ui_clk ) begin
       if (ui_clk_sync_rst ||  rst_local_t_ddr_clk || make_data_on_edge) begin
          fifo_data_rdy   <= 'h0;
       end
@@ -411,16 +444,16 @@ module user_rw_cmd_gen(/*AUTOARG*/
    end
 
    
-   assign wr_burst_cnt_rch = wr_burst_cnt[8] ;
+   assign wr_burst_cnt_rch = wr_burst_cnt >= WR_GRANT_MAX;
    //assign wr_burst_cnt_rch = wr_burst_cnt[4] ;
 
    assign  wr_burst_cnt_add = ddr_wr_fifo_rd_en;
    
-   always @(posedge ui_clk) begin
+   always_ff @(posedge ui_clk) begin
       if(ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
         wr_burst_cnt   <= 'h0;
       end
-      else if (rw_state    != WR_STA) begin
+      else if (rw_state    != RW_WRITE) begin
         wr_burst_cnt   <= 'h0;
       end
       else if (wr_burst_cnt_add) begin
@@ -430,14 +463,16 @@ module user_rw_cmd_gen(/*AUTOARG*/
 
     //--------------------calculate write view number ----------------------
   
-   reg [15:0] wr_data_cnt;
+   logic [15:0] wr_data_cnt;
+   logic      wr_data_cnt_lim;
+   logic      add_wr_view_cnt;
 
    assign     wr_data_cnt_lim = (wr_data_cnt == (view_size-1));
 
    assign     add_wr_view_cnt = wr_burst_cnt_add & wr_data_cnt_lim;
    
 
-   always @(posedge ui_clk) begin
+   always_ff @(posedge ui_clk) begin
       if(ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
          wr_data_cnt  <= 'h0;
       end
@@ -449,9 +484,9 @@ module user_rw_cmd_gen(/*AUTOARG*/
       end
    end
 
-   reg [16:0] 			   wr_view_num;
+   logic [16:0] 		   wr_view_num;
   
-   always @(posedge ui_clk) begin
+   always_ff @(posedge ui_clk) begin
       if(ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
  	 wr_view_num	       <= 'h0;
       end
@@ -462,11 +497,11 @@ module user_rw_cmd_gen(/*AUTOARG*/
    
    //--------------------------------------------------------
    
-   assign wr_sta_wr_cmd_en         = (rw_state == WR_STA) & fifo_data_rdy  & app_wdf_rdy;
-   assign wr_post_sta_wr_cmd_en 	  = (rw_state == WR_POST_STA) & fifo_data_rdy  & app_wdf_rdy;
+   assign wr_sta_wr_cmd_en         = (rw_state == RW_WRITE) & fifo_data_rdy  & app_wdf_rdy;
+   assign wr_post_sta_wr_cmd_en 	  = (rw_state == RW_WRITE_POST) & fifo_data_rdy  & app_wdf_rdy;
    
-   assign wr_sta_wr_cmd_en_valid         = (rw_state    == WR_STA) & fifo_data_rdy  & wr_cmd_rdy;
-   assign wr_post_sta_wr_cmd_en_valid 	  = (rw_state    == WR_POST_STA) & fifo_data_rdy  & wr_cmd_rdy;
+   assign wr_sta_wr_cmd_en_valid         = (rw_state    == RW_WRITE) & fifo_data_rdy  & wr_cmd_rdy;
+   assign wr_post_sta_wr_cmd_en_valid 	  = (rw_state    == RW_WRITE_POST) & fifo_data_rdy  & wr_cmd_rdy;
    
 
    assign wr_cmd_en       = wr_sta_wr_cmd_en       | wr_post_sta_wr_cmd_en;
@@ -478,16 +513,17 @@ module user_rw_cmd_gen(/*AUTOARG*/
    
    //read command generate
 
-   wire                            rd_cmd_en;
-   wire                            rd_cmd_en_valid;
+   logic                           rd_cmd_en;
+   logic                           rd_cmd_en_valid;
                                    
-   reg  [9:0]                      rd_burst_cnt;
+   logic [9:0]                     rd_burst_cnt;
+   logic                           rd_burst_cnt_add;
                                    
-   reg                             qdr_rd_req_d;
-   reg                             qdr_rd_req_dd;
+   logic                           qdr_rd_req_d;
+   logic                           qdr_rd_req_dd;
    
    
-    always @(posedge ui_clk ) begin
+    always_ff @(posedge ui_clk ) begin
       if (ui_clk_sync_rst ||  rst_local_t_ddr_clk) begin
         qdr_rd_req_d    <= 'h0;
         qdr_rd_req_dd   <= 'h0;
@@ -519,27 +555,33 @@ module user_rw_cmd_gen(/*AUTOARG*/
    
    assign ddr_rd_req = (~ddr_rd_empty ) &
                        qdr_rd_req_dd  & 
-                       (~cache_fifo_prog_full);
+                       rd_cache_can_prefetch;
    
-   assign rd_cmd_en = (rw_state    == RD_STA) &
+   assign rd_cmd_en = (rw_state    == RW_READ) &
 		      (~rd_burst_cnt_rch) &
+                      (~wr_level_urgent) &
+                      (~wr_level_critical) &
                       (~ddr_rd_empty );
    
-  assign rd_cmd_en_valid = (rw_state    == RD_STA) &  
+  assign rd_cmd_en_valid = (rw_state    == RW_READ) &  
 			   app_rdy &
 			   (~rd_burst_cnt_rch) &
+			   (~wr_level_urgent) &
+			   (~wr_level_critical) &
 			   (~ddr_rd_empty );
    
-   assign rd_burst_cnt_add = (~ddr_rd_empty) &
-                          app_rdy;
-   
-   assign rd_burst_cnt_rch = rd_burst_cnt[9] ;
+   assign rd_burst_cnt_add = rd_cmd_en_valid;
+
+   logic [9:0] rd_grant_limit;
+
+   assign rd_grant_limit = wr_level_high ? RD_GRANT_WR_HIGH : RD_GRANT_MAX;
+   assign rd_burst_cnt_rch = rd_burst_cnt >= rd_grant_limit;
       
-   always @(posedge ui_clk) begin
+   always_ff @(posedge ui_clk) begin
       if(ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
         rd_burst_cnt   <= 'h0;
       end
-      else if (rw_state    != RD_STA) begin
+      else if (rw_state    != RW_READ) begin
         rd_burst_cnt   <= 'h0;
       end
       else if (rd_burst_cnt_add) begin
@@ -549,14 +591,16 @@ module user_rw_cmd_gen(/*AUTOARG*/
 
     //--------------------calculate read view number ----------------------
 
-   reg [15:0] rd_data_cnt;
+   logic [15:0] rd_data_cnt;
+   logic      rd_data_cnt_lim;
+   logic      add_rd_view_cnt;
 
    assign     rd_data_cnt_lim = (rd_data_cnt == (view_size-1));
 
    assign     add_rd_view_cnt =  rd_cmd_en_valid & rd_data_cnt_lim;
    
 
-   always @(posedge ui_clk) begin
+   always_ff @(posedge ui_clk) begin
       if(ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
          rd_data_cnt  <= 'h0;
       end
@@ -569,7 +613,7 @@ module user_rw_cmd_gen(/*AUTOARG*/
    end
 
    /*
-   always @(posedge ui_clk) begin
+   always_ff @(posedge ui_clk) begin
       if(ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
  	 rd_view_num	       <= 'h0;
       end
@@ -583,14 +627,14 @@ module user_rw_cmd_gen(/*AUTOARG*/
    
 
    //mig user interface
-   wire [2:0]                      app_cmd;
-   wire [15:0]                     app_wdf_mask;
-   wire                            app_ref_req;
-   wire                            app_zq_req;
-   wire                            app_sr_req;
+   logic [2:0]                     app_cmd;
+   logic [15:0]                    app_wdf_mask;
+   logic                           app_ref_req;
+   logic                           app_zq_req;
+   logic                           app_sr_req;
                                    
-   wire                            app_wdf_end;
-   wire                            app_wdf_wren;
+   logic                           app_wdf_end;
+   logic                           app_wdf_wren;
    
    assign app_en       = rd_cmd_en | wr_cmd_en;
                        
@@ -610,19 +654,19 @@ module user_rw_cmd_gen(/*AUTOARG*/
    
    //
    
-   wire [127:0]                    qdr_dataout;
-   wire                            qdr_dataout_en;
+   logic [127:0]                   qdr_dataout;
+   logic                           qdr_dataout_en;
       
    assign   qdr_dataout = app_rd_data;
    assign   qdr_dataout_en = app_rd_data_valid;
    
-   reg  [ADDR_WIDTH   :0] user_ad_wr_i;
-   wire [ADDR_WIDTH-1 :0] user_ad_wr;
+   logic [ADDR_WIDTH   :0] user_ad_wr_i;
+   logic [ADDR_WIDTH-1 :0] user_ad_wr;
 
    assign        user_ad_wr = user_ad_wr_i[ADDR_WIDTH-1 :0];
    
    
-   always @(posedge ui_clk ) begin 
+   always_ff @(posedge ui_clk ) begin 
       if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
          user_ad_wr_i   <= 'h0;
       end
@@ -632,8 +676,8 @@ module user_rw_cmd_gen(/*AUTOARG*/
    end
    
    //recoder the bandary of the view
-   reg  [ADDR_WIDTH :0]           user_ad_rd_i;
-   wire [ADDR_WIDTH-1:0]           user_ad_rd ;
+   logic [ADDR_WIDTH :0]          user_ad_rd_i;
+   logic [ADDR_WIDTH-1:0]         user_ad_rd ;
 
   
    
@@ -643,7 +687,7 @@ module user_rw_cmd_gen(/*AUTOARG*/
    assign      user_ad_rd = user_ad_rd_i[ADDR_WIDTH-1:0];
 
   
-   always @(posedge ui_clk ) begin 
+   always_ff @(posedge ui_clk ) begin 
       if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
          user_ad_rd_i    <= 'h0;
       end
@@ -655,7 +699,7 @@ module user_rw_cmd_gen(/*AUTOARG*/
       end
    end
 
-   wire                            ddr_rd_empty_i;
+   logic                           ddr_rd_empty_i;
    
    assign ddr_rd_empty_i =  (user_ad_wr_i   == user_ad_rd_i);
    
@@ -676,8 +720,11 @@ module user_rw_cmd_gen(/*AUTOARG*/
   //-- write address is larger read address more than the whole QDRII+ space(less one reading), --almost full 
   //-- or read address is larger write address only one reading space.-- overwrite will be occur
 
-   wire [ADDR_WIDTH :0]           wr_sub_rd;
-   wire [ADDR_WIDTH :0]           wr_sub_rd_diff;
+   logic [ADDR_WIDTH :0]          wr_sub_rd;
+   logic [ADDR_WIDTH :0]          wr_sub_rd_diff;
+   logic                          wr_rd_same_signal;
+   logic                          wr_rd_diff_signal;
+   logic                          set_ddr_overrun;
    
    
    //((32 + 680/4 * 64)*2)
@@ -688,9 +735,9 @@ module user_rw_cmd_gen(/*AUTOARG*/
    assign set_ddr_overrun =  wr_rd_diff_signal &
 			    (user_ad_wr_i[ADDR_WIDTH-1:0] == user_ad_rd_i[ADDR_WIDTH-1:0]);
    
-   reg  ddr_overrun;
+   logic ddr_overrun;
       
-   always @(posedge ui_clk ) begin 
+   always_ff @(posedge ui_clk ) begin 
       if (ui_clk_sync_rst) begin
          ddr_overrun   <= 'h0;
       end
@@ -714,9 +761,9 @@ module user_rw_cmd_gen(/*AUTOARG*/
    assign  wr_sub_rd       = {1'h0,user_ad_wr_i[ADDR_WIDTH-1:0]} -  {1'h0,user_ad_rd_i[ADDR_WIDTH-1:0]};
    assign  wr_sub_rd_diff  = {1'h1,user_ad_wr_i[ADDR_WIDTH-1:0]} -  {1'h0,user_ad_rd_i[ADDR_WIDTH-1:0]};
    
-   reg    ddr_warning;
+   logic ddr_warning;
   
-   always @(posedge ui_clk ) begin 
+   always_ff @(posedge ui_clk ) begin 
       if (ui_clk_sync_rst) begin
          ddr_warning  <= 'h0;
       end
@@ -741,11 +788,11 @@ module user_rw_cmd_gen(/*AUTOARG*/
    end
    
 
-  (* ASYNC_REG = "true" *) reg  wr_fifo_overrun_d;
-  (* ASYNC_REG = "true" *) reg  wr_fifo_overrun_dd;
+  (* ASYNC_REG = "true" *) logic  wr_fifo_overrun_d;
+  (* ASYNC_REG = "true" *) logic  wr_fifo_overrun_dd;
    
    
-   always @(posedge ui_clk)  begin
+   always_ff @(posedge ui_clk)  begin
       wr_fifo_overrun_d    <= wr_fifo_overrun;
       wr_fifo_overrun_dd   <= wr_fifo_overrun_d;
    end

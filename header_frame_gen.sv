@@ -1,22 +1,3 @@
-//--------------------------------------------------------------------------------
-// Company: Neusoft Medical Systems
-// Engineer: 
-// 
-// Create Date:     15/1/2019 
-// Design Name:    
-// Module Name:    header_frame_gen 
-// Project Name:   H71
-// Target Devices:  
-// Tool versions: 
-// Description: 
-//
-// Dependencies:     Frame  generation 
-//
-// Revision: 
-// Revision 0.01 - File Created
-// Additional Comments: make
-//
-//--------------------------------------------------------------------------------
 
 `timescale 1ns/1ps
 module header_frame_gen(/*AUTOARG*/

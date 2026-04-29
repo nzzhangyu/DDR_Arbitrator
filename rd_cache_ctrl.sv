@@ -1,23 +1,3 @@
-//--------------------------------------------------------------------------------
-// Company: Neusoft Medical Systems
-// Engineer:  zhang_Dq
-// 
-// Create Date:     12/12/2019 
-// Design Name:    
-// Module Name:     rd_cache_ctrl
-// Project Name:   H71
-// Target Devices: 
-// Tool versions: 
-// Description:  
-//
-// Dependencies: generate aurora frame     
-//
-// Revision: 
-// Revision 0.01 - File Created
-// Additional Comments: make
-//
-//--------------------------------------------------------------------------------
-
 `timescale 1ns/1ps
 module rd_cache_ctrl(/*AUTOARG*/
    // Outputs

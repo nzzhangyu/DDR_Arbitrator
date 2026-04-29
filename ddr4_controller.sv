@@ -1,24 +1,5 @@
-//--------------------------------------------------------------------------------
-// Company: Neusoft Medical Systems
-// Engineer: 
-// 
-// Create Date:     15/1/2021 
-// Design Name:    
-// Module Name:    ddr3_controller 
-// Project Name:   H72
-// Target Devices: 
-// Tool versions: 
-// Description: 
-//
-// Dependencies: ddr3 controller     
-//
-// Revision: 
-// Revision 0.01 - File Created
-// Additional Comments: make
-//
-//--------------------------------------------------------------------------------
 `timescale 1ns/1ps
-`include "h80_define.sv"
+// `include "h80_define.sv"
 module ddr4_controller(/*AUTOARG*/
    // Outputs
    c0_ddr4_act_n, c0_ddr4_adr, c0_ddr4_ba, c0_ddr4_bg, c0_ddr4_cke,
@@ -33,7 +14,8 @@ module ddr4_controller(/*AUTOARG*/
    clk, RESET, c0_sys_clk_p, c0_sys_clk_n, rst_local_t_ddr_clk,
    data_from_ddr_en, data_from_ddr_dd, qdr_rd_req, req_stop,
    rp_back_en, rp_back_view_addr, Fault_inject_en, make_data_on,
-   make_data_p_edge, view_size, cache_fifo_prog_full
+   make_data_p_edge, view_size, cache_fifo_prog_full,
+   cache_fifo_almost_empty, cache_fifo_data_count
    );
    
    //parameter                        ADDR_WIDTH = 25;  //4g ddr
@@ -106,11 +88,16 @@ module ddr4_controller(/*AUTOARG*/
 
    //from  rd_cache of qdriiplus_rd_top
    input                               cache_fifo_prog_full;
+   input                               cache_fifo_almost_empty;
+   input  [13:0]                       cache_fifo_data_count;
    output                              clk_backbone;
 
    
-   wire                              fault_ddr_overrun 	  = Fault_inject_en;
-   wire                              fault_ddr_warning 	  = Fault_inject_en;
+   logic                             fault_ddr_overrun;
+   logic                             fault_ddr_warning;
+
+   assign                            fault_ddr_overrun = Fault_inject_en;
+   assign                            fault_ddr_warning = Fault_inject_en;
    
    
    
@@ -119,26 +106,28 @@ module ddr4_controller(/*AUTOARG*/
    /*AUTOWIRE*/
    
    
-   wire [30:0]                       app_addr;          // From user_app_top_uut of user_app_top.v
-   wire [2:0]                        app_cmd;           // From user_app_top_uut of user_app_top.v
-   wire                              app_en;            // From user_app_top_uut of user_app_top.v
-   wire [127:0]                      app_rd_data;       // From ddr3_mig_uut of ddr3_mig.v
-   wire                              app_rd_data_end;   // From ddr3_mig_uut of ddr3_mig.v
-   wire                              app_rd_data_valid; // From ddr3_mig_uut of ddr3_mig.v
-   wire                              app_rdy;           // From ddr3_mig_uut of ddr3_mig.v
-   wire                              app_ref_ack;       // From ddr3_mig_uut of ddr3_mig.v
-   wire                              app_ref_req;       // From user_app_top_uut of user_app_top.v
-   wire                              app_sr_active;     // From ddr3_mig_uut of ddr3_mig.v
-   wire                              app_sr_req;        // From user_app_top_uut of user_app_top.v
-   wire [127:0]                      app_wdf_data;      // From user_app_top_uut of user_app_top.v
-   wire                              app_wdf_end;       // From user_app_top_uut of user_app_top.v
-   wire                              app_wdf_rdy;       // From ddr3_mig_uut of ddr3_mig.v
-   wire                              app_wdf_wren;      // From user_app_top_uut of user_app_top.v
-   wire                              app_zq_ack;        // From ddr3_mig_uut of ddr3_mig.v
-   wire                              app_zq_req;        // From user_app_top_uut of user_app_top.v
-   wire [127:0]                      qdr_dataout;       // From user_app_top_uut of user_app_top.v
-   wire                              qdr_dataout_en;    // From user_app_top_uut of user_app_top.v
-   wire                              ui_clk_sync_rst;   // From ddr3_mig_uut of ddr3_mig.v
+   logic [30:0]                      app_addr;          // From user_app_top_uut of user_app_top.v
+   logic [2:0]                       app_cmd;           // From user_app_top_uut of user_app_top.v
+   logic                             app_en;            // From user_app_top_uut of user_app_top.v
+   logic [127:0]                     app_rd_data;       // From ddr3_mig_uut of ddr3_mig.v
+   logic                             app_rd_data_end;   // From ddr3_mig_uut of ddr3_mig.v
+   logic                             app_rd_data_valid; // From ddr3_mig_uut of ddr3_mig.v
+   logic                             app_rdy;           // From ddr3_mig_uut of ddr3_mig.v
+   logic                             app_ref_ack;       // From ddr3_mig_uut of ddr3_mig.v
+   logic                             app_ref_req;       // From user_app_top_uut of user_app_top.v
+   logic                             app_sr_active;     // From ddr3_mig_uut of ddr3_mig.v
+   logic                             app_sr_req;        // From user_app_top_uut of user_app_top.v
+   logic [127:0]                     app_wdf_data;      // From user_app_top_uut of user_app_top.v
+   logic                             app_wdf_end;       // From user_app_top_uut of user_app_top.v
+   logic                             app_wdf_rdy;       // From ddr3_mig_uut of ddr3_mig.v
+   logic                             app_wdf_wren;      // From user_app_top_uut of user_app_top.v
+   logic                             app_zq_ack;        // From ddr3_mig_uut of ddr3_mig.v
+   logic                             app_zq_req;        // From user_app_top_uut of user_app_top.v
+   logic [127:0]                     qdr_dataout;       // From user_app_top_uut of user_app_top.v
+   logic                             qdr_dataout_en;    // From user_app_top_uut of user_app_top.v
+   logic                             ui_clk_sync_rst;   // From ddr3_mig_uut of ddr3_mig.v
+   logic                             sys_rst_buf;
+   logic                             sys_rst;
    // End of automatics
 
    //***********************************************************************
@@ -180,8 +169,8 @@ module ddr4_controller(/*AUTOARG*/
    
    
    
-   wire             user_r_valid;  
-   wire [127 :0]    user_r_data ;  
+   logic            user_r_valid;  
+   logic [127 :0]   user_r_data ;  
 
    assign           user_r_valid = qdr_dataout_en;
    assign           user_r_data = qdr_dataout;
@@ -190,14 +179,14 @@ module ddr4_controller(/*AUTOARG*/
 
    assign           sys_rst = RESET;
 
-   wire [30:0] 	    c0_ddr4_app_addr;
+   logic [30:0] 	 c0_ddr4_app_addr;
       
    assign 	    c0_ddr4_app_addr = app_addr;
 
-   wire 	    app_hi_pri;
+   logic 	    app_hi_pri;
    assign 	    app_hi_pri = 'h0;
 
-   wire [15:0] 	    c0_ddr4_app_wdf_mask;
+   logic [15:0] 	 c0_ddr4_app_wdf_mask;
 
    assign 	    c0_ddr4_app_wdf_mask = 'h0;
    
@@ -378,6 +367,8 @@ module ddr4_controller(/*AUTOARG*/
                                  .qdr_rd_req               (qdr_rd_req),
                                  .rst_local_t_ddr_clk      (rst_local_t_ddr_clk),
                                  .cache_fifo_prog_full     (cache_fifo_prog_full),
+                                 .cache_fifo_almost_empty  (cache_fifo_almost_empty),
+                                 .cache_fifo_data_count    (cache_fifo_data_count[13:0]),
 				 .make_data_on             (make_data_on),
 				  /*AUTOINST*/
 				  // Outputs

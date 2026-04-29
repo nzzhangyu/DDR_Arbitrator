@@ -1,23 +1,3 @@
-//--------------------------------------------------------------------------------
-// Company: Neusoft Medical Systems
-// Engineer: 
-// 
-// Create Date:     15/1/2019 
-// Design Name:    
-// Module Name:    reading_header_slice_gen 
-// Project Name:   H71
-// Target Devices: 
-// Tool versions:  
-// Description: 
-//
-// Dependencies: add the header data ,footer and CRC check code    
-//
-// Revision: 
-// Revision 0.01 - File Created
-// Additional Comments: make
-//
-//--------------------------------------------------------------------------------
-
 `timescale 1ns/1ps
 module reading_header_slice_gen(/*AUTOARG*/
    // Outputs
