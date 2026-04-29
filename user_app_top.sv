@@ -83,12 +83,16 @@ module user_app_top #(
    input  logic [ADDR_WIDTH-1:0]     rp_back_view_addr
 );
 
+   // Write FIFO.
+   // Buffer upstream bursty data before the AXI write path consumes it.
    logic [127:0] ddr_wr_fifo_dout;
    logic         ddr_wr_fifo_prog_empty;
    logic         ddr_wr_fifo_full;
    logic         ddr_wr_fifo_rd_en;
    logic [13:0]  ddr_wr_fifo_level;
 
+   // FIFO instance.
+   // Data is drained only when the write path is allowed to issue a burst.
    ddr_wr_fifo ddr_wr_fifo_uut (
       .dout          (ddr_wr_fifo_dout),
       .full          (ddr_wr_fifo_full),
@@ -106,6 +110,8 @@ module user_app_top #(
       .rd_en         (ddr_wr_fifo_rd_en)
    );
 
+   // Command generator.
+   // Convert FIFO and cache status into AXI4 transactions.
    user_rw_cmd_gen #(
       .ADDR_WIDTH     (ADDR_WIDTH),
       .AXI_ADDR_WIDTH (AXI_ADDR_WIDTH),
@@ -177,6 +183,8 @@ module user_app_top #(
       .rp_back_view_addr        (rp_back_view_addr)
    );
 
+   // Overrun monitor.
+   // Flag overflow at the write FIFO boundary before data reaches AXI.
    always_ff @(posedge clk) begin
       if (RESET) begin
          wr_fifo_overrun <= '0;
@@ -192,4 +200,4 @@ module user_app_top #(
       end
    end
 
-endmodule // user_app_top
+endmodule

@@ -82,6 +82,8 @@ module user_rw_cmd_gen #(
    input  logic [ADDR_WIDTH-1:0]     rp_back_view_addr
 );
 
+   // Watermark thresholds.
+   // These levels are tuned around FIFO pressure, not around AXI burst length.
    localparam logic [13:0] WR_LEVEL_LOW      = 14'd2048;
    localparam logic [13:0] WR_LEVEL_HIGH     = 14'd8192;
    localparam logic [13:0] WR_LEVEL_URGENT   = 14'd12288;
@@ -109,6 +111,8 @@ module user_rw_cmd_gen #(
       RW_READ_R
    } rw_state_t;
 
+   // Start pulse sync.
+   // Synchronize the start pulse into ui_clk and extract a clean rising edge.
    (* ASYNC_REG = "true" *) logic make_data_on_rcom_cdc_to_d;
    (* ASYNC_REG = "true" *) logic make_data_on_dd;
    (* ASYNC_REG = "true" *) logic make_data_on_ddd;
@@ -130,7 +134,8 @@ module user_rw_cmd_gen #(
    assign make_data_on_edge          = make_data_on_dd & (~make_data_on_ddd);
    assign make_data_p_edge_ddr_clk   = make_data_on_edge;
 
-   // Delay rp_back_en to let outstanding AXI transaction complete before changing read base.
+   // Replay delay.
+   // Delay replay request so the current AXI transaction can settle first.
    logic [7:0] rp_back_en_dly_cnt;
 
    always_ff @(posedge ui_clk) begin
@@ -163,6 +168,8 @@ module user_rw_cmd_gen #(
       end
    end
 
+   // Pressure state.
+   // Current FIFO/cache pressure state.
    logic wr_level_low;
    logic wr_level_high;
    logic wr_level_urgent;
@@ -186,6 +193,8 @@ module user_rw_cmd_gen #(
    assign rd_cache_can_prefetch = (~cache_fifo_prog_full) &
                                   (cache_fifo_data_count < RD_LEVEL_HIGH);
 
+   // Request gating.
+   // Qualify write and read requests before arbitration.
    logic ddr_wr_req;
    logic ddr_rd_req;
    logic qdr_rd_req_d;
@@ -208,9 +217,10 @@ module user_rw_cmd_gen #(
 
    assign ddr_rd_req = (~ddr_rd_empty) & qdr_rd_req_dd & rd_cache_can_prefetch;
 
+   // Arbitration state.
+   // Track the current grant and remember the last selected direction.
    rw_state_t rw_state;
    rw_state_t rw_next_state;
-
    logic remember_write_grant;
    logic remember_read_grant;
    logic clear_last_grant;
@@ -250,6 +260,8 @@ module user_rw_cmd_gen #(
       end
    end
 
+   // Burst tracking.
+   // Calculate burst length and track transaction progress.
    logic [8:0] write_burst_len;
    logic [8:0] read_burst_len;
    logic [8:0] write_beat_cnt;
@@ -394,6 +406,8 @@ module user_rw_cmd_gen #(
       end
    end
 
+   // Helper functions.
+   // Keep burst and address helpers close to their use sites.
    function automatic logic [8:0] clamp_count_256(input logic [13:0] level);
       if (level >= 14'd256) begin
          clamp_count_256 = 9'd256;
@@ -439,6 +453,8 @@ module user_rw_cmd_gen #(
       beat_to_axi_addr = ({ {(AXI_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 4);
    endfunction
 
+   // Address counters.
+   // Track write and read beat addresses in internal beat units.
    logic [ADDR_WIDTH:0] user_ad_wr_i;
    logic [ADDR_WIDTH:0] user_ad_rd_i;
    logic [ADDR_WIDTH-1:0] user_ad_wr;
@@ -450,11 +466,8 @@ module user_rw_cmd_gen #(
    assign ddr_rd_empty = (user_ad_wr_i == user_ad_rd_i);
    assign ddr_read_available_count = user_ad_wr_i - user_ad_rd_i;
 
-   // logic [15:0] wr_data_cnt;
-   // logic [16:0] wr_view_num;
-   // logic [15:0] rd_data_cnt;
-   // logic        wr_data_cnt_lim;
-   // logic        rd_data_cnt_lim;
+   // Legacy per-view counters.
+   // These counters are kept as comments to preserve the old view concept.
    logic        write_data_fire;
    logic        read_data_fire;
 
@@ -625,12 +638,7 @@ module user_rw_cmd_gen #(
       end
    end
 
-   // (* ASYNC_REG = "true" *) logic wr_fifo_overrun_d;
-   // (* ASYNC_REG = "true" *) logic wr_fifo_overrun_dd;
-   //
-   // always_ff @(posedge ui_clk) begin
-   //    wr_fifo_overrun_d  <= wr_fifo_overrun;
-   //    wr_fifo_overrun_dd <= wr_fifo_overrun_d;
-   // end
+   // Legacy synchronizer.
+   // The old overrun synchronizer is kept as comment only for reference.
 
-endmodule // user_rw_cmd_gen
+endmodule
