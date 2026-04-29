@@ -101,14 +101,14 @@ module user_rw_cmd_gen #(
    localparam logic [1:0]  AXI_BURST_INCR    = 2'b01;
 
    typedef enum logic [3:0] {
-      RW_IDLE,
-      RW_ARB_PRE,
-      RW_ARB,
-      RW_WRITE_AW,
-      RW_WRITE_W,
-      RW_WRITE_B,
-      RW_READ_AR,
-      RW_READ_R
+      RW_IDLE,      // Wait for calibration and replay/backtracking blocks to clear.
+      RW_ARB_PRE,   // Fast arbitration entry for urgent or single-sided requests.
+      RW_ARB,       // Full arbitration when read and write requests are both active.
+      RW_WRITE_AW,  // Issue the AXI write address for the selected burst.
+      RW_WRITE_W,   // Stream write data beats until the burst is complete.
+      RW_WRITE_B,   // Wait for the AXI write response before re-arbitrating.
+      RW_READ_AR,   // Issue the AXI read address for the selected burst.
+      RW_READ_R     // Accept read data beats until the AXI burst ends.
    } rw_state_t;
 
    // Start pulse sync.
@@ -272,10 +272,17 @@ module user_rw_cmd_gen #(
    logic       block_for_replay;
    logic       rd_cache_has_grant_space;
 
+   // Shorten read grants when write FIFO pressure is high so writes get back in sooner.
    assign rd_grant_limit = wr_level_high ? RD_GRANT_WR_HIGH : RD_GRANT_MAX;
    assign rd_cache_has_grant_space = rd_cache_free_count >= {6'd0, rd_grant_limit};
+   // Hold new arbitration while the read pointer is being rewound for replay.
    assign block_for_replay = rp_back_en || (|rp_back_en_dly_cnt);
 
+   // Arbitration policy:
+   // - urgent write protects the upstream FIFO from overflow;
+   // - low/urgent read refills the downstream cache when write is not urgent;
+   // - normal read/write contention uses last-grant memory to avoid one-sided service;
+   // - AXI bursts are not interrupted, so preemption happens only at burst boundaries.
    always_comb begin
       rw_next_state        = rw_state;
       remember_write_grant = 1'b0;
@@ -295,30 +302,37 @@ module user_rw_cmd_gen #(
             end
 
             RW_ARB_PRE: begin
+               // Replay/backtracking has priority over issuing a fresh AXI command.
                if (block_for_replay) begin
                   rw_next_state    = RW_IDLE;
                   clear_last_grant = 1'b1;
                end
+               // Protect the write FIFO first when it reaches the urgent level.
                else if (wr_level_urgent && ddr_wr_req) begin
                   rw_next_state    = RW_WRITE_AW;
                   clear_last_grant = 1'b1;
                end
+               // Refill the read cache if it is urgent and write pressure is not urgent.
                else if (rd_level_urgent && ddr_rd_req &&
                         rd_cache_has_grant_space && (~wr_level_urgent)) begin
                   rw_next_state    = RW_READ_AR;
                   clear_last_grant = 1'b1;
                end
+               // Prefer draining a ready write burst before entering full arbitration.
                else if (wr_fifo_has_burst) begin
                   rw_next_state    = RW_WRITE_AW;
                   clear_last_grant = 1'b1;
                end
+               // Both sides request service; use the remembered last grant below.
                else if (ddr_rd_req && ddr_wr_req) begin
                   rw_next_state    = RW_ARB;
                end
+               // Single-sided read request.
                else if (ddr_rd_req && rd_cache_has_grant_space && (~wr_level_urgent)) begin
                   rw_next_state    = RW_READ_AR;
                   clear_last_grant = 1'b1;
                end
+               // Single-sided write request.
                else if (ddr_wr_req) begin
                   rw_next_state    = RW_WRITE_AW;
                   clear_last_grant = 1'b1;
@@ -326,32 +340,39 @@ module user_rw_cmd_gen #(
             end
 
             RW_ARB: begin
+               // Urgent write overrides normal fairness.
                if (wr_level_urgent && ddr_wr_req) begin
                   rw_next_state        = RW_WRITE_AW;
                   remember_write_grant = 1'b1;
                end
+               // Low or urgent cache level can pull service toward reads.
                else if ((rd_level_low || rd_level_urgent) && ddr_rd_req &&
                         rd_cache_has_grant_space && (~wr_level_urgent)) begin
                   rw_next_state       = RW_READ_AR;
                   remember_read_grant = 1'b1;
                end
+               // High write pressure wins if the previous grant was not already a write.
                else if (wr_level_high && ddr_wr_req && (~last_grant_was_write)) begin
                   rw_next_state        = RW_WRITE_AW;
                   remember_write_grant = 1'b1;
                end
+               // Normal fairness path for write service.
                else if (ddr_wr_req && (~last_grant_was_write)) begin
                   rw_next_state        = RW_WRITE_AW;
                   remember_write_grant = 1'b1;
                end
+               // Normal fairness path for read service.
                else if (ddr_rd_req && rd_cache_has_grant_space &&
                         (~last_grant_was_read) && (~wr_level_urgent)) begin
                   rw_next_state       = RW_READ_AR;
                   remember_read_grant = 1'b1;
                end
+               // Fallback write grant when fairness did not select a side.
                else if (ddr_wr_req) begin
                   rw_next_state        = RW_WRITE_AW;
                   remember_write_grant = 1'b1;
                end
+               // Fallback read grant if writes are not urgent and cache space is available.
                else if (ddr_rd_req && rd_cache_has_grant_space && (~wr_level_urgent)) begin
                   rw_next_state       = RW_READ_AR;
                   remember_read_grant = 1'b1;
@@ -367,18 +388,21 @@ module user_rw_cmd_gen #(
                if (write_burst_len == 0) begin
                   rw_next_state = RW_ARB_PRE;
                end
+               // Address handshake locks in the write burst; data follows in W state.
                else if (m_axi_awvalid && m_axi_awready) begin
                   rw_next_state = RW_WRITE_W;
                end
             end
 
             RW_WRITE_W: begin
+               // Complete the full write burst before checking for read preemption.
                if (write_burst_done) begin
                   rw_next_state = RW_WRITE_B;
                end
             end
 
             RW_WRITE_B: begin
+               // AXI write response closes the transaction and returns to arbitration.
                if (m_axi_bvalid) begin
                   rw_next_state = RW_ARB_PRE;
                end
@@ -388,12 +412,14 @@ module user_rw_cmd_gen #(
                if ((read_burst_len == 0) || (~rd_cache_has_grant_space)) begin
                   rw_next_state = RW_ARB_PRE;
                end
+               // Address handshake locks in the read burst; data follows in R state.
                else if (m_axi_arvalid && m_axi_arready) begin
                   rw_next_state = RW_READ_R;
                end
             end
 
             RW_READ_R: begin
+               // RLAST marks the burst boundary where the next arbitration can happen.
                if (read_burst_done) begin
                   rw_next_state = RW_ARB_PRE;
                end
@@ -450,11 +476,12 @@ module user_rw_cmd_gen #(
    function automatic logic [AXI_ADDR_WIDTH-1:0] beat_to_axi_addr(
       input logic [ADDR_WIDTH-1:0] beat_addr
    );
+      // Internal addresses count 128-bit beats; AXI addresses count bytes.
       beat_to_axi_addr = ({ {(AXI_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 4);
    endfunction
 
    // Address counters.
-   // Track write and read beat addresses in internal beat units.
+   // Track write and read addresses in 128-bit beat units, not byte units.
    logic [ADDR_WIDTH:0] user_ad_wr_i;
    logic [ADDR_WIDTH:0] user_ad_rd_i;
    logic [ADDR_WIDTH-1:0] user_ad_wr;
@@ -487,6 +514,7 @@ module user_rw_cmd_gen #(
       if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
          user_ad_rd_i <= '0;
       end
+      // Replay rewinds the read pointer to the requested view address.
       else if (rp_back_en) begin
          user_ad_rd_i <= {1'b0, rp_back_view_addr};
       end
@@ -500,6 +528,7 @@ module user_rw_cmd_gen #(
          write_burst_len <= '0;
       end
       else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
+         // Write bursts are based on FIFO level and clamped to the AXI maximum of 256 beats.
          write_burst_len <= (ddr_wr_fifo_level == 0 && ~ddr_wr_fifo_empty) ?
                             9'd1 : clamp_count_256(ddr_wr_fifo_level);
       end
@@ -510,6 +539,7 @@ module user_rw_cmd_gen #(
          read_burst_len <= '0;
       end
       else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
+         // Read bursts are limited by grant policy, DDR data available, and cache free space.
          read_burst_len <= min3_beat_count(
             rd_grant_limit,
             clamp_available_count(ddr_read_available_count),
