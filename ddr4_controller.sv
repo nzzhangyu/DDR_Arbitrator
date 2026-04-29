@@ -1,394 +1,314 @@
 `timescale 1ns/1ps
 // `include "h80_define.sv"
-module ddr4_controller(/*AUTOARG*/
-   // Outputs
-   c0_ddr4_act_n, c0_ddr4_adr, c0_ddr4_ba, c0_ddr4_bg, c0_ddr4_cke,
-   c0_ddr4_odt, c0_ddr4_cs_n, c0_ddr4_ck_t, c0_ddr4_ck_c,
-   c0_ddr4_reset_n, dbg_clk, ui_clk, ui_clk_sync_rst,
-   init_calib_complete, user_r_valid, user_r_data, ddr_overrun,
-   ddr_warning, wr_fifo_overrun, ddr_wr_fifo_empty, ddr_rd_empty,
-   make_data_p_edge_ddr_clk, clk_backbone,
-   // Inouts
-   c0_ddr4_dm_dbi_n, c0_ddr4_dq, c0_ddr4_dqs_c, c0_ddr4_dqs_t,
-   // Inputs
-   clk, RESET, c0_sys_clk_p, c0_sys_clk_n, rst_local_t_ddr_clk,
-   data_from_ddr_en, data_from_ddr_dd, qdr_rd_req, req_stop,
-   rp_back_en, rp_back_view_addr, Fault_inject_en, make_data_on,
-   make_data_p_edge, view_size, cache_fifo_prog_full,
-   cache_fifo_almost_empty, cache_fifo_data_count
+
+module ddr4_controller #(
+   parameter int ADDR_WIDTH     = 28,
+   parameter int AXI_ADDR_WIDTH = ADDR_WIDTH + 4,
+   parameter int AXI_ID_WIDTH   = 1
+) (
+   output logic                  c0_ddr4_act_n,
+   output logic [16:0]           c0_ddr4_adr,
+   output logic [1:0]            c0_ddr4_ba,
+   output logic [1:0]            c0_ddr4_bg,
+   output logic [0:0]            c0_ddr4_cke,
+   output logic [0:0]            c0_ddr4_odt,
+   output logic [0:0]            c0_ddr4_cs_n,
+   output logic [0:0]            c0_ddr4_ck_t,
+   output logic [0:0]            c0_ddr4_ck_c,
+   output logic                  c0_ddr4_reset_n,
+   inout  wire  [1:0]            c0_ddr4_dm_dbi_n,
+   inout  wire  [15:0]           c0_ddr4_dq,
+   inout  wire  [1:0]            c0_ddr4_dqs_c,
+   inout  wire  [1:0]            c0_ddr4_dqs_t,
+
+   output logic                  dbg_clk,
+   output logic                  ui_clk,
+   output logic                  ui_clk_sync_rst,
+   output logic                  init_calib_complete,
+   output logic                  user_r_valid,
+   output logic [127:0]          user_r_data,
+   output logic                  ddr_overrun,
+   output logic                  ddr_warning,
+   output logic                  wr_fifo_overrun,
+   output logic                  ddr_wr_fifo_empty,
+   output logic                  ddr_rd_empty,
+   output logic                  make_data_p_edge_ddr_clk,
+   output logic                  clk_backbone,
+
+   input  logic                  clk,
+   input  logic                  RESET,
+   input  logic                  c0_sys_clk_p,
+   input  logic                  c0_sys_clk_n,
+   input  logic                  rst_local_t_ddr_clk,
+   input  logic                  data_from_ddr_en,
+   input  logic [127:0]          data_from_ddr_dd,
+   input  logic                  qdr_rd_req,
+   input  logic                  req_stop,
+   input  logic                  rp_back_en,
+   input  logic [ADDR_WIDTH-1:0] rp_back_view_addr,
+   input  logic                  Fault_inject_en,
+   input  logic                  make_data_on,
+   input  logic                  make_data_p_edge,
+   input  logic [15:0]           view_size,
+   input  logic                  cache_fifo_prog_full,
+   input  logic                  cache_fifo_almost_empty,
+   input  logic [13:0]           cache_fifo_data_count
+);
+
+   logic fault_ddr_overrun;
+   logic fault_ddr_warning;
+
+   assign fault_ddr_overrun = Fault_inject_en;
+   assign fault_ddr_warning = Fault_inject_en;
+   assign clk_backbone      = '0;
+
+   logic [127:0] qdr_dataout;
+   logic         qdr_dataout_en;
+
+   assign user_r_valid = qdr_dataout_en;
+   assign user_r_data  = qdr_dataout;
+
+   logic sys_rst;
+   assign sys_rst = RESET;
+
+   logic [AXI_ID_WIDTH-1:0]   axi_awid;
+   logic [AXI_ADDR_WIDTH-1:0] axi_awaddr;
+   logic [7:0]                axi_awlen;
+   logic [2:0]                axi_awsize;
+   logic [1:0]                axi_awburst;
+   logic                      axi_awlock;
+   logic [3:0]                axi_awcache;
+   logic [2:0]                axi_awprot;
+   logic [3:0]                axi_awqos;
+   logic                      axi_awvalid;
+   logic                      axi_awready;
+   logic [127:0]              axi_wdata;
+   logic [15:0]               axi_wstrb;
+   logic                      axi_wlast;
+   logic                      axi_wvalid;
+   logic                      axi_wready;
+   logic [AXI_ID_WIDTH-1:0]   axi_bid;
+   logic [1:0]                axi_bresp;
+   logic                      axi_bvalid;
+   logic                      axi_bready;
+   logic [AXI_ID_WIDTH-1:0]   axi_arid;
+   logic [AXI_ADDR_WIDTH-1:0] axi_araddr;
+   logic [7:0]                axi_arlen;
+   logic [2:0]                axi_arsize;
+   logic [1:0]                axi_arburst;
+   logic                      axi_arlock;
+   logic [3:0]                axi_arcache;
+   logic [2:0]                axi_arprot;
+   logic [3:0]                axi_arqos;
+   logic                      axi_arvalid;
+   logic                      axi_arready;
+   logic [AXI_ID_WIDTH-1:0]   axi_rid;
+   logic [127:0]              axi_rdata;
+   logic [1:0]                axi_rresp;
+   logic                      axi_rlast;
+   logic                      axi_rvalid;
+   logic                      axi_rready;
+
+`ifdef TX_DATA_WIDTH_32
+   ddr4_0 ddr4_mig_uut (
+      .c0_init_calib_complete  (init_calib_complete),
+      .c0_ddr4_ui_clk          (ui_clk),
+      .c0_ddr4_ui_clk_sync_rst (ui_clk_sync_rst),
+      .dbg_bus                 (),
+      .dbg_clk                 (dbg_clk),
+
+      .c0_ddr4_adr             (c0_ddr4_adr),
+      .c0_ddr4_act_n           (c0_ddr4_act_n),
+      .c0_ddr4_ba              (c0_ddr4_ba),
+      .c0_ddr4_bg              (c0_ddr4_bg),
+      .c0_ddr4_cke             (c0_ddr4_cke),
+      .c0_ddr4_odt             (c0_ddr4_odt),
+      .c0_ddr4_cs_n            (c0_ddr4_cs_n),
+      .c0_ddr4_ck_t            (c0_ddr4_ck_t),
+      .c0_ddr4_ck_c            (c0_ddr4_ck_c),
+      .c0_ddr4_reset_n         (c0_ddr4_reset_n),
+      .c0_ddr4_dm_dbi_n        (c0_ddr4_dm_dbi_n),
+      .c0_ddr4_dq              (c0_ddr4_dq),
+      .c0_ddr4_dqs_c           (c0_ddr4_dqs_c),
+      .c0_ddr4_dqs_t           (c0_ddr4_dqs_t),
+      .sys_rst                 (sys_rst),
+      .c0_sys_clk_p            (c0_sys_clk_p),
+      .c0_sys_clk_n            (c0_sys_clk_n),
+
+      .c0_ddr4_s_axi_awid      (axi_awid),
+      .c0_ddr4_s_axi_awaddr    (axi_awaddr),
+      .c0_ddr4_s_axi_awlen     (axi_awlen),
+      .c0_ddr4_s_axi_awsize    (axi_awsize),
+      .c0_ddr4_s_axi_awburst   (axi_awburst),
+      .c0_ddr4_s_axi_awlock    (axi_awlock),
+      .c0_ddr4_s_axi_awcache   (axi_awcache),
+      .c0_ddr4_s_axi_awprot    (axi_awprot),
+      .c0_ddr4_s_axi_awqos     (axi_awqos),
+      .c0_ddr4_s_axi_awvalid   (axi_awvalid),
+      .c0_ddr4_s_axi_awready   (axi_awready),
+      .c0_ddr4_s_axi_wdata     (axi_wdata),
+      .c0_ddr4_s_axi_wstrb     (axi_wstrb),
+      .c0_ddr4_s_axi_wlast     (axi_wlast),
+      .c0_ddr4_s_axi_wvalid    (axi_wvalid),
+      .c0_ddr4_s_axi_wready    (axi_wready),
+      .c0_ddr4_s_axi_bid       (axi_bid),
+      .c0_ddr4_s_axi_bresp     (axi_bresp),
+      .c0_ddr4_s_axi_bvalid    (axi_bvalid),
+      .c0_ddr4_s_axi_bready    (axi_bready),
+      .c0_ddr4_s_axi_arid      (axi_arid),
+      .c0_ddr4_s_axi_araddr    (axi_araddr),
+      .c0_ddr4_s_axi_arlen     (axi_arlen),
+      .c0_ddr4_s_axi_arsize    (axi_arsize),
+      .c0_ddr4_s_axi_arburst   (axi_arburst),
+      .c0_ddr4_s_axi_arlock    (axi_arlock),
+      .c0_ddr4_s_axi_arcache   (axi_arcache),
+      .c0_ddr4_s_axi_arprot    (axi_arprot),
+      .c0_ddr4_s_axi_arqos     (axi_arqos),
+      .c0_ddr4_s_axi_arvalid   (axi_arvalid),
+      .c0_ddr4_s_axi_arready   (axi_arready),
+      .c0_ddr4_s_axi_rid       (axi_rid),
+      .c0_ddr4_s_axi_rdata     (axi_rdata),
+      .c0_ddr4_s_axi_rresp     (axi_rresp),
+      .c0_ddr4_s_axi_rlast     (axi_rlast),
+      .c0_ddr4_s_axi_rvalid    (axi_rvalid),
+      .c0_ddr4_s_axi_rready    (axi_rready)
    );
-   
-   //parameter                        ADDR_WIDTH = 25;  //4g ddr
-   //parameter                          ADDR_WIDTH = 24;  //2g ddr 
-   parameter                          ADDR_WIDTH = 28;  //32g ddr 
-    
-   //input            sys_rst;
-   input                       clk;
-   input                       RESET;
-  
-   input 			           c0_sys_clk_p;
-   input 			           c0_sys_clk_n;
-   
-   output 			      c0_ddr4_act_n;
-   output [16:0] 		      c0_ddr4_adr;
-   output [1:0] 		      c0_ddr4_ba;
-   output [1:0] 		      c0_ddr4_bg;
-   output [0:0] 		      c0_ddr4_cke;
-   output [0:0] 		      c0_ddr4_odt;
-   output [0:0] 		      c0_ddr4_cs_n;
-   output [0:0] 		      c0_ddr4_ck_t;
-   output [0:0] 		      c0_ddr4_ck_c;
-   output 			      c0_ddr4_reset_n;
-   inout  [1:0] 			 c0_ddr4_dm_dbi_n;
-   inout  [15:0] 		      c0_ddr4_dq;
-   inout  [1:0] 			 c0_ddr4_dqs_c;
-   inout  [1:0] 			 c0_ddr4_dqs_t;
-   
-   //output 			      c0_init_calib_complete;
-   output 			      dbg_clk;
-   output 			      ui_clk;
-   output 			      ui_clk_sync_rst;
-   
-   
-   // user interface signals
-   output                              init_calib_complete;
-   //output                              ui_clk_sync_rst;
-   //output                              sys_rst_buf;
-      
-   input                               rst_local_t_ddr_clk;    // : in  std_logic;
-   
-    
-   input                               data_from_ddr_en;
-   input  [127:0]                      data_from_ddr_dd;
-   
-   
-   input                               qdr_rd_req ;      //: in  std_logic;
-   input			                   req_stop;
-   
-   input 			                   rp_back_en;        //  to user_rw_cmd_gen.v 
-   input  [ADDR_WIDTH-1:0] 	         rp_back_view_addr;
+`else
+   ddr4_1200m ddr4_mig_uut (
+      .c0_init_calib_complete  (init_calib_complete),
+      .c0_ddr4_ui_clk          (ui_clk),
+      .c0_ddr4_ui_clk_sync_rst (ui_clk_sync_rst),
+      .dbg_bus                 (),
+      .dbg_clk                 (dbg_clk),
 
-   
-   output                              user_r_valid;     //: out std_logic;
-   output [127 :0]                     user_r_data ;     //: out std_logic_vector(BURST_LEN*DATA_WIDTH-1 downto 0);
-   
-   output                              ddr_overrun;
-   output                              ddr_warning;
-   
-   output                              wr_fifo_overrun;
-   output 			              ddr_wr_fifo_empty;
-   input                               Fault_inject_en;
-   input                               make_data_on;
-   input 			                   make_data_p_edge;
-   input  [15:0] 		              view_size;
-   output 			              ddr_rd_empty;
-   output 			              make_data_p_edge_ddr_clk;
-   
-   
+      .c0_ddr4_adr             (c0_ddr4_adr),
+      .c0_ddr4_act_n           (c0_ddr4_act_n),
+      .c0_ddr4_ba              (c0_ddr4_ba),
+      .c0_ddr4_bg              (c0_ddr4_bg),
+      .c0_ddr4_cke             (c0_ddr4_cke),
+      .c0_ddr4_odt             (c0_ddr4_odt),
+      .c0_ddr4_cs_n            (c0_ddr4_cs_n),
+      .c0_ddr4_ck_t            (c0_ddr4_ck_t),
+      .c0_ddr4_ck_c            (c0_ddr4_ck_c),
+      .c0_ddr4_reset_n         (c0_ddr4_reset_n),
+      .c0_ddr4_dm_dbi_n        (c0_ddr4_dm_dbi_n),
+      .c0_ddr4_dq              (c0_ddr4_dq),
+      .c0_ddr4_dqs_c           (c0_ddr4_dqs_c),
+      .c0_ddr4_dqs_t           (c0_ddr4_dqs_t),
+      .sys_rst                 (sys_rst),
+      .c0_sys_clk_p            (c0_sys_clk_p),
+      .c0_sys_clk_n            (c0_sys_clk_n),
 
-   //from  rd_cache of qdriiplus_rd_top
-   input                               cache_fifo_prog_full;
-   input                               cache_fifo_almost_empty;
-   input  [13:0]                       cache_fifo_data_count;
-   output                              clk_backbone;
+      .c0_ddr4_s_axi_awid      (axi_awid),
+      .c0_ddr4_s_axi_awaddr    (axi_awaddr),
+      .c0_ddr4_s_axi_awlen     (axi_awlen),
+      .c0_ddr4_s_axi_awsize    (axi_awsize),
+      .c0_ddr4_s_axi_awburst   (axi_awburst),
+      .c0_ddr4_s_axi_awlock    (axi_awlock),
+      .c0_ddr4_s_axi_awcache   (axi_awcache),
+      .c0_ddr4_s_axi_awprot    (axi_awprot),
+      .c0_ddr4_s_axi_awqos     (axi_awqos),
+      .c0_ddr4_s_axi_awvalid   (axi_awvalid),
+      .c0_ddr4_s_axi_awready   (axi_awready),
+      .c0_ddr4_s_axi_wdata     (axi_wdata),
+      .c0_ddr4_s_axi_wstrb     (axi_wstrb),
+      .c0_ddr4_s_axi_wlast     (axi_wlast),
+      .c0_ddr4_s_axi_wvalid    (axi_wvalid),
+      .c0_ddr4_s_axi_wready    (axi_wready),
+      .c0_ddr4_s_axi_bid       (axi_bid),
+      .c0_ddr4_s_axi_bresp     (axi_bresp),
+      .c0_ddr4_s_axi_bvalid    (axi_bvalid),
+      .c0_ddr4_s_axi_bready    (axi_bready),
+      .c0_ddr4_s_axi_arid      (axi_arid),
+      .c0_ddr4_s_axi_araddr    (axi_araddr),
+      .c0_ddr4_s_axi_arlen     (axi_arlen),
+      .c0_ddr4_s_axi_arsize    (axi_arsize),
+      .c0_ddr4_s_axi_arburst   (axi_arburst),
+      .c0_ddr4_s_axi_arlock    (axi_arlock),
+      .c0_ddr4_s_axi_arcache   (axi_arcache),
+      .c0_ddr4_s_axi_arprot    (axi_arprot),
+      .c0_ddr4_s_axi_arqos     (axi_arqos),
+      .c0_ddr4_s_axi_arvalid   (axi_arvalid),
+      .c0_ddr4_s_axi_arready   (axi_arready),
+      .c0_ddr4_s_axi_rid       (axi_rid),
+      .c0_ddr4_s_axi_rdata     (axi_rdata),
+      .c0_ddr4_s_axi_rresp     (axi_rresp),
+      .c0_ddr4_s_axi_rlast     (axi_rlast),
+      .c0_ddr4_s_axi_rvalid    (axi_rvalid),
+      .c0_ddr4_s_axi_rready    (axi_rready)
+   );
+`endif
 
-   
-   logic                             fault_ddr_overrun;
-   logic                             fault_ddr_warning;
-
-   assign                            fault_ddr_overrun = Fault_inject_en;
-   assign                            fault_ddr_warning = Fault_inject_en;
-   
-   
-   
-   /*AUTOREGINPUT*/
-   
-   /*AUTOWIRE*/
-   
-   
-   logic [30:0]                      app_addr;          // From user_app_top_uut of user_app_top.v
-   logic [2:0]                       app_cmd;           // From user_app_top_uut of user_app_top.v
-   logic                             app_en;            // From user_app_top_uut of user_app_top.v
-   logic [127:0]                     app_rd_data;       // From ddr3_mig_uut of ddr3_mig.v
-   logic                             app_rd_data_end;   // From ddr3_mig_uut of ddr3_mig.v
-   logic                             app_rd_data_valid; // From ddr3_mig_uut of ddr3_mig.v
-   logic                             app_rdy;           // From ddr3_mig_uut of ddr3_mig.v
-   logic                             app_ref_ack;       // From ddr3_mig_uut of ddr3_mig.v
-   logic                             app_ref_req;       // From user_app_top_uut of user_app_top.v
-   logic                             app_sr_active;     // From ddr3_mig_uut of ddr3_mig.v
-   logic                             app_sr_req;        // From user_app_top_uut of user_app_top.v
-   logic [127:0]                     app_wdf_data;      // From user_app_top_uut of user_app_top.v
-   logic                             app_wdf_end;       // From user_app_top_uut of user_app_top.v
-   logic                             app_wdf_rdy;       // From ddr3_mig_uut of ddr3_mig.v
-   logic                             app_wdf_wren;      // From user_app_top_uut of user_app_top.v
-   logic                             app_zq_ack;        // From ddr3_mig_uut of ddr3_mig.v
-   logic                             app_zq_req;        // From user_app_top_uut of user_app_top.v
-   logic [127:0]                     qdr_dataout;       // From user_app_top_uut of user_app_top.v
-   logic                             qdr_dataout_en;    // From user_app_top_uut of user_app_top.v
-   logic                             ui_clk_sync_rst;   // From ddr3_mig_uut of ddr3_mig.v
-   logic                             sys_rst_buf;
-   logic                             sys_rst;
-   // End of automatics
-
-   //***********************************************************************
-   // Differential input clock input buffers
-   //***********************************************************************
-  
-   /*
-   parameter        DIFF_TERM_REFCLK = "TRUE";
-   wire           clk_ref_i;
-   
-   IBUFGDS #
-     (
-      .DIFF_TERM    (DIFF_TERM_REFCLK),
-      .IBUF_LOW_PWR ("FALSE")
-      )
-     u_ibufg_ref_clk
-       (
-        .I  (clk_ref_p),
-        .IB (clk_ref_n),
-        .O  (ref_clk_ibufg)
-        );
-   
-   //assign         clk_ref_i = ref_clk_ibufg;
-   BUFG clk_ref_bufg
-        (
-         .O (clk_ref_i),
-         .I (ref_clk_ibufg)
-         );
-   
-   
-    BUFG clk_backbone_bufg
-        (
-         .O (clk_backbone),
-         .I (ref_clk_ibufg)
-         );
-   */
-
-   assign           clk_backbone = 'h0;
-   
-   
-   
-   logic            user_r_valid;  
-   logic [127 :0]   user_r_data ;  
-
-   assign           user_r_valid = qdr_dataout_en;
-   assign           user_r_data = qdr_dataout;
-   
-   assign           sys_rst_buf = ui_clk_sync_rst;
-
-   assign           sys_rst = RESET;
-
-   logic [30:0] 	 c0_ddr4_app_addr;
-      
-   assign 	    c0_ddr4_app_addr = app_addr;
-
-   logic 	    app_hi_pri;
-   assign 	    app_hi_pri = 'h0;
-
-   logic [15:0] 	 c0_ddr4_app_wdf_mask;
-
-   assign 	    c0_ddr4_app_wdf_mask = 'h0;
-   
-   
-   /*
-   ddr3_mig         ddr3_mig_uut (
-                                 // Outputs
-                                 .c0_ddr3_addr                (c0_ddr3_addr[13:0]),
-                                 .c0_ddr3_ba                  (c0_ddr3_ba[2:0]),
-                                 .c0_ddr3_ras_n               (c0_ddr3_ras_n),
-                                 .c0_ddr3_cas_n               (c0_ddr3_cas_n),
-                                 .c0_ddr3_we_n                (c0_ddr3_we_n),
-                                 .c0_ddr3_reset_n             (c0_ddr3_reset_n),
-                                 .c0_ddr3_ck_p                (c0_ddr3_ck_p[0:0]),
-                                 .c0_ddr3_ck_n                (c0_ddr3_ck_n[0:0]),
-                                 .c0_ddr3_cke                 (c0_ddr3_cke[0:0]),
-                                 .c0_ddr3_cs_n                (c0_ddr3_cs_n[0:0]),
-                                 //.c0_ddr3_dm                  (c0_ddr3_dm[1:0]),
-                                 .c0_ddr3_odt                 (c0_ddr3_odt[0:0]),
-                                 .c0_ddr3_app_rd_data         (app_rd_data[127:0]), //
-                                 .c0_ddr3_app_rd_data_end     (app_rd_data_end),    //
-                                 .c0_ddr3_app_rd_data_valid   (app_rd_data_valid),  //
-                                 .c0_ddr3_app_rdy             (app_rdy),            //
-                                 .c0_ddr3_app_wdf_rdy         (app_wdf_rdy),        //
-				 .c0_ddr3_ui_clk              (ui_clk),
-                                 .c0_ddr3_ui_clk_sync_rst     (ui_clk_sync_rst),
-                                 .c0_init_calib_complete      (init_calib_complete),
-				 .dbg_bus                     (),
-                                 // Inouts
-                                 .c0_ddr3_dq                  (c0_ddr3_dq[15:0]),
-                                 .c0_ddr3_dqs_n               (c0_ddr3_dqs_n[1:0]),
-                                 .c0_ddr3_dqs_p               (c0_ddr3_dqs_p[1:0]),
-                                 // Inputs             
-                                 .c0_sys_clk_p                   (sys_clk_p),
-                                 .c0_sys_clk_n                   (sys_clk_n),
-                                 //.clk_ref_i                (clk_ref_i),
-                                 .c0_ddr3_app_addr            (c0_ddr3_app_addr[26:0]),     //
-                                 .c0_ddr3_app_cmd             (app_cmd[2:0]),       //
-                                 .c0_ddr3_app_en              (app_en),             //
-				 .c0_ddr3_app_hi_pri          (c0_ddr3_app_hi_pri), //new
-                                 .c0_ddr3_app_wdf_data        (app_wdf_data[127:0]),//
-                                 .c0_ddr3_app_wdf_end         (app_wdf_end),        //
-                                 //.c0_ddr3_app_wdf_mask        (app_wdf_mask[15:0]), //
-                                 .c0_ddr3_app_wdf_wren        (app_wdf_wren),       //
-                                 .sys_rst                     (sys_rst));
-    */
-
-   `ifdef TX_DATA_WIDTH_32
-   
-   ddr4_0            ddr4_mig_uut (
-				  
-				  .c0_init_calib_complete   (init_calib_complete),
-				  .c0_ddr4_ui_clk           (ui_clk),
-				  .c0_ddr4_ui_clk_sync_rst  (ui_clk_sync_rst),
-				  .dbg_bus                  (  ), 
-				   ///*AUTOINST*/
-				  // Outputs
-				  .c0_ddr4_adr		(c0_ddr4_adr[16:0]),
-				  .c0_ddr4_act_n	(c0_ddr4_act_n),
-				  .c0_ddr4_ba		(c0_ddr4_ba[1:0]),
-				  .c0_ddr4_bg		(c0_ddr4_bg[1:0]),
-				  .c0_ddr4_cke		(c0_ddr4_cke[0:0]),
-				  .c0_ddr4_odt		(c0_ddr4_odt[0:0]),
-				  .c0_ddr4_cs_n		(c0_ddr4_cs_n[0:0]),
-				  .c0_ddr4_ck_t		(c0_ddr4_ck_t[0:0]),
-				  .c0_ddr4_ck_c		(c0_ddr4_ck_c[0:0]),
-				  .c0_ddr4_reset_n	(c0_ddr4_reset_n),
-				  // Inouts
-				  .c0_ddr4_dm_dbi_n	(c0_ddr4_dm_dbi_n[1:0]),
-				  .c0_ddr4_dq		(c0_ddr4_dq[15:0]),
-				  .c0_ddr4_dqs_c	(c0_ddr4_dqs_c[1:0]),
-				  .c0_ddr4_dqs_t	(c0_ddr4_dqs_t[1:0]),
-				  // Inputs
-				  .sys_rst		(sys_rst),
-				  .c0_sys_clk_p		(c0_sys_clk_p),
-				  .c0_sys_clk_n		(c0_sys_clk_n),
-				   // user interface 
-				   .dbg_clk		(dbg_clk),
-				   
-				   .c0_ddr4_app_wdf_mask          (c0_ddr4_app_wdf_mask),
-				   
-				  .c0_ddr4_app_rd_data	          (app_rd_data[127:0]),
-				  .c0_ddr4_app_rd_data_end        (app_rd_data_end),
-				  .c0_ddr4_app_rd_data_valid      (app_rd_data_valid),
-				  .c0_ddr4_app_rdy	(app_rdy),
-				  .c0_ddr4_app_wdf_rdy	(app_wdf_rdy),
-				  .c0_ddr4_app_addr	(c0_ddr4_app_addr[30:0]),
-				  .c0_ddr4_app_cmd	(app_cmd[2:0]),
-				  .c0_ddr4_app_en	(app_en),
-				  .c0_ddr4_app_hi_pri	(app_hi_pri),
-				  .c0_ddr4_app_wdf_data	(app_wdf_data[127:0]),
-				  .c0_ddr4_app_wdf_end	(app_wdf_end),
-				  .c0_ddr4_app_wdf_wren	(app_wdf_wren));
-   
-   `else // !`ifdef TX_DATA_WIDTH_32
-   
-   ddr4_1200m      ddr4_mig_uut (
-				  
-				  .c0_init_calib_complete   (init_calib_complete),
-				  .c0_ddr4_ui_clk           (ui_clk),
-				  .c0_ddr4_ui_clk_sync_rst  (ui_clk_sync_rst),
-				  .dbg_bus                  (  ), 
-				   ///*AUTOINST*/
-				  // Outputs
-				  .c0_ddr4_adr		(c0_ddr4_adr[16:0]),
-				  .c0_ddr4_act_n	(c0_ddr4_act_n),
-				  .c0_ddr4_ba		(c0_ddr4_ba[1:0]),
-				  .c0_ddr4_bg		(c0_ddr4_bg[1:0]),
-				  .c0_ddr4_cke		(c0_ddr4_cke[0:0]),
-				  .c0_ddr4_odt		(c0_ddr4_odt[0:0]),
-				  .c0_ddr4_cs_n	(c0_ddr4_cs_n[0:0]),
-				  .c0_ddr4_ck_t	(c0_ddr4_ck_t[0:0]),
-				  .c0_ddr4_ck_c	(c0_ddr4_ck_c[0:0]),
-				  .c0_ddr4_reset_n	(c0_ddr4_reset_n),
-				  // Inouts
-				  .c0_ddr4_dm_dbi_n	(c0_ddr4_dm_dbi_n[1:0]),
-				  .c0_ddr4_dq		(c0_ddr4_dq[15:0]),
-				  .c0_ddr4_dqs_c	(c0_ddr4_dqs_c[1:0]),
-				  .c0_ddr4_dqs_t	(c0_ddr4_dqs_t[1:0]),
-				  // Inputs
-				  .sys_rst		(sys_rst),
-				  .c0_sys_clk_p	(c0_sys_clk_p),
-				  .c0_sys_clk_n	(c0_sys_clk_n),
-				   // user interface 
-				   .dbg_clk		(dbg_clk),
-				   
-				   .c0_ddr4_app_wdf_mask          (c0_ddr4_app_wdf_mask),
-				   
-				  .c0_ddr4_app_rd_data	         (app_rd_data[127:0]),
-				  .c0_ddr4_app_rd_data_end        (app_rd_data_end),
-				  .c0_ddr4_app_rd_data_valid      (app_rd_data_valid),
-				  .c0_ddr4_app_rdy	     (app_rdy),
-				  .c0_ddr4_app_wdf_rdy	(app_wdf_rdy),
-				  .c0_ddr4_app_addr	     (c0_ddr4_app_addr[30:0]),
-				  .c0_ddr4_app_cmd	     (app_cmd[2:0]),
-				  .c0_ddr4_app_en	     (app_en),
-				  .c0_ddr4_app_hi_pri	(app_hi_pri),
-				  .c0_ddr4_app_wdf_data	(app_wdf_data[127:0]),
-				  .c0_ddr4_app_wdf_end	(app_wdf_end),
-				  .c0_ddr4_app_wdf_wren	(app_wdf_wren));
-   `endif
-   
-   user_app_top     #(
-                     .ADDR_WIDTH      (ADDR_WIDTH))
-     
-                user_app_top_uut (// Outputs
-                                 .app_addr                 (app_addr[30:0]),
-                                 .app_cmd                  (app_cmd[2:0]),
-                                 .app_en                   (app_en),
-                                 .app_wdf_data             (app_wdf_data[127:0]),
-                                 .app_wdf_end              (app_wdf_end),
-                                 .app_wdf_wren             (app_wdf_wren),
-                                 .app_sr_req               (app_sr_req),
-                                 .app_zq_req               (app_zq_req),
-                                 .qdr_dataout              (qdr_dataout[127:0]),
-                                 .qdr_dataout_en           (qdr_dataout_en),
-                                 .ddr_overrun              (ddr_overrun),
-                                 .ddr_warning              (ddr_warning),
-                                 .wr_fifo_overrun          (wr_fifo_overrun),
-                                 //.user_ad_rd               (user_ad_rd[ADDR_WIDTH-1:0]),
-                                 // Inputs
-                                 .rp_back_en	              (rp_back_en),
-            			        //.rp_user_ad_rd            (rp_user_ad_rd[ADDR_WIDTH-1:0]),
-				             .app_rd_data              (app_rd_data[127:0]),
-                                 //.app_rd_data_end          (app_rd_data_end),
-                                 //.app_rd_data_valid        (app_rd_data_valid),
-                                 .app_rdy                  (app_rdy),
-                                 .app_wdf_rdy              (app_wdf_rdy),
-                                 //.app_sr_active            (app_sr_active),
-                                 //.app_zq_ack               (app_zq_ack),
-                                 .ui_clk                   (ui_clk),
-                                 .ui_clk_sync_rst          (ui_clk_sync_rst),
-                                 .init_calib_complete      (init_calib_complete),
-                                 .clk                      (clk),
-                                 .RESET                    (RESET),
-                                 .data_from_ddr_en         (data_from_ddr_en),
-                                 .data_from_ddr_dd         (data_from_ddr_dd),
-                                 .qdr_rd_req               (qdr_rd_req),
-                                 .rst_local_t_ddr_clk      (rst_local_t_ddr_clk),
-                                 .cache_fifo_prog_full     (cache_fifo_prog_full),
-                                 .cache_fifo_almost_empty  (cache_fifo_almost_empty),
-                                 .cache_fifo_data_count    (cache_fifo_data_count[13:0]),
-				 .make_data_on             (make_data_on),
-				  /*AUTOINST*/
-				  // Outputs
-				  .app_ref_req		(app_ref_req),
-				  .ddr_wr_fifo_empty	(ddr_wr_fifo_empty),
-				  .ddr_rd_empty		(ddr_rd_empty),
-				  .make_data_p_edge_ddr_clk(make_data_p_edge_ddr_clk),
-				  // Inputs
-				  .app_rd_data_valid	(app_rd_data_valid),
-				  .req_stop		(req_stop),
-				  .fault_ddr_overrun	(fault_ddr_overrun),
-				  .fault_ddr_warning	(fault_ddr_warning),
-				  .make_data_p_edge	(make_data_p_edge),
-				  .view_size		(view_size[15:0]),
-				  .rp_back_view_addr	(rp_back_view_addr[ADDR_WIDTH-1:0]));
-   
+   user_app_top #(
+      .ADDR_WIDTH     (ADDR_WIDTH),
+      .AXI_ADDR_WIDTH (AXI_ADDR_WIDTH),
+      .AXI_ID_WIDTH   (AXI_ID_WIDTH)
+   ) user_app_top_uut (
+      .m_axi_awid              (axi_awid),
+      .m_axi_awaddr            (axi_awaddr),
+      .m_axi_awlen             (axi_awlen),
+      .m_axi_awsize            (axi_awsize),
+      .m_axi_awburst           (axi_awburst),
+      .m_axi_awlock            (axi_awlock),
+      .m_axi_awcache           (axi_awcache),
+      .m_axi_awprot            (axi_awprot),
+      .m_axi_awqos             (axi_awqos),
+      .m_axi_awvalid           (axi_awvalid),
+      .m_axi_awready           (axi_awready),
+      .m_axi_wdata             (axi_wdata),
+      .m_axi_wstrb             (axi_wstrb),
+      .m_axi_wlast             (axi_wlast),
+      .m_axi_wvalid            (axi_wvalid),
+      .m_axi_wready            (axi_wready),
+      .m_axi_bid               (axi_bid),
+      .m_axi_bresp             (axi_bresp),
+      .m_axi_bvalid            (axi_bvalid),
+      .m_axi_bready            (axi_bready),
+      .m_axi_arid              (axi_arid),
+      .m_axi_araddr            (axi_araddr),
+      .m_axi_arlen             (axi_arlen),
+      .m_axi_arsize            (axi_arsize),
+      .m_axi_arburst           (axi_arburst),
+      .m_axi_arlock            (axi_arlock),
+      .m_axi_arcache           (axi_arcache),
+      .m_axi_arprot            (axi_arprot),
+      .m_axi_arqos             (axi_arqos),
+      .m_axi_arvalid           (axi_arvalid),
+      .m_axi_arready           (axi_arready),
+      .m_axi_rid               (axi_rid),
+      .m_axi_rdata             (axi_rdata),
+      .m_axi_rresp             (axi_rresp),
+      .m_axi_rlast             (axi_rlast),
+      .m_axi_rvalid            (axi_rvalid),
+      .m_axi_rready            (axi_rready),
+      .qdr_dataout             (qdr_dataout),
+      .qdr_dataout_en          (qdr_dataout_en),
+      .ddr_overrun             (ddr_overrun),
+      .ddr_warning             (ddr_warning),
+      .wr_fifo_overrun         (wr_fifo_overrun),
+      .ddr_wr_fifo_empty       (ddr_wr_fifo_empty),
+      .ddr_rd_empty            (ddr_rd_empty),
+      .make_data_p_edge_ddr_clk(make_data_p_edge_ddr_clk),
+      .ui_clk                  (ui_clk),
+      .ui_clk_sync_rst         (ui_clk_sync_rst),
+      .init_calib_complete     (init_calib_complete),
+      .clk                     (clk),
+      .RESET                   (RESET),
+      .data_from_ddr_en        (data_from_ddr_en),
+      .data_from_ddr_dd        (data_from_ddr_dd),
+      .qdr_rd_req              (qdr_rd_req),
+      .req_stop                (req_stop),
+      .rst_local_t_ddr_clk     (rst_local_t_ddr_clk),
+      .cache_fifo_prog_full    (cache_fifo_prog_full),
+      .cache_fifo_almost_empty (cache_fifo_almost_empty),
+      .cache_fifo_data_count   (cache_fifo_data_count),
+      .fault_ddr_overrun       (fault_ddr_overrun),
+      .fault_ddr_warning       (fault_ddr_warning),
+      .make_data_on            (make_data_on),
+      .make_data_p_edge        (make_data_p_edge),
+      .view_size               (view_size),
+      .rp_back_en              (rp_back_en),
+      .rp_back_view_addr       (rp_back_view_addr)
+   );
 
 endmodule // ddr4_controller
-// local variables:
-// verilog-library-flags:("-y ./user_design/rtl -y ./app")
-// end:
-
-

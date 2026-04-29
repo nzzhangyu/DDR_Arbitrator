@@ -1,218 +1,195 @@
 `timescale 1ns/1ps
-module  user_app_top(/*AUTOARG*/
-   // Outputs
-   app_addr, app_cmd, app_en, app_wdf_data, app_wdf_end, app_wdf_wren,
-   app_sr_req, app_ref_req, app_zq_req, qdr_dataout, qdr_dataout_en,
-   ddr_overrun, ddr_warning, wr_fifo_overrun, ddr_wr_fifo_empty,
-   ddr_rd_empty, make_data_p_edge_ddr_clk,
-   // Inputs
-   app_rd_data, app_rd_data_valid, app_rdy, app_wdf_rdy, ui_clk,
-   ui_clk_sync_rst, init_calib_complete, clk, RESET, data_from_ddr_en,
-   data_from_ddr_dd, qdr_rd_req, req_stop, rst_local_t_ddr_clk,
-   cache_fifo_prog_full, cache_fifo_almost_empty, cache_fifo_data_count,
-   fault_ddr_overrun, fault_ddr_warning,
-   make_data_on, make_data_p_edge, view_size, rp_back_en,
-   rp_back_view_addr
+
+module user_app_top #(
+   parameter int ADDR_WIDTH     = 24,
+   parameter int AXI_ADDR_WIDTH = ADDR_WIDTH + 4,
+   parameter int AXI_ID_WIDTH   = 1
+) (
+   // AXI4 master write address channel
+   output logic [AXI_ID_WIDTH-1:0]   m_axi_awid,
+   output logic [AXI_ADDR_WIDTH-1:0] m_axi_awaddr,
+   output logic [7:0]                m_axi_awlen,
+   output logic [2:0]                m_axi_awsize,
+   output logic [1:0]                m_axi_awburst,
+   output logic                      m_axi_awlock,
+   output logic [3:0]                m_axi_awcache,
+   output logic [2:0]                m_axi_awprot,
+   output logic [3:0]                m_axi_awqos,
+   output logic                      m_axi_awvalid,
+   input  logic                      m_axi_awready,
+
+   // AXI4 master write data channel
+   output logic [127:0]              m_axi_wdata,
+   output logic [15:0]               m_axi_wstrb,
+   output logic                      m_axi_wlast,
+   output logic                      m_axi_wvalid,
+   input  logic                      m_axi_wready,
+
+   // AXI4 master write response channel
+   input  logic [AXI_ID_WIDTH-1:0]   m_axi_bid,
+   input  logic [1:0]                m_axi_bresp,
+   input  logic                      m_axi_bvalid,
+   output logic                      m_axi_bready,
+
+   // AXI4 master read address channel
+   output logic [AXI_ID_WIDTH-1:0]   m_axi_arid,
+   output logic [AXI_ADDR_WIDTH-1:0] m_axi_araddr,
+   output logic [7:0]                m_axi_arlen,
+   output logic [2:0]                m_axi_arsize,
+   output logic [1:0]                m_axi_arburst,
+   output logic                      m_axi_arlock,
+   output logic [3:0]                m_axi_arcache,
+   output logic [2:0]                m_axi_arprot,
+   output logic [3:0]                m_axi_arqos,
+   output logic                      m_axi_arvalid,
+   input  logic                      m_axi_arready,
+
+   // AXI4 master read data channel
+   input  logic [AXI_ID_WIDTH-1:0]   m_axi_rid,
+   input  logic [127:0]              m_axi_rdata,
+   input  logic [1:0]                m_axi_rresp,
+   input  logic                      m_axi_rlast,
+   input  logic                      m_axi_rvalid,
+   output logic                      m_axi_rready,
+
+   output logic [127:0]              qdr_dataout,
+   output logic                      qdr_dataout_en,
+   output logic                      ddr_overrun,
+   output logic                      ddr_warning,
+   output logic                      wr_fifo_overrun,
+   output logic                      ddr_wr_fifo_empty,
+   output logic                      ddr_rd_empty,
+   output logic                      make_data_p_edge_ddr_clk,
+
+   input  logic                      ui_clk,
+   input  logic                      ui_clk_sync_rst,
+   input  logic                      init_calib_complete,
+   input  logic                      clk,
+   input  logic                      RESET,
+   input  logic                      data_from_ddr_en,
+   input  logic [127:0]              data_from_ddr_dd,
+   input  logic                      qdr_rd_req,
+   input  logic                      req_stop,
+   input  logic                      rst_local_t_ddr_clk,
+   input  logic                      cache_fifo_prog_full,
+   input  logic                      cache_fifo_almost_empty,
+   input  logic [13:0]               cache_fifo_data_count,
+   input  logic                      fault_ddr_overrun,
+   input  logic                      fault_ddr_warning,
+   input  logic                      make_data_on,
+   input  logic                      make_data_p_edge,
+   input  logic [15:0]               view_size,
+   input  logic                      rp_back_en,
+   input  logic [ADDR_WIDTH-1:0]     rp_back_view_addr
+);
+
+   logic [127:0] ddr_wr_fifo_dout;
+   logic         ddr_wr_fifo_prog_empty;
+   logic         ddr_wr_fifo_full;
+   logic         ddr_wr_fifo_rd_en;
+   logic [13:0]  ddr_wr_fifo_level;
+
+   ddr_wr_fifo ddr_wr_fifo_uut (
+      .dout          (ddr_wr_fifo_dout),
+      .full          (ddr_wr_fifo_full),
+      .empty         (ddr_wr_fifo_empty),
+      .valid         (),
+      .prog_empty    (ddr_wr_fifo_prog_empty),
+      .rd_data_count (ddr_wr_fifo_level),
+      .wr_rst_busy   (),
+      .rd_rst_busy   (),
+      .wr_clk        (clk),
+      .rd_clk        (ui_clk),
+      .rst           (RESET),
+      .din           (data_from_ddr_dd),
+      .wr_en         (data_from_ddr_en),
+      .rd_en         (ddr_wr_fifo_rd_en)
    );
 
-   //parameter               ADDR_WIDTH = 25;  //4g ddr
-   parameter              ADDR_WIDTH = 24;  //2g ddr 
-    
-   
-   // user interface signals
-   output [30:0]           app_addr;
-   output [2:0]            app_cmd;
-   output                  app_en;
-   output [127:0]          app_wdf_data;
-   output                  app_wdf_end;
-   //output [15:0]           app_wdf_mask;
-   output                  app_wdf_wren;
-                           
-   input [127:0]           app_rd_data;
-   //input                   app_rd_data_end;
-   input                   app_rd_data_valid;
-   input                   app_rdy;
-   input                   app_wdf_rdy;
-                           
-   output                  app_sr_req;
-   //input                   app_sr_active;
-                           
-   output                  app_ref_req;
-   //input                   app_ref_ack;
-                           
-   output                  app_zq_req;
-   //input                   app_zq_ack;
-                           
-   input                   ui_clk;
-   input                   ui_clk_sync_rst;
-                           
-   input                   init_calib_complete;
-                           
-   input                   clk;
-   input                   RESET;
-   
-   
-   // from reading_header
-   input                   data_from_ddr_en;
-   input [127:0]           data_from_ddr_dd;
-   
-   
-   input                   qdr_rd_req ;      //: in  std_logic;
-   input 		               req_stop;
-   
-   input                   rst_local_t_ddr_clk;
-    //input from rd_coache
-   input                   cache_fifo_prog_full;
-   input                   cache_fifo_almost_empty;
-   input [13:0]            cache_fifo_data_count;
-    //output to qdriiplus_rd_top module 
-   output [127:0]          qdr_dataout;
-   output                  qdr_dataout_en;
-   output                  ddr_overrun ;
-   output                  ddr_warning;
-   output                  wr_fifo_overrun;
-   output                  ddr_wr_fifo_empty;
+   user_rw_cmd_gen #(
+      .ADDR_WIDTH     (ADDR_WIDTH),
+      .AXI_ADDR_WIDTH (AXI_ADDR_WIDTH),
+      .AXI_ID_WIDTH   (AXI_ID_WIDTH)
+   ) user_rw_cmd_gen_uut (
+      .m_axi_awid              (m_axi_awid),
+      .m_axi_awaddr            (m_axi_awaddr),
+      .m_axi_awlen             (m_axi_awlen),
+      .m_axi_awsize            (m_axi_awsize),
+      .m_axi_awburst           (m_axi_awburst),
+      .m_axi_awlock            (m_axi_awlock),
+      .m_axi_awcache           (m_axi_awcache),
+      .m_axi_awprot            (m_axi_awprot),
+      .m_axi_awqos             (m_axi_awqos),
+      .m_axi_awvalid           (m_axi_awvalid),
+      .m_axi_awready           (m_axi_awready),
+      .m_axi_wdata             (m_axi_wdata),
+      .m_axi_wstrb             (m_axi_wstrb),
+      .m_axi_wlast             (m_axi_wlast),
+      .m_axi_wvalid            (m_axi_wvalid),
+      .m_axi_wready            (m_axi_wready),
+      .m_axi_bid               (m_axi_bid),
+      .m_axi_bresp             (m_axi_bresp),
+      .m_axi_bvalid            (m_axi_bvalid),
+      .m_axi_bready            (m_axi_bready),
+      .m_axi_arid              (m_axi_arid),
+      .m_axi_araddr            (m_axi_araddr),
+      .m_axi_arlen             (m_axi_arlen),
+      .m_axi_arsize            (m_axi_arsize),
+      .m_axi_arburst           (m_axi_arburst),
+      .m_axi_arlock            (m_axi_arlock),
+      .m_axi_arcache           (m_axi_arcache),
+      .m_axi_arprot            (m_axi_arprot),
+      .m_axi_arqos             (m_axi_arqos),
+      .m_axi_arvalid           (m_axi_arvalid),
+      .m_axi_arready           (m_axi_arready),
+      .m_axi_rid               (m_axi_rid),
+      .m_axi_rdata             (m_axi_rdata),
+      .m_axi_rresp             (m_axi_rresp),
+      .m_axi_rlast             (m_axi_rlast),
+      .m_axi_rvalid            (m_axi_rvalid),
+      .m_axi_rready            (m_axi_rready),
+      .make_data_p_edge_ddr_clk (make_data_p_edge_ddr_clk),
+      .ddr_rd_empty             (ddr_rd_empty),
+      .ddr_overrun              (ddr_overrun),
+      .ddr_warning              (ddr_warning),
+      .ddr_wr_fifo_rd_en        (ddr_wr_fifo_rd_en),
+      .qdr_dataout              (qdr_dataout),
+      .qdr_dataout_en           (qdr_dataout_en),
+      .init_calib_complete      (init_calib_complete),
+      .ui_clk                   (ui_clk),
+      .ui_clk_sync_rst          (ui_clk_sync_rst),
+      .qdr_rd_req               (qdr_rd_req),
+      .req_stop                 (req_stop),
+      .make_data_on             (make_data_on),
+      .view_size                (view_size),
+      .rst_local_t_ddr_clk      (rst_local_t_ddr_clk),
+      .fault_ddr_overrun        (fault_ddr_overrun),
+      .fault_ddr_warning        (fault_ddr_warning),
+      .ddr_wr_fifo_empty        (ddr_wr_fifo_empty),
+      .ddr_wr_fifo_prog_empty   (ddr_wr_fifo_prog_empty),
+      .ddr_wr_fifo_level        (ddr_wr_fifo_level),
+      .wr_fifo_overrun          (wr_fifo_overrun),
+      .ddr_wr_fifo_dout         (ddr_wr_fifo_dout),
+      .cache_fifo_prog_full     (cache_fifo_prog_full),
+      .cache_fifo_almost_empty  (cache_fifo_almost_empty),
+      .cache_fifo_data_count    (cache_fifo_data_count),
+      .rp_back_en               (rp_back_en),
+      .rp_back_view_addr        (rp_back_view_addr)
+   );
 
-   input                   fault_ddr_overrun;
-   input                   fault_ddr_warning;
-   
-   input                   make_data_on;
-   input 		               make_data_p_edge;
-   input [15:0] 	         view_size;
-   output 		             ddr_rd_empty;
-   
-   output		               make_data_p_edge_ddr_clk;
-   
-   //output [ADDR_WIDTH-1 : 0] user_ad_rd;
-   //input [ADDR_WIDTH-1:0]    rp_user_ad_rd;     //  from user_rw_cmd_gen.v 
-   input 		               rp_back_en;        //  from rd_cache_ctrl.v 
-   input [ADDR_WIDTH-1:0]  rp_back_view_addr;
-
-   //input 		   clr_cache_view_cnt;//  from user_rw_cmd_gen.v 
-   //input [11:0] 	   view_size;         //  from user_rw_cmd_gen.v
-   
-   
-   logic [127:0]           ddr_wr_dout;
-                           
-   logic                   ddr_wr_fifo_prog_empty;
-   
-   logic [127:0]           ddr_wr_fifo_dout;
-                           
-   logic                   ddr_wr_fifo_dout_valid;
-   
-   logic                   ddr_wr_fifo_empty;
-   logic                   ddr_wr_fifo_full;
-  
-   // Beginning of automatic wires (for undeclared instantiated-module outputs)
-   logic                   ddr_wr_fifo_rd_en;   // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
-   logic                   qdr_rd_empty;        // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
-   //wire [ADDR_WIDTH-1:0]   user_ad_rd;      // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
-   //wire [ADDR_WIDTH-1:0]   user_ad_wr;      // From user_rw_cmd_gen_uut of user_rw_cmd_gen.v
-   // End of automatics
-   
-   //wire 		   wr_fifo_underrun;
-   
-   logic                   user_w_n ;       
-   logic [63 :0]           user_w_data_h ;    
-   logic [127 :0]          user_w_data ;    
-   
-   logic                   user_w_cnt;
-   logic                   wr_en;
-
-   logic [13:0] 		      ddr_wr_fifo_level;
-
-   logic [15:0]            app_wdf_mask;
-    
-     ddr_wr_fifo                ddr_wr_fifo_uut  (
-                                                // Outputs
-                                                 .dout                          (ddr_wr_fifo_dout[127:0]),
-                                                 .full                          (ddr_wr_fifo_full),
-                                                 .empty                         (ddr_wr_fifo_empty),
-                                                 .valid                         (ddr_wr_fifo_dout_valid),
-                                                 .prog_empty                    (ddr_wr_fifo_prog_empty),
-                                                 .rd_data_count                 (ddr_wr_fifo_level),
-                                                 .wr_rst_busy                   ( ),
-                                                 .rd_rst_busy                   ( ),
-                                                 // Inputs
-                                                 .wr_clk                        (clk),
-                                                 .rd_clk                        (ui_clk),
-                                                 .rst                           (RESET),
-                                                 .din                           (data_from_ddr_dd[127:0]),
-                                                 .wr_en                         (data_from_ddr_en),
-                                                 .rd_en                         (ddr_wr_fifo_rd_en));
-   
-   
-   user_rw_cmd_gen  
-                                               #(.ADDR_WIDTH  (ADDR_WIDTH))
-                             user_rw_cmd_gen_uut(/*AUTOINST*/
-						 // Outputs
-						 .app_addr		(app_addr[30:0]),
-						 .app_cmd		(app_cmd[2:0]),
-						 .app_en		(app_en),
-						 .app_wdf_data		(app_wdf_data[127:0]),
-						 .app_wdf_end		(app_wdf_end),
-						 .app_wdf_mask		(app_wdf_mask[15:0]),
-						 .app_wdf_wren		(app_wdf_wren),
-						 .app_sr_req		(app_sr_req),
-						 .app_ref_req		(app_ref_req),
-						 .app_zq_req		(app_zq_req),
-						 .make_data_p_edge_ddr_clk(make_data_p_edge_ddr_clk),
-						 .ddr_rd_empty		(ddr_rd_empty),
-						 .ddr_overrun		(ddr_overrun),
-						 .ddr_warning		(ddr_warning),
-						 .ddr_wr_fifo_rd_en	(ddr_wr_fifo_rd_en),
-						 .qdr_dataout		(qdr_dataout[127:0]),
-						 .qdr_dataout_en	(qdr_dataout_en),
-						 // Inputs
-						 .init_calib_complete	(init_calib_complete),
-						 .ui_clk		(ui_clk),
-						 .ui_clk_sync_rst	(ui_clk_sync_rst),
-						 .app_rd_data		(app_rd_data[127:0]),
-						 .app_rd_data_valid	(app_rd_data_valid),
-						 .app_rdy		(app_rdy),
-						 .app_wdf_rdy		(app_wdf_rdy),
-						 .qdr_rd_req		(qdr_rd_req),
-						 .req_stop		(req_stop),
-						 .make_data_on		(make_data_on),
-						 .view_size		(view_size[15:0]),
-						 .rst_local_t_ddr_clk	(rst_local_t_ddr_clk),
-						 .fault_ddr_overrun	(fault_ddr_overrun),
-						 .fault_ddr_warning	(fault_ddr_warning),
-						 .ddr_wr_fifo_empty	(ddr_wr_fifo_empty),
-						 .ddr_wr_fifo_prog_empty(ddr_wr_fifo_prog_empty),
-						 .ddr_wr_fifo_level	(ddr_wr_fifo_level[13:0]),
-						 .wr_fifo_overrun	(wr_fifo_overrun),
-						 .ddr_wr_fifo_dout	(ddr_wr_fifo_dout[127:0]),
-						 .cache_fifo_prog_full	(cache_fifo_prog_full),
-						 .cache_fifo_almost_empty(cache_fifo_almost_empty),
-						 .cache_fifo_data_count(cache_fifo_data_count[13:0]),
-						 .rp_back_en		(rp_back_en),
-						 .rp_back_view_addr	(rp_back_view_addr[ADDR_WIDTH-1:0]));
-  
-
-   logic  wr_fifo_overrun;
-
-   always_ff @(posedge clk)  begin
-      if(RESET) begin
-        wr_fifo_overrun    <= 'h0;
+   always_ff @(posedge clk) begin
+      if (RESET) begin
+         wr_fifo_overrun <= '0;
       end
       else if (make_data_p_edge) begin
-        wr_fifo_overrun    <= 'h0;
+         wr_fifo_overrun <= '0;
       end
-      else if(ddr_wr_fifo_full && data_from_ddr_en) begin
-        wr_fifo_overrun    <= 'h1;
+      else if (ddr_wr_fifo_full && data_from_ddr_en) begin
+         wr_fifo_overrun <= 1'b1;
       end
-      else  begin
-        wr_fifo_overrun    <= 'h0;
+      else begin
+         wr_fifo_overrun <= '0;
       end
    end
-   
- 
-   
-   
-   
 
-   
 endmodule // user_app_top
-
-
