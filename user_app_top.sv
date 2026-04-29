@@ -93,7 +93,14 @@ module user_app_top #(
 
    // FIFO instance.
    // Data is drained only when the write path is allowed to issue a burst.
-   ddr_wr_fifo ddr_wr_fifo_uut (
+   ddr_wr_pingpong_ram #(
+      .DATA_WIDTH          (128),
+      .BANK_DEPTH          (8192),
+      .COMMIT_LEVEL        (4096),
+      .COMMIT_TIMEOUT      (2048),
+      .SKID_DEPTH          (4),
+      .READ_LATENCY_CYCLES (2)
+   ) ddr_wr_pingpong_ram_uut (
       .dout          (ddr_wr_fifo_dout),
       .full          (ddr_wr_fifo_full),
       .empty         (ddr_wr_fifo_empty),
@@ -107,7 +114,8 @@ module user_app_top #(
       .rst           (RESET),
       .din           (data_from_ddr_dd),
       .wr_en         (data_from_ddr_en),
-      .rd_en         (ddr_wr_fifo_rd_en)
+      .rd_en         (ddr_wr_fifo_rd_en),
+      .flush         (1'b0)
    );
 
    // Command generator.

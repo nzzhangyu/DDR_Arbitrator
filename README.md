@@ -33,3 +33,5 @@ xvlog -sv C:\Users\Administrator\Desktop\ceshi\user_rw_cmd_gen.txt
 xvlog -sv C:\Users\Administrator\Desktop\ceshi\user_app_top.txt
 xvlog -sv C:\Users\Administrator\Desktop\ceshi\ddr4_controller.txt
 ```
+
+For fast simulation, instantiate `ddr4_fast_mock.sv` directly in the testbench and connect it to the AXI master signals that normally drive the MIG AXI slave.
