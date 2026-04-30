@@ -71,6 +71,7 @@ module user_rw_cmd_gen #(
    input  logic                      fault_ddr_overrun,
    input  logic                      fault_ddr_warning,
    input  logic                      ddr_wr_fifo_empty,
+   input  logic                      ddr_wr_fifo_valid,
    input  logic                      ddr_wr_fifo_prog_empty,
    input  logic [13:0]               ddr_wr_fifo_level,
    input  logic                      wr_fifo_overrun,
@@ -83,11 +84,11 @@ module user_rw_cmd_gen #(
 );
 
    // Watermark thresholds.
-   // These levels are tuned around FIFO pressure, not around AXI burst length.
+   // The write-side levels describe how full the upstream staging buffer is.
+   // The read-side levels describe how much data should be kept available for replay / refill.
    localparam logic [13:0] WR_LEVEL_LOW      = 14'd2048;
    localparam logic [13:0] WR_LEVEL_HIGH     = 14'd8192;
    localparam logic [13:0] WR_LEVEL_URGENT   = 14'd12288;
-   localparam logic [13:0] WR_LEVEL_CRITICAL = 14'd14336;
 
    localparam logic [13:0] RD_LEVEL_URGENT   = 14'd4096;
    localparam logic [13:0] RD_LEVEL_LOW      = 14'd8192;
@@ -150,31 +151,33 @@ module user_rw_cmd_gen #(
       end
    end
 
-   logic [10:0] ddr_wr_fifo_notempty_cnt;
-   logic        ddr_wr_fifo_notempty_cnt_rch;
-   logic        clear_wr_req_age;
+   logic [10:0] wr_tail_age_cnt;
+   logic        wr_tail_age_reached;
+   logic        clear_wr_tail_age;
 
-   assign ddr_wr_fifo_notempty_cnt_rch = ddr_wr_fifo_notempty_cnt[10];
+   // Tail aging.
+   // Allow a partial write tail below one full burst to drain after it waits long enough.
+   assign wr_tail_age_reached = wr_tail_age_cnt[10];
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
-         ddr_wr_fifo_notempty_cnt <= '0;
+         wr_tail_age_cnt <= '0;
       end
-      else if (clear_wr_req_age || ddr_wr_fifo_empty) begin
-         ddr_wr_fifo_notempty_cnt <= '0;
+      else if (clear_wr_tail_age || (~ddr_wr_fifo_valid)) begin
+         wr_tail_age_cnt <= '0;
       end
-      else if (~ddr_wr_fifo_notempty_cnt_rch) begin
-         ddr_wr_fifo_notempty_cnt <= ddr_wr_fifo_notempty_cnt + 11'd1;
+      else if (~wr_tail_age_reached) begin
+         wr_tail_age_cnt <= wr_tail_age_cnt + 11'd1;
       end
    end
 
    // Pressure state.
-   // Current FIFO/cache pressure state.
+   // These flags are the coarse "how much room do we still have?" view that
+   // the arbiter uses before it decides whether to favor reads or writes.
    logic wr_level_low;
    logic wr_level_high;
    logic wr_level_urgent;
-   logic wr_level_critical;
-   logic wr_fifo_has_burst;
+   logic wr_has_full_burst;
    logic rd_level_low;
    logic rd_level_urgent;
    logic rd_cache_can_prefetch;
@@ -183,8 +186,7 @@ module user_rw_cmd_gen #(
    assign wr_level_low      = ddr_wr_fifo_level >= WR_LEVEL_LOW;
    assign wr_level_high     = ddr_wr_fifo_level >= WR_LEVEL_HIGH;
    assign wr_level_urgent   = ddr_wr_fifo_level >= WR_LEVEL_URGENT;
-   assign wr_level_critical = ddr_wr_fifo_level >= WR_LEVEL_CRITICAL;
-   assign wr_fifo_has_burst = ~ddr_wr_fifo_prog_empty;
+   assign wr_has_full_burst = ~ddr_wr_fifo_prog_empty;
 
    assign rd_level_urgent   = cache_fifo_almost_empty |
                               (cache_fifo_data_count <= RD_LEVEL_URGENT);
@@ -194,15 +196,20 @@ module user_rw_cmd_gen #(
                                   (cache_fifo_data_count < RD_LEVEL_HIGH);
 
    // Request gating.
-   // Qualify write and read requests before arbitration.
+   // A request becomes eligible only after the corresponding buffer is non-empty
+   // and the read cache has enough room to accept another burst.
    logic ddr_wr_req;
-   logic ddr_rd_req_qual;
    logic ddr_rd_req_d;
    logic ddr_rd_req_dd;
+   logic ddr_rd_req_qual;
 
-   assign ddr_wr_req = (~ddr_wr_fifo_empty) &
-                       (wr_level_low | wr_fifo_has_burst |
-                        ddr_wr_fifo_notempty_cnt_rch);
+   // Write request sources:
+   // - enough pressure to start normal draining;
+   // - enough data for a full AXI burst;
+   // - a small tail has waited long enough and should not be stranded.
+   assign ddr_wr_req = ddr_wr_fifo_valid &
+                       (wr_level_low | wr_has_full_burst |
+                        wr_tail_age_reached);
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst || rst_local_t_ddr_clk) begin
@@ -218,7 +225,8 @@ module user_rw_cmd_gen #(
    assign ddr_rd_req_qual = (~ddr_rd_empty) & ddr_rd_req_dd & rd_cache_can_prefetch;
 
    // Arbitration state.
-   // Track the current grant and remember the last selected direction.
+   // The arbiter remembers the last granted direction so normal traffic does not
+   // starve one side when both read and write requests are active.
    rw_state_t rw_state;
    rw_state_t rw_next_state;
    logic remember_write_grant;
@@ -261,7 +269,8 @@ module user_rw_cmd_gen #(
    end
 
    // Burst tracking.
-   // Calculate burst length and track transaction progress.
+   // Burst length is re-evaluated from the current levels before each new grant.
+   // Once a burst starts, the write or read side runs to its AXI boundary.
    logic [8:0] write_burst_len;
    logic [8:0] read_burst_len;
    logic [8:0] write_beat_cnt;
@@ -288,7 +297,7 @@ module user_rw_cmd_gen #(
       remember_write_grant = 1'b0;
       remember_read_grant  = 1'b0;
       clear_last_grant     = 1'b0;
-      clear_wr_req_age     = 1'b0;
+      clear_wr_tail_age    = 1'b0;
 
       if (~init_calib_complete) begin
          rw_next_state    = RW_IDLE;
@@ -316,11 +325,6 @@ module user_rw_cmd_gen #(
                else if (rd_level_urgent && ddr_rd_req_qual &&
                          rd_cache_has_grant_space && (~wr_level_urgent)) begin
                   rw_next_state    = RW_READ_AR;
-                  clear_last_grant = 1'b1;
-               end
-               // Prefer draining a ready write burst before entering full arbitration.
-               else if (wr_fifo_has_burst) begin
-                  rw_next_state    = RW_WRITE_AW;
                   clear_last_grant = 1'b1;
                end
                // Both sides request service; use the remembered last grant below.
@@ -384,7 +388,7 @@ module user_rw_cmd_gen #(
             end
 
             RW_WRITE_AW: begin
-               clear_wr_req_age = 1'b1;
+               clear_wr_tail_age = 1'b1;
                if (write_burst_len == 0) begin
                   rw_next_state = RW_ARB_PRE;
                end
@@ -481,7 +485,8 @@ module user_rw_cmd_gen #(
    endfunction
 
    // Address counters.
-   // Track write and read addresses in 128-bit beat units, not byte units.
+   // Internal addresses are counted in 128-bit beats.
+   // AXI addresses are converted to byte addresses only at the boundary helper.
    logic [ADDR_WIDTH:0] user_ad_wr_i;
    logic [ADDR_WIDTH:0] user_ad_rd_i;
    logic [ADDR_WIDTH-1:0] user_ad_wr;
@@ -529,7 +534,7 @@ module user_rw_cmd_gen #(
       end
       else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
          // Write bursts are based on FIFO level and clamped to the AXI maximum of 256 beats.
-         write_burst_len <= (ddr_wr_fifo_level == 0 && ~ddr_wr_fifo_empty) ?
+         write_burst_len <= (ddr_wr_fifo_level == 0 && ddr_wr_fifo_valid) ?
                             9'd1 : clamp_count_256(ddr_wr_fifo_level);
       end
    end
@@ -577,7 +582,7 @@ module user_rw_cmd_gen #(
 
    assign ddr_wr_fifo_rd_en = (rw_state == RW_WRITE_W) &&
                               m_axi_wready &&
-                              (~ddr_wr_fifo_empty) &&
+                              ddr_wr_fifo_valid &&
                               (write_beat_cnt < write_burst_len);
 
    assign m_axi_awid    = '0;
@@ -594,7 +599,7 @@ module user_rw_cmd_gen #(
    assign m_axi_wdata   = ddr_wr_fifo_dout;
    assign m_axi_wstrb   = 16'hffff;
    assign m_axi_wvalid  = (rw_state == RW_WRITE_W) &&
-                          (~ddr_wr_fifo_empty) &&
+                          ddr_wr_fifo_valid &&
                           (write_beat_cnt < write_burst_len);
    assign m_axi_wlast   = m_axi_wvalid && (write_beat_cnt == (write_burst_len - 1'b1));
    assign m_axi_bready  = (rw_state == RW_WRITE_B);
