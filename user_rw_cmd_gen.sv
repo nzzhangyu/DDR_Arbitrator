@@ -132,8 +132,8 @@ module user_rw_cmd_gen #(
       end
    end
 
-   assign make_data_on_edge          = make_data_on_dd & (~make_data_on_ddd);
-   assign make_data_p_edge_ddr_clk   = make_data_on_edge;
+   assign make_data_on_edge         = make_data_on_dd & (~make_data_on_ddd);
+   assign make_data_p_edge_ddr_clk  = make_data_on_edge;
 
    // Replay delay.
    // Delay replay request so the current AXI transaction can settle first.
@@ -153,9 +153,9 @@ module user_rw_cmd_gen #(
 
    logic [10:0] wr_tail_age_cnt;
    logic        wr_tail_age_reached;
-   logic        clear_wr_tail_age;
+   logic        clear_wr_wait_age;
 
-   // Tail aging.
+   // Write wait aging.
    // Allow a partial write tail below one full burst to drain after it waits long enough.
    assign wr_tail_age_reached = wr_tail_age_cnt[10];
 
@@ -163,7 +163,7 @@ module user_rw_cmd_gen #(
       if (ui_clk_sync_rst) begin
          wr_tail_age_cnt <= '0;
       end
-      else if (clear_wr_tail_age || (~ddr_wr_fifo_valid)) begin
+      else if (clear_wr_wait_age || (~ddr_wr_fifo_valid)) begin
          wr_tail_age_cnt <= '0;
       end
       else if (~wr_tail_age_reached) begin
@@ -183,15 +183,15 @@ module user_rw_cmd_gen #(
    logic rd_cache_can_prefetch;
    logic [14:0] rd_cache_free_count;
 
-   assign wr_level_low      = ddr_wr_fifo_level >= WR_LEVEL_LOW;
-   assign wr_level_high     = ddr_wr_fifo_level >= WR_LEVEL_HIGH;
-   assign wr_level_urgent   = ddr_wr_fifo_level >= WR_LEVEL_URGENT;
-   assign wr_has_full_burst = ~ddr_wr_fifo_prog_empty;
-
-   assign rd_level_urgent   = cache_fifo_almost_empty |
+   assign wr_level_low          = ddr_wr_fifo_level >= WR_LEVEL_LOW;
+   assign wr_level_high         = ddr_wr_fifo_level >= WR_LEVEL_HIGH;
+   assign wr_level_urgent       = ddr_wr_fifo_level >= WR_LEVEL_URGENT;
+   assign wr_has_full_burst     = ~ddr_wr_fifo_prog_empty;
+   
+   assign rd_level_urgent       = cache_fifo_almost_empty |
                               (cache_fifo_data_count <= RD_LEVEL_URGENT);
-   assign rd_level_low      = cache_fifo_data_count <= RD_LEVEL_LOW;
-   assign rd_cache_free_count = {1'b0, RD_CACHE_DEPTH} - {1'b0, cache_fifo_data_count};
+   assign rd_level_low          = cache_fifo_data_count <= RD_LEVEL_LOW;
+   assign rd_cache_free_count   = {1'b0, RD_CACHE_DEPTH} - {1'b0, cache_fifo_data_count};
    assign rd_cache_can_prefetch = (~cache_fifo_prog_full) &
                                   (cache_fifo_data_count < RD_LEVEL_HIGH);
 
@@ -287,6 +287,26 @@ module user_rw_cmd_gen #(
    // Hold new arbitration while the read pointer is being rewound for replay.
    assign block_for_replay = rp_back_en || (|rp_back_en_dly_cnt);
 
+   logic wr_urgent_req;
+   logic wr_high_req;
+   logic wr_fair_req;
+   logic rd_req_with_space;
+   logic rd_req_allowed;
+   logic rd_urgent_req;
+   logic rd_low_or_urgent_req;
+   logic rd_fair_req;
+   logic both_rw_req;
+
+   assign wr_urgent_req        = wr_level_urgent && ddr_wr_req;
+   assign wr_high_req          = wr_level_high && ddr_wr_req;
+   assign rd_req_with_space    = ddr_rd_req_qual && rd_cache_has_grant_space;
+   assign rd_req_allowed       = rd_req_with_space && (~wr_level_urgent);
+   assign rd_urgent_req        = rd_level_urgent && rd_req_allowed;
+   assign rd_low_or_urgent_req = (rd_level_low || rd_level_urgent) && rd_req_allowed;
+   assign both_rw_req          = ddr_wr_req && ddr_rd_req_qual;
+   assign wr_fair_req          = ddr_wr_req && (~last_grant_was_write);
+   assign rd_fair_req          = rd_req_allowed && (~last_grant_was_read);
+
    // Arbitration policy:
    // - urgent write protects the upstream FIFO from overflow;
    // - low/urgent read refills the downstream cache when write is not urgent;
@@ -297,7 +317,7 @@ module user_rw_cmd_gen #(
       remember_write_grant = 1'b0;
       remember_read_grant  = 1'b0;
       clear_last_grant     = 1'b0;
-      clear_wr_tail_age    = 1'b0;
+      clear_wr_wait_age    = 1'b0;
 
       if (~init_calib_complete) begin
          rw_next_state    = RW_IDLE;
@@ -317,22 +337,21 @@ module user_rw_cmd_gen #(
                   clear_last_grant = 1'b1;
                end
                // Protect the write FIFO first when it reaches the urgent level.
-               else if (wr_level_urgent && ddr_wr_req) begin
+               else if (wr_urgent_req) begin
                   rw_next_state    = RW_WRITE_AW;
                   clear_last_grant = 1'b1;
                end
                // Refill the read cache if it is urgent and write pressure is not urgent.
-               else if (rd_level_urgent && ddr_rd_req_qual &&
-                         rd_cache_has_grant_space && (~wr_level_urgent)) begin
+               else if (rd_urgent_req) begin
                   rw_next_state    = RW_READ_AR;
                   clear_last_grant = 1'b1;
                end
                // Both sides request service; use the remembered last grant below.
-               else if (ddr_rd_req_qual && ddr_wr_req) begin
+               else if (both_rw_req) begin
                   rw_next_state    = RW_ARB;
                end
                // Single-sided read request.
-               else if (ddr_rd_req_qual && rd_cache_has_grant_space && (~wr_level_urgent)) begin
+               else if (rd_req_allowed) begin
                   rw_next_state    = RW_READ_AR;
                   clear_last_grant = 1'b1;
                end
@@ -345,29 +364,27 @@ module user_rw_cmd_gen #(
 
             RW_ARB: begin
                // Urgent write overrides normal fairness.
-               if (wr_level_urgent && ddr_wr_req) begin
+               if (wr_urgent_req) begin
                   rw_next_state        = RW_WRITE_AW;
                   remember_write_grant = 1'b1;
                end
                // Low or urgent cache level can pull service toward reads.
-               else if ((rd_level_low || rd_level_urgent) && ddr_rd_req_qual &&
-                         rd_cache_has_grant_space && (~wr_level_urgent)) begin
+               else if (rd_low_or_urgent_req) begin
                   rw_next_state       = RW_READ_AR;
                   remember_read_grant = 1'b1;
                end
                // High write pressure wins if the previous grant was not already a write.
-               else if (wr_level_high && ddr_wr_req && (~last_grant_was_write)) begin
+               else if (wr_high_req && (~last_grant_was_write)) begin
                   rw_next_state        = RW_WRITE_AW;
                   remember_write_grant = 1'b1;
                end
                // Normal fairness path for write service.
-               else if (ddr_wr_req && (~last_grant_was_write)) begin
+               else if (wr_fair_req) begin
                   rw_next_state        = RW_WRITE_AW;
                   remember_write_grant = 1'b1;
                end
                // Normal fairness path for read service.
-               else if (ddr_rd_req_qual && rd_cache_has_grant_space &&
-                         (~last_grant_was_read) && (~wr_level_urgent)) begin
+               else if (rd_fair_req) begin
                   rw_next_state       = RW_READ_AR;
                   remember_read_grant = 1'b1;
                end
@@ -377,7 +394,7 @@ module user_rw_cmd_gen #(
                   remember_write_grant = 1'b1;
                end
                // Fallback read grant if writes are not urgent and cache space is available.
-               else if (ddr_rd_req_qual && rd_cache_has_grant_space && (~wr_level_urgent)) begin
+               else if (rd_req_allowed) begin
                   rw_next_state       = RW_READ_AR;
                   remember_read_grant = 1'b1;
                end
@@ -388,7 +405,7 @@ module user_rw_cmd_gen #(
             end
 
             RW_WRITE_AW: begin
-               clear_wr_tail_age = 1'b1;
+               clear_wr_wait_age = 1'b1;
                if (write_burst_len == 0) begin
                   rw_next_state = RW_ARB_PRE;
                end
@@ -487,15 +504,15 @@ module user_rw_cmd_gen #(
    // Address counters.
    // Internal addresses are counted in 128-bit beats.
    // AXI addresses are converted to byte addresses only at the boundary helper.
-   logic [ADDR_WIDTH:0] user_ad_wr_i;
-   logic [ADDR_WIDTH:0] user_ad_rd_i;
+   logic [ADDR_WIDTH:0]   user_ad_wr_i;
+   logic [ADDR_WIDTH:0]   user_ad_rd_i;
    logic [ADDR_WIDTH-1:0] user_ad_wr;
    logic [ADDR_WIDTH-1:0] user_ad_rd;
    logic [ADDR_WIDTH:0]   ddr_read_available_count;
 
-   assign user_ad_wr = user_ad_wr_i[ADDR_WIDTH-1:0];
-   assign user_ad_rd = user_ad_rd_i[ADDR_WIDTH-1:0];
-   assign ddr_rd_empty = (user_ad_wr_i == user_ad_rd_i);
+   assign user_ad_wr               = user_ad_wr_i[ADDR_WIDTH-1:0];
+   assign user_ad_rd               = user_ad_rd_i[ADDR_WIDTH-1:0];
+   assign ddr_rd_empty             = (user_ad_wr_i == user_ad_rd_i);
    assign ddr_read_available_count = user_ad_wr_i - user_ad_rd_i;
 
    // Legacy per-view counters.
