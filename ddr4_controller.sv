@@ -65,6 +65,8 @@ module ddr4_controller #(
    logic [127:0] ddr_dataout;
    logic         ddr_dataout_en;
 
+   // The top level only relays the user-visible read stream.
+   // AXI R data is converted into a simple valid/data pair here.
    assign user_r_valid = ddr_dataout_en;
    assign user_r_data  = ddr_dataout;
 
@@ -110,7 +112,8 @@ module ddr4_controller #(
    logic                      axi_rready;
 
    // User AXI bridge.
-   // Generate AXI traffic on the user side before MIG consumes it.
+   // This block is the user-side owner of the AXI master interface:
+   // it stages write data, generates bursts, and reports DDR-side status back up.
    user_app_top #(
       .ADDR_WIDTH     (ADDR_WIDTH),
       .AXI_ADDR_WIDTH (AXI_ADDR_WIDTH),

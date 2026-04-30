@@ -83,30 +83,34 @@ module user_app_top #(
    input  logic [ADDR_WIDTH-1:0]     rp_back_view_addr
 );
 
-   // Write FIFO.
-   // Buffer upstream bursty data before the AXI write path consumes it.
+   // Write-side ping-pong staging.
+   // The upstream producer can burst faster than AXI accepts beats, so the
+   // ping-pong keeps the DDR write path fed without forcing the producer to stall.
    logic [127:0] ddr_wr_fifo_dout;
+   logic         ddr_wr_fifo_valid;
    logic         ddr_wr_fifo_prog_empty;
    logic         ddr_wr_fifo_full;
+   logic         ddr_wr_pingpong_overrun;
    logic         ddr_wr_fifo_rd_en;
    logic [13:0]  ddr_wr_fifo_level;
 
-   // FIFO instance.
-   // Data is drained only when the write path is allowed to issue a burst.
-   ddr_wr_pingpong_ram #(
-      .DATA_WIDTH          (128),
-      .BANK_DEPTH          (8192),
-      .COMMIT_LEVEL        (4096),
-      .COMMIT_TIMEOUT      (2048),
-      .SKID_DEPTH          (4),
-      .READ_LATENCY_CYCLES (2)
-   ) ddr_wr_pingpong_ram_uut (
+   // Write ping-pong RAM.
+   // Two 8192-beat banks hold one committed bank and one filling bank.
+   // The module exposes a FIFO-like valid/pop stream to the AXI writer.
+   ddr_wr_2bank_pingpong #(
+      .DATA_WIDTH           (128),
+      .BANK_DEPTH           (8192),
+      .COMMIT_TIMEOUT       (2048),
+      .READ_LATENCY_CYCLES  (2),
+      .PROG_EMPTY_THRESHOLD (256)
+   ) ddr_wr_2bank_pingpong_uut (
       .dout          (ddr_wr_fifo_dout),
       .full          (ddr_wr_fifo_full),
       .empty         (ddr_wr_fifo_empty),
-      .valid         (),
+      .valid         (ddr_wr_fifo_valid),
       .prog_empty    (ddr_wr_fifo_prog_empty),
       .rd_data_count (ddr_wr_fifo_level),
+      .overrun       (ddr_wr_pingpong_overrun),
       .wr_rst_busy   (),
       .rd_rst_busy   (),
       .wr_clk        (clk),
@@ -119,7 +123,7 @@ module user_app_top #(
    );
 
    // Command generator.
-   // Convert FIFO and cache status into AXI4 transactions.
+   // This block turns watermarks and cached data availability into AXI4 bursts.
    user_rw_cmd_gen #(
       .ADDR_WIDTH     (ADDR_WIDTH),
       .AXI_ADDR_WIDTH (AXI_ADDR_WIDTH),
@@ -180,6 +184,7 @@ module user_app_top #(
       .fault_ddr_overrun        (fault_ddr_overrun),
       .fault_ddr_warning        (fault_ddr_warning),
       .ddr_wr_fifo_empty        (ddr_wr_fifo_empty),
+      .ddr_wr_fifo_valid        (ddr_wr_fifo_valid),
       .ddr_wr_fifo_prog_empty   (ddr_wr_fifo_prog_empty),
       .ddr_wr_fifo_level        (ddr_wr_fifo_level),
       .wr_fifo_overrun          (wr_fifo_overrun),
@@ -200,7 +205,7 @@ module user_app_top #(
       else if (make_data_p_edge) begin
          wr_fifo_overrun <= '0;
       end
-      else if (ddr_wr_fifo_full && data_from_ddr_en) begin
+      else if (ddr_wr_pingpong_overrun || (ddr_wr_fifo_full && data_from_ddr_en)) begin
          wr_fifo_overrun <= 1'b1;
       end
       else begin
