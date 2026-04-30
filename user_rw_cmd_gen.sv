@@ -112,6 +112,12 @@ module user_rw_cmd_gen #(
       RW_READ_R     // Accept read data beats until the AXI burst ends.
    } rw_state_t;
 
+   typedef enum logic [1:0] {
+      GRANT_NONE,
+      GRANT_WRITE,
+      GRANT_READ
+   } grant_t;
+
    // Start pulse sync.
    // Synchronize the start pulse into ui_clk and extract a clean rising edge.
    (* ASYNC_REG = "true" *) logic make_data_on_rcom_cdc_to_d;
@@ -174,13 +180,13 @@ module user_rw_cmd_gen #(
    // Pressure state.
    // These flags are the coarse "how much room do we still have?" view that
    // the arbiter uses before it decides whether to favor reads or writes.
-   logic wr_level_low;
-   logic wr_level_high;
-   logic wr_level_urgent;
-   logic wr_has_full_burst;
-   logic rd_level_low;
-   logic rd_level_urgent;
-   logic rd_cache_can_prefetch;
+   logic        wr_level_low;
+   logic        wr_level_high;
+   logic        wr_level_urgent;
+   logic        wr_has_full_burst;
+   logic        rd_level_low;
+   logic        rd_level_urgent;
+   logic        rd_cache_can_prefetch;
    logic [14:0] rd_cache_free_count;
 
    assign wr_level_low          = ddr_wr_fifo_level >= WR_LEVEL_LOW;
@@ -229,6 +235,7 @@ module user_rw_cmd_gen #(
    // starve one side when both read and write requests are active.
    rw_state_t rw_state;
    rw_state_t rw_next_state;
+
    logic remember_write_grant;
    logic remember_read_grant;
    logic clear_last_grant;
@@ -256,15 +263,6 @@ module user_rw_cmd_gen #(
       end
       else if (remember_read_grant) begin
          last_grant_was_read <= 1'b1;
-      end
-   end
-
-   always_ff @(posedge ui_clk) begin
-      if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
-         rw_state <= RW_IDLE;
-      end
-      else begin
-         rw_state <= rw_next_state;
       end
    end
 
@@ -307,6 +305,67 @@ module user_rw_cmd_gen #(
    assign wr_fair_req          = ddr_wr_req && (~last_grant_was_write);
    assign rd_fair_req          = rd_req_allowed && (~last_grant_was_read);
 
+   grant_t arb_pre_grant;
+   grant_t arb_fair_grant;
+
+   // Grant selection.
+   // This layer decides only the next service direction; AXI execution,
+   // address update, and FIFO pop still happen in the state machine below.
+   always_comb begin
+      arb_pre_grant = GRANT_NONE;
+
+      if (wr_urgent_req) begin
+         arb_pre_grant = GRANT_WRITE;
+      end
+      else if (rd_urgent_req) begin
+         arb_pre_grant = GRANT_READ;
+      end
+      else if (both_rw_req) begin
+         arb_pre_grant = GRANT_NONE;
+      end
+      else if (rd_req_allowed) begin
+         arb_pre_grant = GRANT_READ;
+      end
+      else if (ddr_wr_req) begin
+         arb_pre_grant = GRANT_WRITE;
+      end
+   end
+
+   always_comb begin
+      arb_fair_grant = GRANT_NONE;
+
+      if (wr_urgent_req) begin
+         arb_fair_grant = GRANT_WRITE;
+      end
+      else if (rd_low_or_urgent_req) begin
+         arb_fair_grant = GRANT_READ;
+      end
+      else if (wr_high_req && (~last_grant_was_write)) begin
+         arb_fair_grant = GRANT_WRITE;
+      end
+      else if (wr_fair_req) begin
+         arb_fair_grant = GRANT_WRITE;
+      end
+      else if (rd_fair_req) begin
+         arb_fair_grant = GRANT_READ;
+      end
+      else if (ddr_wr_req) begin
+         arb_fair_grant = GRANT_WRITE;
+      end
+      else if (rd_req_allowed) begin
+         arb_fair_grant = GRANT_READ;
+      end
+   end
+
+   always_ff @(posedge ui_clk) begin
+      if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
+         rw_state <= RW_IDLE;
+      end
+      else begin
+         rw_state <= rw_next_state;
+      end
+   end
+
    // Arbitration policy:
    // - urgent write protects the upstream FIFO from overflow;
    // - low/urgent read refills the downstream cache when write is not urgent;
@@ -336,72 +395,45 @@ module user_rw_cmd_gen #(
                   rw_next_state    = RW_IDLE;
                   clear_last_grant = 1'b1;
                end
-               // Protect the write FIFO first when it reaches the urgent level.
-               else if (wr_urgent_req) begin
-                  rw_next_state    = RW_WRITE_AW;
-                  clear_last_grant = 1'b1;
-               end
-               // Refill the read cache if it is urgent and write pressure is not urgent.
-               else if (rd_urgent_req) begin
-                  rw_next_state    = RW_READ_AR;
-                  clear_last_grant = 1'b1;
-               end
-               // Both sides request service; use the remembered last grant below.
-               else if (both_rw_req) begin
-                  rw_next_state    = RW_ARB;
-               end
-               // Single-sided read request.
-               else if (rd_req_allowed) begin
-                  rw_next_state    = RW_READ_AR;
-                  clear_last_grant = 1'b1;
-               end
-               // Single-sided write request.
-               else if (ddr_wr_req) begin
-                  rw_next_state    = RW_WRITE_AW;
-                  clear_last_grant = 1'b1;
+               else begin
+                  unique case (arb_pre_grant)
+                     GRANT_WRITE: begin
+                        rw_next_state    = RW_WRITE_AW;
+                        clear_last_grant = 1'b1;
+                     end
+
+                     GRANT_READ: begin
+                        rw_next_state    = RW_READ_AR;
+                        clear_last_grant = 1'b1;
+                     end
+
+                     default: begin
+                        // Both sides are active, so enter the fair grant layer.
+                        if (both_rw_req) begin
+                           rw_next_state = RW_ARB;
+                        end
+                     end
+                  endcase
                end
             end
 
             RW_ARB: begin
-               // Urgent write overrides normal fairness.
-               if (wr_urgent_req) begin
-                  rw_next_state        = RW_WRITE_AW;
-                  remember_write_grant = 1'b1;
-               end
-               // Low or urgent cache level can pull service toward reads.
-               else if (rd_low_or_urgent_req) begin
-                  rw_next_state       = RW_READ_AR;
-                  remember_read_grant = 1'b1;
-               end
-               // High write pressure wins if the previous grant was not already a write.
-               else if (wr_high_req && (~last_grant_was_write)) begin
-                  rw_next_state        = RW_WRITE_AW;
-                  remember_write_grant = 1'b1;
-               end
-               // Normal fairness path for write service.
-               else if (wr_fair_req) begin
-                  rw_next_state        = RW_WRITE_AW;
-                  remember_write_grant = 1'b1;
-               end
-               // Normal fairness path for read service.
-               else if (rd_fair_req) begin
-                  rw_next_state       = RW_READ_AR;
-                  remember_read_grant = 1'b1;
-               end
-               // Fallback write grant when fairness did not select a side.
-               else if (ddr_wr_req) begin
-                  rw_next_state        = RW_WRITE_AW;
-                  remember_write_grant = 1'b1;
-               end
-               // Fallback read grant if writes are not urgent and cache space is available.
-               else if (rd_req_allowed) begin
-                  rw_next_state       = RW_READ_AR;
-                  remember_read_grant = 1'b1;
-               end
-               else begin
-                  rw_next_state    = RW_ARB_PRE;
-                  clear_last_grant = 1'b1;
-               end
+               unique case (arb_fair_grant)
+                  GRANT_WRITE: begin
+                     rw_next_state        = RW_WRITE_AW;
+                     remember_write_grant = 1'b1;
+                  end
+
+                  GRANT_READ: begin
+                     rw_next_state       = RW_READ_AR;
+                     remember_read_grant = 1'b1;
+                  end
+
+                  default: begin
+                     rw_next_state    = RW_ARB_PRE;
+                     clear_last_grant = 1'b1;
+                  end
+               endcase
             end
 
             RW_WRITE_AW: begin
