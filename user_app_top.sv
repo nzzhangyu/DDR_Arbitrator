@@ -52,8 +52,9 @@ module user_app_top #(
    input  logic                      m_axi_rvalid,
    output logic                      m_axi_rready,
 
-   output logic [127:0]              ddr_dataout,
-   output logic                      ddr_dataout_en,
+   output logic [127:0]              user_r_data,
+   output logic                      user_r_valid,
+   output logic                      user_r_empty,
    output logic                      ddr_overrun,
    output logic                      ddr_warning,
    output logic                      wr_fifo_overrun,
@@ -68,12 +69,10 @@ module user_app_top #(
    input  logic                      RESET,
    input  logic                      data_from_ddr_en,
    input  logic [127:0]              data_from_ddr_dd,
+   input  logic                      user_r_rd_en,
    input  logic                      ddr_rd_req,
    input  logic                      req_stop,
    input  logic                      rst_local_t_ddr_clk,
-   input  logic                      cache_fifo_prog_full,
-   input  logic                      cache_fifo_almost_empty,
-   input  logic [13:0]               cache_fifo_data_count,
    input  logic                      fault_ddr_overrun,
    input  logic                      fault_ddr_warning,
    input  logic                      make_data_on,
@@ -83,43 +82,119 @@ module user_app_top #(
    input  logic [ADDR_WIDTH-1:0]     rp_back_view_addr
 );
 
-   // Write-side ping-pong staging.
-   // The upstream producer can burst faster than AXI accepts beats, so the
-   // ping-pong keeps the DDR write path fed without forcing the producer to stall.
+   localparam int FIFO_DATA_WIDTH        = 128;
+   localparam int DDR_FIFO_DEPTH         = 16384;
+   localparam int DDR_FIFO_COUNT_WIDTH   = 15;
+   localparam int WR_PROG_EMPTY_THRESH   = 256;
+   localparam int RD_PROG_FULL_THRESH    = 12288;
+   localparam logic [13:0] RD_ALMOST_EMPTY_THRESH = 14'd4096;
+
+   // Write-side DDR staging FIFO.
+   // The upstream producer writes in clk, while the AXI writer drains in ui_clk.
    logic [127:0] ddr_wr_fifo_dout;
    logic         ddr_wr_fifo_valid;
    logic         ddr_wr_fifo_prog_empty;
    logic         ddr_wr_fifo_full;
-   logic         ddr_wr_pingpong_overrun;
+   logic         ddr_wr_fifo_overflow;
    logic         ddr_wr_fifo_rd_en;
+   logic [14:0]  ddr_wr_fifo_rd_count_raw;
    logic [13:0]  ddr_wr_fifo_level;
 
-   // Write ping-pong RAM.
-   // Two 8192-beat banks hold one committed bank and one filling bank.
-   // The module exposes a FIFO-like valid/pop stream to the AXI writer.
-   ddr_wr_2bank_pingpong #(
-      .DATA_WIDTH           (128),
-      .BANK_DEPTH           (8192),
-      .COMMIT_TIMEOUT       (2048),
-      .READ_LATENCY_CYCLES  (2),
-      .PROG_EMPTY_THRESHOLD (256)
-   ) ddr_wr_2bank_pingpong_uut (
+   assign ddr_wr_fifo_level = ddr_wr_fifo_rd_count_raw[14] ?
+                              14'h3fff : ddr_wr_fifo_rd_count_raw[13:0];
+
+   xpm_fifo_async #(
+      .CASCADE_HEIGHT      (0),
+      .CDC_SYNC_STAGES     (2),
+      .DOUT_RESET_VALUE    ("0"),
+      .ECC_MODE            ("no_ecc"),
+      .FIFO_MEMORY_TYPE    ("auto"),
+      .FIFO_READ_LATENCY   (0),
+      .FIFO_WRITE_DEPTH    (DDR_FIFO_DEPTH),
+      .FULL_RESET_VALUE    (0),
+      .PROG_EMPTY_THRESH   (WR_PROG_EMPTY_THRESH),
+      .PROG_FULL_THRESH    (10),
+      .RD_DATA_COUNT_WIDTH (DDR_FIFO_COUNT_WIDTH),
+      .READ_DATA_WIDTH     (FIFO_DATA_WIDTH),
+      .READ_MODE           ("fwft"),
+      .RELATED_CLOCKS      (0),
+      .SIM_ASSERT_CHK      (0),
+      .USE_ADV_FEATURES    ("1F1F"),
+      .WAKEUP_TIME         (0),
+      .WRITE_DATA_WIDTH    (FIFO_DATA_WIDTH),
+      .WR_DATA_COUNT_WIDTH (DDR_FIFO_COUNT_WIDTH)
+   ) ddr_wr_fifo_uut (
+      .data_valid    (ddr_wr_fifo_valid),
       .dout          (ddr_wr_fifo_dout),
-      .full          (ddr_wr_fifo_full),
       .empty         (ddr_wr_fifo_empty),
-      .valid         (ddr_wr_fifo_valid),
+      .full          (ddr_wr_fifo_full),
+      .overflow      (ddr_wr_fifo_overflow),
       .prog_empty    (ddr_wr_fifo_prog_empty),
-      .rd_data_count (ddr_wr_fifo_level),
-      .overrun       (ddr_wr_pingpong_overrun),
-      .wr_rst_busy   (),
-      .rd_rst_busy   (),
-      .wr_clk        (clk),
-      .rd_clk        (ui_clk),
-      .rst           (RESET),
+      .rd_data_count (ddr_wr_fifo_rd_count_raw),
       .din           (data_from_ddr_dd),
-      .wr_en         (data_from_ddr_en),
+      .injectdbiterr (1'b0),
+      .injectsbiterr (1'b0),
+      .rd_clk        (ui_clk),
       .rd_en         (ddr_wr_fifo_rd_en),
-      .flush         (1'b0)
+      .rst           (RESET),
+      .sleep         (1'b0),
+      .wr_clk        (clk),
+      .wr_en         (data_from_ddr_en && (~ddr_wr_fifo_full))
+   );
+
+   // Read-side DDR staging FIFO.
+   // AXI read data is captured in ui_clk and exposed as a pull FIFO in clk.
+   logic [127:0] ddr_rd_fifo_din;
+   logic         ddr_rd_fifo_wr_en;
+   logic         ddr_rd_fifo_full;
+   logic         ddr_rd_fifo_prog_full;
+   logic         ddr_rd_fifo_almost_empty_ui;
+   logic         ddr_rd_fifo_rd_en;
+   logic [14:0]  ddr_rd_fifo_wr_count_raw;
+   logic [13:0]  ddr_rd_fifo_level;
+
+   assign ddr_rd_fifo_level = ddr_rd_fifo_wr_count_raw[14] ?
+                              14'h3fff : ddr_rd_fifo_wr_count_raw[13:0];
+   assign ddr_rd_fifo_almost_empty_ui =
+      ddr_rd_fifo_level <= RD_ALMOST_EMPTY_THRESH;
+   assign ddr_rd_fifo_rd_en = user_r_rd_en && user_r_valid;
+
+   xpm_fifo_async #(
+      .CASCADE_HEIGHT      (0),
+      .CDC_SYNC_STAGES     (2),
+      .DOUT_RESET_VALUE    ("0"),
+      .ECC_MODE            ("no_ecc"),
+      .FIFO_MEMORY_TYPE    ("auto"),
+      .FIFO_READ_LATENCY   (0),
+      .FIFO_WRITE_DEPTH    (DDR_FIFO_DEPTH),
+      .FULL_RESET_VALUE    (0),
+      .PROG_EMPTY_THRESH   (WR_PROG_EMPTY_THRESH),
+      .PROG_FULL_THRESH    (RD_PROG_FULL_THRESH),
+      .RD_DATA_COUNT_WIDTH (DDR_FIFO_COUNT_WIDTH),
+      .READ_DATA_WIDTH     (FIFO_DATA_WIDTH),
+      .READ_MODE           ("fwft"),
+      .RELATED_CLOCKS      (0),
+      .SIM_ASSERT_CHK      (0),
+      .USE_ADV_FEATURES    ("1F1F"),
+      .WAKEUP_TIME         (0),
+      .WRITE_DATA_WIDTH    (FIFO_DATA_WIDTH),
+      .WR_DATA_COUNT_WIDTH (DDR_FIFO_COUNT_WIDTH)
+   ) ddr_rd_fifo_uut (
+      .data_valid    (user_r_valid),
+      .dout          (user_r_data),
+      .empty         (user_r_empty),
+      .full          (ddr_rd_fifo_full),
+      .prog_full     (ddr_rd_fifo_prog_full),
+      .wr_data_count (ddr_rd_fifo_wr_count_raw),
+      .din           (ddr_rd_fifo_din),
+      .injectdbiterr (1'b0),
+      .injectsbiterr (1'b0),
+      .rd_clk        (clk),
+      .rd_en         (ddr_rd_fifo_rd_en),
+      .rst           (RESET),
+      .sleep         (1'b0),
+      .wr_clk        (ui_clk),
+      .wr_en         (ddr_rd_fifo_wr_en && (~ddr_rd_fifo_full))
    );
 
    // Command generator.
@@ -170,9 +245,9 @@ module user_app_top #(
       .ddr_rd_empty             (ddr_rd_empty),
       .ddr_overrun              (ddr_overrun),
       .ddr_warning              (ddr_warning),
-      .ddr_wr_fifo_rd_en        (ddr_wr_fifo_rd_en),
-      .ddr_dataout              (ddr_dataout),
-      .ddr_dataout_en           (ddr_dataout_en),
+      .wr_fifo_rd_en            (ddr_wr_fifo_rd_en),
+      .rd_fifo_din              (ddr_rd_fifo_din),
+      .rd_fifo_wr_en            (ddr_rd_fifo_wr_en),
       .init_calib_complete      (init_calib_complete),
       .ui_clk                   (ui_clk),
       .ui_clk_sync_rst          (ui_clk_sync_rst),
@@ -183,15 +258,16 @@ module user_app_top #(
       .rst_local_t_ddr_clk      (rst_local_t_ddr_clk),
       .fault_ddr_overrun        (fault_ddr_overrun),
       .fault_ddr_warning        (fault_ddr_warning),
-      .ddr_wr_fifo_empty        (ddr_wr_fifo_empty),
-      .ddr_wr_fifo_valid        (ddr_wr_fifo_valid),
-      .ddr_wr_fifo_prog_empty   (ddr_wr_fifo_prog_empty),
-      .ddr_wr_fifo_level        (ddr_wr_fifo_level),
+      .wr_fifo_empty            (ddr_wr_fifo_empty),
+      .wr_fifo_valid            (ddr_wr_fifo_valid),
+      .wr_fifo_prog_empty       (ddr_wr_fifo_prog_empty),
+      .wr_fifo_rd_data_count    (ddr_wr_fifo_level),
       .wr_fifo_overrun          (wr_fifo_overrun),
-      .ddr_wr_fifo_dout         (ddr_wr_fifo_dout),
-      .cache_fifo_prog_full     (cache_fifo_prog_full),
-      .cache_fifo_almost_empty  (cache_fifo_almost_empty),
-      .cache_fifo_data_count    (cache_fifo_data_count),
+      .wr_fifo_dout             (ddr_wr_fifo_dout),
+      .rd_fifo_prog_full        (ddr_rd_fifo_prog_full),
+      .rd_fifo_almost_empty     (ddr_rd_fifo_almost_empty_ui),
+      .rd_fifo_data_count       (ddr_rd_fifo_level),
+      .rd_fifo_full             (ddr_rd_fifo_full),
       .rp_back_en               (rp_back_en),
       .rp_back_view_addr        (rp_back_view_addr)
    );
@@ -205,7 +281,7 @@ module user_app_top #(
       else if (make_data_p_edge) begin
          wr_fifo_overrun <= '0;
       end
-      else if (ddr_wr_pingpong_overrun || (ddr_wr_fifo_full && data_from_ddr_en)) begin
+      else if (ddr_wr_fifo_overflow || (ddr_wr_fifo_full && data_from_ddr_en)) begin
          wr_fifo_overrun <= 1'b1;
       end
       else begin

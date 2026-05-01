@@ -56,9 +56,9 @@ module user_rw_cmd_gen #(
    output logic                      ddr_rd_empty,
    output logic                      ddr_overrun,
    output logic                      ddr_warning,
-   output logic                      ddr_wr_fifo_rd_en,
-   output logic [127:0]              ddr_dataout,
-   output logic                      ddr_dataout_en,
+   output logic                      wr_fifo_rd_en,
+   output logic [127:0]              rd_fifo_din,
+   output logic                      rd_fifo_wr_en,
 
    input  logic                      init_calib_complete,
    input  logic                      ui_clk,
@@ -70,15 +70,16 @@ module user_rw_cmd_gen #(
    input  logic                      rst_local_t_ddr_clk,
    input  logic                      fault_ddr_overrun,
    input  logic                      fault_ddr_warning,
-   input  logic                      ddr_wr_fifo_empty,
-   input  logic                      ddr_wr_fifo_valid,
-   input  logic                      ddr_wr_fifo_prog_empty,
-   input  logic [13:0]               ddr_wr_fifo_level,
+   input  logic                      wr_fifo_empty,
+   input  logic                      wr_fifo_valid,
+   input  logic                      wr_fifo_prog_empty,
+   input  logic [13:0]               wr_fifo_rd_data_count,
    input  logic                      wr_fifo_overrun,
-   input  logic [127:0]              ddr_wr_fifo_dout,
-   input  logic                      cache_fifo_prog_full,
-   input  logic                      cache_fifo_almost_empty,
-   input  logic [13:0]               cache_fifo_data_count,
+   input  logic [127:0]              wr_fifo_dout,
+   input  logic                      rd_fifo_prog_full,
+   input  logic                      rd_fifo_almost_empty,
+   input  logic [13:0]               rd_fifo_data_count,
+   input  logic                      rd_fifo_full,
    input  logic                      rp_back_en,
    input  logic [ADDR_WIDTH-1:0]     rp_back_view_addr
 );
@@ -93,7 +94,7 @@ module user_rw_cmd_gen #(
    localparam logic [13:0] RD_LEVEL_URGENT   = 14'd4096;
    localparam logic [13:0] RD_LEVEL_LOW      = 14'd8192;
    localparam logic [13:0] RD_LEVEL_HIGH     = 14'd12288;
-   localparam logic [13:0] RD_CACHE_DEPTH    = 14'd16383;
+   localparam logic [13:0] RD_FIFO_DEPTH     = 14'd16383;
 
    localparam logic [8:0]  RD_GRANT_MAX      = 9'd256;
    localparam logic [8:0]  RD_GRANT_WR_HIGH  = 9'd128;
@@ -169,7 +170,7 @@ module user_rw_cmd_gen #(
       if (ui_clk_sync_rst) begin
          wr_tail_age_cnt <= '0;
       end
-      else if (clear_wr_wait_age || (~ddr_wr_fifo_valid)) begin
+      else if (clear_wr_wait_age || (~wr_fifo_valid)) begin
          wr_tail_age_cnt <= '0;
       end
       else if (~wr_tail_age_reached) begin
@@ -186,20 +187,21 @@ module user_rw_cmd_gen #(
    logic        wr_has_full_burst;
    logic        rd_level_low;
    logic        rd_level_urgent;
-   logic        rd_cache_can_prefetch;
-   logic [14:0] rd_cache_free_count;
+   logic        rd_fifo_can_prefetch;
+   logic [14:0] rd_fifo_free_count;
 
-   assign wr_level_low          = ddr_wr_fifo_level >= WR_LEVEL_LOW;
-   assign wr_level_high         = ddr_wr_fifo_level >= WR_LEVEL_HIGH;
-   assign wr_level_urgent       = ddr_wr_fifo_level >= WR_LEVEL_URGENT;
-   assign wr_has_full_burst     = ~ddr_wr_fifo_prog_empty;
+   assign wr_level_low          = wr_fifo_rd_data_count >= WR_LEVEL_LOW;
+   assign wr_level_high         = wr_fifo_rd_data_count >= WR_LEVEL_HIGH;
+   assign wr_level_urgent       = wr_fifo_rd_data_count >= WR_LEVEL_URGENT;
+   assign wr_has_full_burst     = ~wr_fifo_prog_empty;
    
-   assign rd_level_urgent       = cache_fifo_almost_empty |
-                              (cache_fifo_data_count <= RD_LEVEL_URGENT);
-   assign rd_level_low          = cache_fifo_data_count <= RD_LEVEL_LOW;
-   assign rd_cache_free_count   = {1'b0, RD_CACHE_DEPTH} - {1'b0, cache_fifo_data_count};
-   assign rd_cache_can_prefetch = (~cache_fifo_prog_full) &
-                                  (cache_fifo_data_count < RD_LEVEL_HIGH);
+   assign rd_level_urgent       = rd_fifo_almost_empty |
+                                  (rd_fifo_data_count <= RD_LEVEL_URGENT);
+   assign rd_level_low          = rd_fifo_data_count <= RD_LEVEL_LOW;
+   assign rd_fifo_free_count    = {1'b0, RD_FIFO_DEPTH} - {1'b0, rd_fifo_data_count};
+   assign rd_fifo_can_prefetch  = (~rd_fifo_prog_full) &
+                                  (~rd_fifo_full) &
+                                  (rd_fifo_data_count < RD_LEVEL_HIGH);
 
    // Request gating.
    // A request becomes eligible only after the corresponding buffer is non-empty
@@ -213,7 +215,7 @@ module user_rw_cmd_gen #(
    // - enough pressure to start normal draining;
    // - enough data for a full AXI burst;
    // - a small tail has waited long enough and should not be stranded.
-   assign ddr_wr_req = ddr_wr_fifo_valid &
+   assign ddr_wr_req = wr_fifo_valid &
                        (wr_level_low | wr_has_full_burst |
                         wr_tail_age_reached);
 
@@ -228,7 +230,7 @@ module user_rw_cmd_gen #(
       end
    end
 
-   assign ddr_rd_req_qual = (~ddr_rd_empty) & ddr_rd_req_dd & rd_cache_can_prefetch;
+   assign ddr_rd_req_qual = (~ddr_rd_empty) & ddr_rd_req_dd & rd_fifo_can_prefetch;
 
    // Arbitration state.
    // The arbiter remembers the last granted direction so normal traffic does not
@@ -277,11 +279,11 @@ module user_rw_cmd_gen #(
    logic       write_burst_done;
    logic       read_burst_done;
    logic       block_for_replay;
-   logic       rd_cache_has_grant_space;
+   logic       rd_fifo_has_grant_space;
 
    // Shorten read grants when write FIFO pressure is high so writes get back in sooner.
    assign rd_grant_limit = wr_level_high ? RD_GRANT_WR_HIGH : RD_GRANT_MAX;
-   assign rd_cache_has_grant_space = rd_cache_free_count >= {6'd0, rd_grant_limit};
+   assign rd_fifo_has_grant_space = rd_fifo_free_count >= {6'd0, rd_grant_limit};
    // Hold new arbitration while the read pointer is being rewound for replay.
    assign block_for_replay = rp_back_en || (|rp_back_en_dly_cnt);
 
@@ -297,7 +299,7 @@ module user_rw_cmd_gen #(
 
    assign wr_urgent_req        = wr_level_urgent && ddr_wr_req;
    assign wr_high_req          = wr_level_high && ddr_wr_req;
-   assign rd_req_with_space    = ddr_rd_req_qual && rd_cache_has_grant_space;
+   assign rd_req_with_space    = ddr_rd_req_qual && rd_fifo_has_grant_space;
    assign rd_req_allowed       = rd_req_with_space && (~wr_level_urgent);
    assign rd_urgent_req        = rd_level_urgent && rd_req_allowed;
    assign rd_low_or_urgent_req = (rd_level_low || rd_level_urgent) && rd_req_allowed;
@@ -462,7 +464,7 @@ module user_rw_cmd_gen #(
             end
 
             RW_READ_AR: begin
-               if ((read_burst_len == 0) || (~rd_cache_has_grant_space)) begin
+               if ((read_burst_len == 0) || (~rd_fifo_has_grant_space)) begin
                   rw_next_state = RW_ARB_PRE;
                end
                // Address handshake locks in the read burst; data follows in R state.
@@ -583,8 +585,8 @@ module user_rw_cmd_gen #(
       end
       else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
          // Write bursts are based on FIFO level and clamped to the AXI maximum of 256 beats.
-         write_burst_len <= (ddr_wr_fifo_level == 0 && ddr_wr_fifo_valid) ?
-                            9'd1 : clamp_count_256(ddr_wr_fifo_level);
+         write_burst_len <= (wr_fifo_rd_data_count == 0 && wr_fifo_valid) ?
+                            9'd1 : clamp_count_256(wr_fifo_rd_data_count);
       end
    end
 
@@ -597,7 +599,7 @@ module user_rw_cmd_gen #(
          read_burst_len <= min3_beat_count(
             rd_grant_limit,
             clamp_available_count(ddr_read_available_count),
-            clamp_free_count(rd_cache_free_count)
+            clamp_free_count(rd_fifo_free_count)
          );
       end
    end
@@ -629,10 +631,10 @@ module user_rw_cmd_gen #(
    assign write_burst_done = write_data_fire && (write_beat_cnt == (write_burst_len - 1'b1));
    assign read_burst_done  = read_data_fire && m_axi_rlast;
 
-   assign ddr_wr_fifo_rd_en = (rw_state == RW_WRITE_W) &&
-                              m_axi_wready &&
-                              ddr_wr_fifo_valid &&
-                              (write_beat_cnt < write_burst_len);
+   assign wr_fifo_rd_en = (rw_state == RW_WRITE_W) &&
+                          m_axi_wready &&
+                          wr_fifo_valid &&
+                          (write_beat_cnt < write_burst_len);
 
    assign m_axi_awid    = '0;
    assign m_axi_awaddr  = beat_to_axi_addr(user_ad_wr);
@@ -645,10 +647,10 @@ module user_rw_cmd_gen #(
    assign m_axi_awqos   = 4'b0000;
    assign m_axi_awvalid = (rw_state == RW_WRITE_AW) && (write_burst_len != 0);
 
-   assign m_axi_wdata   = ddr_wr_fifo_dout;
+   assign m_axi_wdata   = wr_fifo_dout;
    assign m_axi_wstrb   = 16'hffff;
    assign m_axi_wvalid  = (rw_state == RW_WRITE_W) &&
-                          ddr_wr_fifo_valid &&
+                          wr_fifo_valid &&
                           (write_beat_cnt < write_burst_len);
    assign m_axi_wlast   = m_axi_wvalid && (write_beat_cnt == (write_burst_len - 1'b1));
    assign m_axi_bready  = (rw_state == RW_WRITE_B);
@@ -664,11 +666,11 @@ module user_rw_cmd_gen #(
    assign m_axi_arqos   = 4'b0000;
    assign m_axi_arvalid = (rw_state == RW_READ_AR) &&
                           (read_burst_len != 0) &&
-                          rd_cache_has_grant_space;
-   assign m_axi_rready  = (rw_state == RW_READ_R);
+                          rd_fifo_has_grant_space;
+   assign m_axi_rready  = (rw_state == RW_READ_R) && (~rd_fifo_full);
 
-   assign ddr_dataout    = m_axi_rdata;
-   assign ddr_dataout_en = read_data_fire;
+   assign rd_fifo_din   = m_axi_rdata;
+   assign rd_fifo_wr_en = read_data_fire;
 
    logic [ADDR_WIDTH:0] wr_sub_rd;
    logic [ADDR_WIDTH:0] wr_sub_rd_diff;
