@@ -1,4 +1,4 @@
-# DDR4 架构说明
+﻿# DDR4 架构说明
 
 这份文档记录当前工作区里的 DDR4 RTL 架构，重点放在几天不看就容易忘的部分：数据流、XPM FIFO 缓冲、水位仲裁、burst 计算，以及最常复用信号的含义。
 
@@ -12,23 +12,25 @@
 
 当前 RTL 已经不再使用原来的 MIG `app_*` 直接控制方式，而是统一由 AXI4 发起访问。这样更容易仿真、观察和后续扩展。
 
+当前仓库结构把设计代码和仿真代码分开：`rtl/` 存放 DDR 主链路 RTL 和 legacy RTL 候选模块，`sim/` 存放 testbench、fast mock、MIG adapter 以及 `sim/sim_mig/` 里的真实 MIG 仿真文件。
+
 ### 主要模块
 
-- `user_rw_cmd_gen.sv`
+- `rtl/user_rw_cmd_gen.sv`
   - AXI4 命令生成。
   - 基于水位的仲裁。
   - burst 大小计算和地址跟踪。
-- `user_app_top.sv`
+- `rtl/user_app_top.sv`
   - XPM FIFO 缓冲和命令生成器的连接。
   - 写侧 overrun 监控。
-- `ddr4_controller.sv`
+- `rtl/ddr4_controller.sv`
   - 用户 AXI 和 MIG AXI 之间的顶层桥接。
   - 把 DDR 状态反馈给用户侧输出。
-- `ddr_wr_2bank_pingpong.sv`
+- `rtl/ddr_wr_2bank_pingpong.sv`
   - 旧版写侧 2 bank ping-pong 缓冲，当前顶层不再实例化。
-- `ddr_rd_2bank_pingpong.sv`
+- `rtl/ddr_rd_2bank_pingpong.sv`
   - 旧版读侧 2 bank ping-pong 缓冲，当前顶层不再实例化。
-- `ddr_cache_and_frame_gen.sv`、`header_frame_gen.sv`、`reading_header_slice_gen.sv`
+- `rtl/ddr_cache_and_frame_gen.sv`、`rtl/header_frame_gen.sv`、`rtl/reading_header_slice_gen.sv`
   - header、slice 和 view 的重建逻辑。
 
 ## 2. 数据流
@@ -58,7 +60,7 @@ DDR 读返回的数据先进入读侧 XPM 异步 FIFO，再由用户侧拉取。
 - `user_r_valid` 表示读后 FIFO 当前有有效数据，`user_r_empty` 表示读后 FIFO 为空。
 - 仲裁使用 `ui_clk` 域的读后 FIFO 写侧水位，避免跨域采样用户侧 empty/valid。
 
-读侧 FIFO 的 `prog_full` 和 data count 会回灌给 `user_rw_cmd_gen.sv`，用于限制新的 AR burst。
+读侧 FIFO 的 `prog_full` 和 data count 会回灌给 `rtl/user_rw_cmd_gen.sv`，用于限制新的 AR burst。
 
 ### AXI 路径
 
@@ -101,7 +103,7 @@ DDR 读返回的数据先进入读侧 XPM 异步 FIFO，再由用户侧拉取。
 
 ## 4. 水位与仲裁
 
-`user_rw_cmd_gen.sv` 里当前使用的固定阈值是：
+`rtl/user_rw_cmd_gen.sv` 里当前使用的固定阈值是：
 
 - `WR_LEVEL_LOW = 2048`
 - `WR_LEVEL_HIGH = 8192`
@@ -118,7 +120,7 @@ DDR 读返回的数据先进入读侧 XPM 异步 FIFO，再由用户侧拉取。
 
 当前逻辑不会在一个 AXI burst 中途打断它，只会在 burst 边界做切换。
 
-`user_rw_cmd_gen.sv` 里的仲裁现在分成两层：
+`rtl/user_rw_cmd_gen.sv` 里的仲裁现在分成两层：
 
 - grant 选择层：`arb_pre_grant` 和 `arb_fair_grant` 只判断下一步服务 `WRITE`、`READ` 还是暂不发起事务。
 - AXI 执行状态机：根据 grant 进入 `AW/W/B` 或 `AR/R`，真正的地址推进、burst 计数和写缓存 pop 都在这里完成。
@@ -180,8 +182,8 @@ DDR 这一层本身是按 beat 处理的。slice 和 view 的边界，不是由 
 
 当前验证环境分成两种模式：
 
-- 快速模式：`ddr4_mig_adapter.sv` 默认实例化 `ddr4_fast_mock.sv`，用于日常 slice/view 回归。这个模式不跑 MIG 校准，适合快速确认 AXI 写读闭环、FIFO 水位仲裁、数据顺序和 overrun/warning 标志。
-- 真实 MIG 模式：定义 `USE_REAL_MIG` 后，`ddr4_mig_adapter.sv` 实例化 `ddr4_1200m` 仿真网表，并由 `tb_ddr4_controller_mig_real.sv` 连接官方 DDR4 memory model。这个模式用于观察真实 MIG calibration、AXI ready/valid backpressure 和 DDR4 物理模型连接。
+- 快速模式：`sim/ddr4_mig_adapter.sv` 默认实例化 `sim/ddr4_fast_mock.sv`，用于日常 slice/view 回归。这个模式不跑 MIG 校准，适合快速确认 AXI 写读闭环、FIFO 水位仲裁、数据顺序和 overrun/warning 标志。
+- 真实 MIG 模式：定义 `USE_REAL_MIG` 后，`sim/ddr4_mig_adapter.sv` 实例化 `ddr4_1200m` 仿真网表，并由 `sim/tb_ddr4_controller_mig_real.sv` 连接官方 DDR4 memory model。这个模式用于观察真实 MIG calibration、AXI ready/valid backpressure 和 DDR4 物理模型连接。
 
 两个 testbench 都按用户侧的 view/slice 数据结构生成输入：
 
@@ -197,10 +199,10 @@ DDR 这一层本身是按 beat 处理的。slice 和 view 的边界，不是由 
 如果想快速重新搭起整个架构，建议按这个顺序看：
 
 1. `DDR4_ARCHITECTURE.md`
-2. `ddr4_controller.sv`
-3. `user_app_top.sv`
-4. `user_rw_cmd_gen.sv`
-5. `ddr_cache_and_frame_gen.sv`
-6. `rd_cache_ctrl.sv`
+2. `rtl/ddr4_controller.sv`
+3. `rtl/user_app_top.sv`
+4. `rtl/user_rw_cmd_gen.sv`
+5. `rtl/ddr_cache_and_frame_gen.sv`
+6. `rtl/rd_cache_ctrl.sv`
 
 这个顺序和真实的数据路径是一致的：先看顶层桥接，再看缓冲，再看仲裁。

@@ -1,36 +1,42 @@
 # AGENTS.md
 
-This directory contains the DDR4 RTL sources and the notes that explain how the design is organized.
+This directory contains the DDR4 RTL sources, simulation support, and the notes that explain how the design is organized.
 
 ## Purpose
 
 Keep the RTL and the documentation synchronized while preserving the current architecture:
 
 - DDR4 access uses AXI4, not native MIG `app_*`
-- FIFO / ping-pong buffering stays in place
+- XPM FIFO buffering is the active DDR bridge path; ping-pong modules are kept as legacy RTL candidates
 - dynamic watermarks and arbitration stay in place
 - read replay / backtracking behavior stays in place
 
 ## Working Rules
 
-- Edit the `.sv` RTL files directly in this directory.
+- Edit design RTL under `rtl/` and simulation support under `sim/`.
 - Keep functional changes and comment / documentation changes separate when possible.
 - Do not reintroduce native MIG `app_*` logic unless the user explicitly requests it.
 - Prefer SystemVerilog style for new edits: `logic`, `always_ff`, `always_comb`, enums, and short explanatory comments.
 - Do not delete currently used AXI interface signals just because they look redundant.
 
+## Directory Map
+
+- `rtl/`: design RTL plus legacy RTL candidates that are not currently instantiated.
+- `sim/`: testbenches, fast mock logic, MIG adapter, and copied MIG simulation files.
+- Markdown files remain at the repository root for quick cross-device reading.
+
 ## File Map
 
-- `user_rw_cmd_gen.sv`: AXI4 command generation, arbitration, burst sizing, address tracking, and error flags.
-- `user_app_top.sv`: ping-pong staging, command-generator wiring, and write-side overrun tracking.
-- `ddr4_controller.sv`: top-level DDR4 wrapper, MIG AXI wiring, and user-side bridge wiring.
-- `ddr_wr_2bank_pingpong.sv`: write-side 2-bank ping-pong RAM.
-- `ddr_rd_2bank_pingpong.sv`: read-side 2-bank ping-pong RAM.
-- `ddr_cache_and_frame_gen.sv`: cache and frame-generation related logic.
-- `header_frame_gen.sv`: header/frame generation logic.
-- `header_parameter.sv`: header and parameter definitions.
-- `rd_cache_ctrl.sv`: read-cache control logic.
-- `reading_header_slice_gen.sv`: read-side header/slice handling.
+- `rtl/user_rw_cmd_gen.sv`: AXI4 command generation, arbitration, burst sizing, address tracking, and error flags.
+- `rtl/user_app_top.sv`: XPM FIFO staging, command-generator wiring, and write-side overrun tracking.
+- `rtl/ddr4_controller.sv`: top-level DDR4 wrapper, MIG AXI wiring, and user-side bridge wiring.
+- `rtl/ddr_wr_2bank_pingpong.sv`: legacy write-side 2-bank ping-pong RAM.
+- `rtl/ddr_rd_2bank_pingpong.sv`: legacy read-side 2-bank ping-pong RAM.
+- `rtl/ddr_cache_and_frame_gen.sv`: cache and frame-generation related logic.
+- `rtl/header_frame_gen.sv`: header/frame generation logic.
+- `rtl/header_parameter.sv`: header and parameter definitions.
+- `rtl/rd_cache_ctrl.sv`: read-cache control logic.
+- `rtl/reading_header_slice_gen.sv`: read-side header/slice handling.
 - `DDR4_ARCHITECTURE.md`: readable architecture overview and signal cheat sheet.
 
 ## Cross-Device Sync Notes
@@ -39,15 +45,15 @@ Keep the RTL and the documentation synchronized while preserving the current arc
   - `xsim.dir/`
   - `xvlog.log`
   - `xvlog.pb`
-- If a device only needs the RTL sources, sync the `.sv` files and markdown docs.
-- If a device needs validation, re-run `xvlog -sv` on the affected RTL files after syncing.
+- If a device only needs the RTL sources, sync `rtl/` and markdown docs.
+- If a device needs validation, sync `sim/` too and re-run `xvlog -sv` on the affected files.
 
 ## Verification
 
 Typical syntax checks:
 
 ```powershell
-xvlog -sv D:\FPGA\DDR\user_rw_cmd_gen.sv
-xvlog -sv D:\FPGA\DDR\user_app_top.sv
-xvlog -sv D:\FPGA\DDR\ddr4_controller.sv
+xvlog -sv D:\FPGA\DDR\rtl\user_rw_cmd_gen.sv
+xvlog -sv D:\FPGA\DDR\rtl\user_app_top.sv
+xvlog -sv D:\FPGA\DDR\rtl\ddr4_controller.sv
 ```
