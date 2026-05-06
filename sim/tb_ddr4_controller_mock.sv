@@ -2,29 +2,33 @@
 
 module tb_ddr4_controller_mock;
 
-   localparam int ADDR_WIDTH          = 20;
-   localparam int AXI_ADDR_WIDTH      = ADDR_WIDTH + 4;
-   localparam int AXI_ID_WIDTH        = 1;
-   localparam int DEFAULT_SIM_VIEWS   = 2;
-   localparam int TOTAL_FRAME_VIEWS   = 2320;
-   localparam int VIEW_PERIOD_US      = 232;
-   localparam int CLK_PERIOD_PS       = 5000;
-   localparam int VIEW_PERIOD_CYCLES  = (VIEW_PERIOD_US * 1000000) / CLK_PERIOD_PS;
-   localparam int FTPS_PER_SLICE      = 30;
-   localparam int CHANNELS_PER_SLICE  = 48;
-   localparam int SLICES_PER_VIEW     = 128;
-   localparam int SAMPLE_BITS         = 16;
-   localparam int AXI_DATA_BITS       = 128;
-   localparam int SAMPLES_PER_BEAT    = AXI_DATA_BITS / SAMPLE_BITS;
-   localparam int SLICE_HEADER_BEATS  = 2;
-   localparam int SLICE_PAYLOAD_SAMPLES = FTPS_PER_SLICE * CHANNELS_PER_SLICE;
-   localparam int SLICE_PAYLOAD_BEATS =
-      (SLICE_PAYLOAD_SAMPLES + SAMPLES_PER_BEAT - 1) / SAMPLES_PER_BEAT;
-   localparam int SLICE_TOTAL_BEATS   = SLICE_HEADER_BEATS + SLICE_PAYLOAD_BEATS;
-   localparam int VIEW_TOTAL_BEATS    = SLICES_PER_VIEW * SLICE_TOTAL_BEATS;
-   localparam int MOCK_MEM_WORDS      = 1 << ADDR_WIDTH;
-   localparam int MOCK_MAX_VIEWS      = MOCK_MEM_WORDS / VIEW_TOTAL_BEATS;
-   localparam int TIMEOUT_CYCLES      = 1200000;
+   localparam int CLK_PERIOD_PS      = 5000;   
+   // System Paramete
+   localparam int CONV_PERIOD_US     = 232;
+   localparam int DEFAULT_SIM_VIEWS  = 2;
+   localparam int TOTAL_VIEWS        = 2320;
+   localparam int FTP_NUM            = 30;
+   localparam int CH_NUM             = 48;
+   localparam int SLICE_NUM          = 128;
+   localparam int SAMPLE_BITS        = 16;
+   localparam int VIEW_PERIOD_CYCLES = (CONV_PERIOD_US * 1000000) / CLK_PERIOD_PS;
+
+   // Mig Parameters
+   localparam int ADDR_WIDTH     = 20;
+   localparam int AXI_ADDR_WIDTH = ADDR_WIDTH + 4;
+   localparam int AXI_ID_WIDTH   = 1;
+   localparam int AXI_DATA_BITS  = 128;
+   
+   // Frame Parameters
+   localparam int SLICE_HEADER_BEATS    = 2;
+   localparam int SAMPLES_PER_BEAT      = AXI_DATA_BITS / SAMPLE_BITS;
+   localparam int SLICE_PAYLOAD_SAMPLES = FTP_NUM * CH_NUM;
+   localparam int SLICE_PAYLOAD_BEATS   = (SLICE_PAYLOAD_SAMPLES + SAMPLES_PER_BEAT - 1) / SAMPLES_PER_BEAT;
+   localparam int SLICE_TOTAL_BEATS     = SLICE_HEADER_BEATS + SLICE_PAYLOAD_BEATS;
+   localparam int VIEW_TOTAL_BEATS      = SLICE_NUM * SLICE_TOTAL_BEATS;
+   localparam int MOCK_MEM_WORDS        = 1 << ADDR_WIDTH;
+   localparam int MOCK_MAX_VIEWS        = MOCK_MEM_WORDS / VIEW_TOTAL_BEATS;
+   localparam int TIMEOUT_CYCLES        = 1200000;
 
    logic                  clk;
    logic                  reset;
@@ -72,22 +76,22 @@ module tb_ddr4_controller_mock;
    logic                  make_data_p_edge_ddr_clk;
    logic                  clk_backbone;
 
-   logic [127:0] expected_q[$];
-   logic [127:0] expected_word;
-   int           sent_count;
-   int           recv_count;
-   int           mismatch_count;
-   int           overflow_count;
-   int           timeout_count;
-   int           sim_view_count;
-   int           expected_total_beats;
-   bit           use_hash_scoreboard;
-   logic [63:0]  expected_hash;
-   logic [63:0]  actual_hash;
-   string        scoreboard_mode;
-   bit           consumer_enable;
-   bit           send_done;
-   int unsigned  consume_cycle;
+   logic [127:0]          expected_q[$];
+   logic [127:0]          expected_word;
+   int                    sent_count;
+   int                    recv_count;
+   int                    mismatch_count;
+   int                    overflow_count;
+   int                    timeout_count;
+   int                    sim_view_count;
+   int                    expected_total_beats;
+   bit                    use_hash_scoreboard;
+   logic [63:0]           expected_hash;
+   logic [63:0]           actual_hash;
+   string                 scoreboard_mode;
+   bit                    consumer_enable;
+   bit                    send_done;
+   int unsigned           consume_cycle;
 
    ddr4_controller #(
       .ADDR_WIDTH     (ADDR_WIDTH),
@@ -201,9 +205,9 @@ module tb_ddr4_controller_mock;
       view_size            = VIEW_TOTAL_BEATS[15:0];
 
       $display("DDR mock test config: views=%0d/%0d scoreboard=%s slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d",
-               sim_view_count, TOTAL_FRAME_VIEWS,
+               sim_view_count, TOTAL_VIEWS,
                use_hash_scoreboard ? "hash" : "queue",
-               SLICES_PER_VIEW,
+               SLICE_NUM,
                SLICE_TOTAL_BEATS, SLICE_PAYLOAD_BEATS,
                VIEW_TOTAL_BEATS, VIEW_PERIOD_CYCLES);
 
@@ -307,7 +311,7 @@ module tb_ddr4_controller_mock;
       begin
          for (view_idx = 0; view_idx < sim_view_count; view_idx++) begin
             view_start_cycle = consume_cycle;
-            for (slice_idx = 0; slice_idx < SLICES_PER_VIEW; slice_idx++) begin
+            for (slice_idx = 0; slice_idx < SLICE_NUM; slice_idx++) begin
                send_slice_frame(view_idx, slice_idx);
             end
             idle_write_cycle();
@@ -382,10 +386,10 @@ module tb_ddr4_controller_mock;
          32'hdd44_0001,
          16'(view_idx),
          16'(slice_idx),
-         16'(SLICES_PER_VIEW),
+         16'(SLICE_NUM),
          16'(SLICE_PAYLOAD_BEATS),
-         16'(FTPS_PER_SLICE),
-         16'(CHANNELS_PER_SLICE)
+         16'(FTP_NUM),
+         16'(CH_NUM)
       };
    endfunction
 
@@ -397,7 +401,7 @@ module tb_ddr4_controller_mock;
          32'hdd44_0002,
          16'(view_idx),
          16'(slice_idx),
-         16'(VIEW_PERIOD_US),
+         16'(CONV_PERIOD_US),
          16'(VIEW_PERIOD_CYCLES),
          32'(sent_count),
          16'(SAMPLES_PER_BEAT),

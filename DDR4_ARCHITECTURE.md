@@ -183,7 +183,7 @@ DDR 这一层本身是按 beat 处理的。slice 和 view 的边界，不是由 
 当前验证环境分成两种模式：
 
 - 快速模式：`sim/ddr4_mig_adapter.sv` 默认实例化 `sim/ddr4_fast_mock.sv`，用于日常 slice/view 回归。这个模式不跑 MIG 校准，适合快速确认 AXI 写读闭环、FIFO 水位仲裁、数据顺序和 overrun/warning 标志。
-- 真实 MIG 模式：定义 `USE_REAL_MIG` 后，`sim/ddr4_mig_adapter.sv` 实例化 `ddr4_1200m` 仿真网表，并由 `sim/tb_ddr4_controller_mig_real.sv` 连接官方 DDR4 memory model。这个模式用于观察真实 MIG calibration、AXI ready/valid backpressure 和 DDR4 物理模型连接。
+- 真实 MIG 模式：定义 `USE_REAL_MIG` 后，`sim/ddr4_mig_adapter.sv` 实例化 `ddr4_1200m` 仿真网表，并由 `sim/tb_ddr4_controller_mig_real.sv` 连接官方 DDR4 memory model。当前 memory model 按 `16 Gb x8` DDR4 颗粒配置，两个 x8 model 组成 16-bit DQ 总线。这个模式用于观察真实 MIG calibration、AXI ready/valid backpressure 和 DDR4 物理模型连接。
 
 两个 testbench 都按用户侧的 view/slice 数据结构生成输入：
 

@@ -17,44 +17,44 @@ module ddr4_fast_mock #(
    output logic                      init_calib_complete,
    output logic                      dbg_clk,
 
-   input  logic [AXI_ID_WIDTH-1:0]    axi_awid,
-   input  logic [AXI_ADDR_WIDTH-1:0]  axi_awaddr,
-   input  logic [7:0]                 axi_awlen,
-   input  logic [2:0]                 axi_awsize,
-   input  logic [1:0]                 axi_awburst,
+   input  logic [AXI_ID_WIDTH-1:0]   axi_awid,
+   input  logic [AXI_ADDR_WIDTH-1:0] axi_awaddr,
+   input  logic [7:0]                axi_awlen,
+   input  logic [2:0]                axi_awsize,
+   input  logic [1:0]                axi_awburst,
    input  logic                      axi_awlock,
-   input  logic [3:0]                 axi_awcache,
-   input  logic [2:0]                 axi_awprot,
-   input  logic [3:0]                 axi_awqos,
+   input  logic [3:0]                axi_awcache,
+   input  logic [2:0]                axi_awprot,
+   input  logic [3:0]                axi_awqos,
    input  logic                      axi_awvalid,
    output logic                      axi_awready,
 
-   input  logic [127:0]               axi_wdata,
-   input  logic [15:0]                axi_wstrb,
+   input  logic [127:0]              axi_wdata,
+   input  logic [15:0]               axi_wstrb,
    input  logic                      axi_wlast,
    input  logic                      axi_wvalid,
    output logic                      axi_wready,
 
-   output logic [AXI_ID_WIDTH-1:0]    axi_bid,
-   output logic [1:0]                 axi_bresp,
+   output logic [AXI_ID_WIDTH-1:0]   axi_bid,
+   output logic [1:0]                axi_bresp,
    output logic                      axi_bvalid,
    input  logic                      axi_bready,
 
-   input  logic [AXI_ID_WIDTH-1:0]    axi_arid,
-   input  logic [AXI_ADDR_WIDTH-1:0]  axi_araddr,
-   input  logic [7:0]                 axi_arlen,
-   input  logic [2:0]                 axi_arsize,
-   input  logic [1:0]                 axi_arburst,
+   input  logic [AXI_ID_WIDTH-1:0]   axi_arid,
+   input  logic [AXI_ADDR_WIDTH-1:0] axi_araddr,
+   input  logic [7:0]                axi_arlen,
+   input  logic [2:0]                axi_arsize,
+   input  logic [1:0]                axi_arburst,
    input  logic                      axi_arlock,
-   input  logic [3:0]                 axi_arcache,
-   input  logic [2:0]                 axi_arprot,
-   input  logic [3:0]                 axi_arqos,
+   input  logic [3:0]                axi_arcache,
+   input  logic [2:0]                axi_arprot,
+   input  logic [3:0]                axi_arqos,
    input  logic                      axi_arvalid,
    output logic                      axi_arready,
 
-   output logic [AXI_ID_WIDTH-1:0]    axi_rid,
-   output logic [127:0]               axi_rdata,
-   output logic [1:0]                 axi_rresp,
+   output logic [AXI_ID_WIDTH-1:0]   axi_rid,
+   output logic [127:0]              axi_rdata,
+   output logic [1:0]                axi_rresp,
    output logic                      axi_rlast,
    output logic                      axi_rvalid,
    input  logic                      axi_rready
@@ -63,7 +63,7 @@ module ddr4_fast_mock #(
    localparam int MEM_ADDR_BITS   = $clog2(MEM_WORDS);
    localparam int MEM_WORD_MSB    = 4 + MEM_ADDR_BITS - 1;
    localparam logic [AXI_ADDR_WIDTH-1:0] AXI_WORD_BYTES = AXI_ADDR_WIDTH'(16);
-   localparam logic [1:0] OKAY    = 2'b00;
+   localparam logic [1:0] OKAY      = 2'b00;
    localparam logic [1:0] MEM_BRESP = OKAY;
    localparam logic [1:0] MEM_RRESP = OKAY;
 
@@ -114,21 +114,21 @@ module ddr4_fast_mock #(
       end
    end
 
-   assign axi_awready = init_calib_complete &&
-                        (~write_active_q) &&
-                        (~write_resp_pending_q);
-   assign axi_wready  = init_calib_complete && write_active_q;
-   assign axi_bvalid  = write_resp_pending_q;
-   assign axi_bid     = write_id_q;
-   assign axi_bresp   = MEM_BRESP;
-
-   assign axi_arready = init_calib_complete &&
-                        (~read_active_q) &&
-                        (~read_data_valid_q);
-   assign axi_rid     = read_id_q;
-   assign axi_rresp   = MEM_RRESP;
-   assign axi_rvalid  = read_data_valid_q;
-   assign axi_rlast   = read_data_valid_q && (read_beats_left_q == 9'd1);
+   assign axi_awready     = init_calib_complete &&
+                            (~write_active_q) &&
+                            (~write_resp_pending_q);
+   assign axi_wready      = init_calib_complete && write_active_q;
+   assign axi_bvalid      = write_resp_pending_q;
+   assign axi_bid         = write_id_q;
+   assign axi_bresp       = MEM_BRESP;
+     
+   assign axi_arready     = init_calib_complete &&
+                            (~read_active_q) &&
+                            (~read_data_valid_q);
+   assign axi_rid         = read_id_q;
+   assign axi_rresp       = MEM_RRESP;
+   assign axi_rvalid      = read_data_valid_q;
+   assign axi_rlast       = read_data_valid_q && (read_beats_left_q == 9'd1);
 
    assign write_mem_index = write_addr_q[MEM_WORD_MSB:4];
    assign read_mem_index  = read_addr_q[MEM_WORD_MSB:4];

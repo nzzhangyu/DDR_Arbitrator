@@ -33,6 +33,8 @@ module tb_ddr4_controller_mig_real;
    localparam int VIEW_TOTAL_BEATS     = SLICES_PER_VIEW * SLICE_TOTAL_BEATS;
    localparam int TIMEOUT_CYCLES       = 5000000;
 
+   // Real MIG smoke uses two x8 DDR4 component models to match the 16-bit DQ bus.
+   // The component density is 16 Gb; the concrete part number is kept out of RTL.
    localparam int SDRAM_ADDR_WIDTH     = 17;
    localparam int DQ_WIDTH             = 16;
    localparam int DQS_WIDTH            = 2;
@@ -41,10 +43,10 @@ module tb_ddr4_controller_mig_real;
    localparam int RANK_WIDTH           = 1;
    localparam int CS_WIDTH             = 1;
    localparam string CA_MIRROR         = "OFF";
+   localparam UTYPE_density CONFIGURED_DENSITY = _16G;
+
    localparam logic [2:0] WR_CMD       = 3'b100;
    localparam logic [2:0] RD_CMD       = 3'b101;
-
-   parameter UTYPE_density CONFIGURED_DENSITY = _16G;
 
    logic                       clk;
    logic                       reset;

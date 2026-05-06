@@ -52,7 +52,7 @@ xelab tb_ddr4_controller_mock glbl -debug typical
 xsim "work.tb_ddr4_controller_mock#work.glbl" -runall
 ```
 
-Real MIG validation defines `USE_REAL_MIG` and compiles the copied Xilinx files in `sim/sim_mig/`. This mode is much slower because it runs the MIG calibration logic and the DDR4 memory model.
+Real MIG validation defines `USE_REAL_MIG` and compiles the copied Xilinx files in `sim/sim_mig/`. The real memory model path is configured as 16 Gb x8 DDR4 components, with two x8 models forming the 16-bit DQ bus. This mode is much slower because it runs the MIG calibration logic and the DDR4 memory model.
 
 ```powershell
 xvlog -d USE_REAL_MIG -d XILINX_SIMULATOR -i sim\sim_mig -sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_cdc\hdl\xpm_cdc.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_memory\hdl\xpm_memory.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_fifo\hdl\xpm_fifo.sv sim\sim_mig\blk_mem_gen_v8_4.v sim\sim_mig\ddr4_1200m_sim_netlist.v sim\sim_mig\arch_package.sv sim\sim_mig\interface.sv sim\sim_mig\proj_package.sv sim\sim_mig\ddr4_model.sv sim\ddr4_fast_mock.sv sim\ddr4_mig_adapter.sv rtl\user_rw_cmd_gen.sv rtl\user_app_top.sv rtl\ddr4_controller.sv sim\tb_ddr4_controller_mig_real.sv sim\sim_mig\glbl.v
