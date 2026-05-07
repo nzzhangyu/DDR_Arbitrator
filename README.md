@@ -14,9 +14,10 @@ The architecture note explains the current AXI4-based DDR path, the write and re
 - `rtl/user_rw_cmd_gen.sv`: AXI4 command generation and arbitration logic.
 - `rtl/user_app_top.sv`: XPM FIFO staging and command-generator integration.
 - `rtl/ddr4_controller.sv`: top-level DDR4 wrapper and MIG wiring.
-- `sim/ddr4_mig_adapter.sv`: simulation adapter that selects either the fast AXI DDR mock or the real Xilinx MIG model.
 - `sim/ddr4_fast_mock.sv`: lightweight AXI DDR model for daily regression.
-- `sim/tb_ddr4_controller_mock.sv`: slice/view functional testbench using the fast mock path.
+- `sim/ddr4_1200m_fast_wrapper.sv`: simulation-only `ddr4_1200m` replacement that connects the fast mock.
+- `sim/ddr4_mig_adapter.sv`: legacy simulation adapter, no longer used by the main regression commands.
+- `sim/tb_ddr4_controller_mock.sv`: slice/view functional testbench that connects `user_app_top` directly to the fast mock.
 - `sim/tb_ddr4_controller_mig_real.sv`: slice/view testbench using the real MIG simulation netlist and DDR4 memory model.
 - `rtl/ddr_wr_2bank_pingpong.sv`: legacy write-side 2-bank ping-pong RAM, no longer instantiated by the DDR bridge.
 - `rtl/ddr_rd_2bank_pingpong.sv`: legacy read-side 2-bank ping-pong RAM, no longer instantiated by the DDR bridge.
@@ -30,7 +31,7 @@ The architecture note explains the current AXI4-based DDR path, the write and re
 
 - Sync `rtl/`, `sim/`, and the markdown docs.
 - `rtl/` contains design RTL and legacy RTL candidates.
-- `sim/` contains testbenches, fast mock logic, the MIG adapter, and copied MIG simulation files.
+- `sim/` contains testbenches, fast mock logic, the fast `ddr4_1200m` wrapper, legacy adapter, and copied MIG simulation files.
 - Avoid syncing generated simulation artifacts unless you are debugging them.
 - After pulling changes on another device, re-run syntax checks on the touched RTL files.
 
@@ -44,18 +45,18 @@ xvlog -sv rtl\ddr4_controller.sv
 
 ## Simulation Modes
 
-Fast daily regression uses `sim/ddr4_mig_adapter.sv` in its default mode, which connects `sim/ddr4_fast_mock.sv` behind the unchanged `rtl/ddr4_controller.sv` interface.
+Fast daily regression does not use the MIG IP or the `ddr4_1200m` wrapper. `sim/tb_ddr4_controller_mock.sv` connects `rtl/user_app_top.sv` directly to `sim/ddr4_fast_mock.sv`, so this mode only checks the AXI bridge, FIFO watermarks, arbitration, replay/backtracking, and data ordering around the fast model.
 
 ```powershell
-xvlog -sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_cdc\hdl\xpm_cdc.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_memory\hdl\xpm_memory.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_fifo\hdl\xpm_fifo.sv sim\ddr4_fast_mock.sv sim\ddr4_mig_adapter.sv rtl\user_rw_cmd_gen.sv rtl\user_app_top.sv rtl\ddr4_controller.sv sim\tb_ddr4_controller_mock.sv D:\Xilinx\Vivado\2021.1\data\verilog\src\glbl.v
+xvlog -sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_cdc\hdl\xpm_cdc.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_memory\hdl\xpm_memory.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_fifo\hdl\xpm_fifo.sv sim\ddr4_fast_mock.sv rtl\user_rw_cmd_gen.sv rtl\user_app_top.sv sim\tb_ddr4_controller_mock.sv D:\Xilinx\Vivado\2021.1\data\verilog\src\glbl.v
 xelab tb_ddr4_controller_mock glbl -debug typical
 xsim "work.tb_ddr4_controller_mock#work.glbl" -runall
 ```
 
-Real MIG validation defines `USE_REAL_MIG` and compiles the copied Xilinx files in `sim/sim_mig/`. The real memory model path is configured as 16 Gb x8 DDR4 components, with two x8 models forming the 16-bit DQ bus. This mode is much slower because it runs the MIG calibration logic and the DDR4 memory model.
+Real MIG validation compiles `rtl/ddr4_controller.sv` and the copied Xilinx `ddr4_1200m` netlist in `sim/sim_mig/`. Do not compile `sim/ddr4_1200m_fast_wrapper.sv` in this mode, because it defines the same `ddr4_1200m` module name. The real memory model path is configured as 16 Gb x8 DDR4 components, with two x8 models forming the 16-bit DQ bus. This mode is much slower because it runs the MIG calibration logic and the DDR4 memory model.
 
 ```powershell
-xvlog -d USE_REAL_MIG -d XILINX_SIMULATOR -i sim\sim_mig -sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_cdc\hdl\xpm_cdc.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_memory\hdl\xpm_memory.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_fifo\hdl\xpm_fifo.sv sim\sim_mig\blk_mem_gen_v8_4.v sim\sim_mig\ddr4_1200m_sim_netlist.v sim\sim_mig\arch_package.sv sim\sim_mig\interface.sv sim\sim_mig\proj_package.sv sim\sim_mig\ddr4_model.sv sim\ddr4_fast_mock.sv sim\ddr4_mig_adapter.sv rtl\user_rw_cmd_gen.sv rtl\user_app_top.sv rtl\ddr4_controller.sv sim\tb_ddr4_controller_mig_real.sv sim\sim_mig\glbl.v
+xvlog -d XILINX_SIMULATOR -i sim\sim_mig -sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_cdc\hdl\xpm_cdc.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_memory\hdl\xpm_memory.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_fifo\hdl\xpm_fifo.sv sim\sim_mig\blk_mem_gen_v8_4.v sim\sim_mig\ddr4_1200m_sim_netlist.v sim\sim_mig\arch_package.sv sim\sim_mig\interface.sv sim\sim_mig\proj_package.sv sim\sim_mig\ddr4_model.sv rtl\user_rw_cmd_gen.sv rtl\user_app_top.sv rtl\ddr4_controller.sv sim\tb_ddr4_controller_mig_real.sv sim\sim_mig\glbl.v
 xelab tb_ddr4_controller_mig_real glbl -debug typical -L unisims_ver -L unimacro_ver -L secureip -L xpm
 xsim "work.tb_ddr4_controller_mig_real#work.glbl" -runall
 ```

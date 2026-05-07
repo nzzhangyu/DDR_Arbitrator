@@ -1,0 +1,8 @@
+Vivado Simulator 2019.1
+Copyright 1986-1999, 2001-2019 Xilinx, Inc. All Rights Reserved.
+Running: D:/Xilinx/Vivado/2019.1/bin/unwrapped/win64.o/xelab.exe tb_ddr4_controller_mock glbl -debug typical 
+Multi-threading is on. Using 18 slave threads.
+Starting static elaboration
+ERROR: [VRFC 10-2861] module 'xpm_fifo_async' does not have a parameter named CASCADE_HEIGHT [C:/Users/CodexSandboxOffline/.codex/.sandbox/cwd/473e19e4dcfa8d6c/rtl/user_app_top.sv:107]
+ERROR: [VRFC 10-2861] module 'xpm_fifo_async' does not have a parameter named CASCADE_HEIGHT [C:/Users/CodexSandboxOffline/.codex/.sandbox/cwd/473e19e4dcfa8d6c/rtl/user_app_top.sv:163]
+ERROR: [XSIM 43-3322] Static elaboration of top level Verilog design unit(s) in library work failed.

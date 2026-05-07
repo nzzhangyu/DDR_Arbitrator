@@ -32,8 +32,7 @@ module tb_ddr4_controller_mock;
 
    logic                  clk;
    logic                  reset;
-   logic                  c0_sys_clk_p;
-   logic                  c0_sys_clk_n;
+   logic                  fast_mock_clk;
    logic                  rst_local_t_ddr_clk;
    logic                  data_from_ddr_en;
    logic [127:0]          data_from_ddr_dd;
@@ -47,20 +46,6 @@ module tb_ddr4_controller_mock;
    logic                  make_data_p_edge;
    logic [15:0]           view_size;
 
-   logic                  c0_ddr4_act_n;
-   logic [16:0]           c0_ddr4_adr;
-   logic [1:0]            c0_ddr4_ba;
-   logic [1:0]            c0_ddr4_bg;
-   logic [0:0]            c0_ddr4_cke;
-   logic [0:0]            c0_ddr4_odt;
-   logic [0:0]            c0_ddr4_cs_n;
-   logic [0:0]            c0_ddr4_ck_t;
-   logic [0:0]            c0_ddr4_ck_c;
-   logic                  c0_ddr4_reset_n;
-   wire  [1:0]            c0_ddr4_dm_dbi_n;
-   wire  [15:0]           c0_ddr4_dq;
-   wire  [1:0]            c0_ddr4_dqs_c;
-   wire  [1:0]            c0_ddr4_dqs_t;
    logic                  dbg_clk;
    logic                  ui_clk;
    logic                  ui_clk_sync_rst;
@@ -74,7 +59,44 @@ module tb_ddr4_controller_mock;
    logic                  ddr_wr_fifo_empty;
    logic                  ddr_rd_empty;
    logic                  make_data_p_edge_ddr_clk;
-   logic                  clk_backbone;
+
+   logic [AXI_ID_WIDTH-1:0]   axi_awid;
+   logic [AXI_ADDR_WIDTH-1:0] axi_awaddr;
+   logic [7:0]                axi_awlen;
+   logic [2:0]                axi_awsize;
+   logic [1:0]                axi_awburst;
+   logic                      axi_awlock;
+   logic [3:0]                axi_awcache;
+   logic [2:0]                axi_awprot;
+   logic [3:0]                axi_awqos;
+   logic                      axi_awvalid;
+   logic                      axi_awready;
+   logic [127:0]              axi_wdata;
+   logic [15:0]               axi_wstrb;
+   logic                      axi_wlast;
+   logic                      axi_wvalid;
+   logic                      axi_wready;
+   logic [AXI_ID_WIDTH-1:0]   axi_bid;
+   logic [1:0]                axi_bresp;
+   logic                      axi_bvalid;
+   logic                      axi_bready;
+   logic [AXI_ID_WIDTH-1:0]   axi_arid;
+   logic [AXI_ADDR_WIDTH-1:0] axi_araddr;
+   logic [7:0]                axi_arlen;
+   logic [2:0]                axi_arsize;
+   logic [1:0]                axi_arburst;
+   logic                      axi_arlock;
+   logic [3:0]                axi_arcache;
+   logic [2:0]                axi_arprot;
+   logic [3:0]                axi_arqos;
+   logic                      axi_arvalid;
+   logic                      axi_arready;
+   logic [AXI_ID_WIDTH-1:0]   axi_rid;
+   logic [127:0]              axi_rdata;
+   logic [1:0]                axi_rresp;
+   logic                      axi_rlast;
+   logic                      axi_rvalid;
+   logic                      axi_rready;
 
    logic [127:0]          expected_q[$];
    logic [127:0]          expected_word;
@@ -93,29 +115,48 @@ module tb_ddr4_controller_mock;
    bit                    send_done;
    int unsigned           consume_cycle;
 
-   ddr4_controller #(
+   user_app_top #(
       .ADDR_WIDTH     (ADDR_WIDTH),
       .AXI_ADDR_WIDTH (AXI_ADDR_WIDTH),
       .AXI_ID_WIDTH   (AXI_ID_WIDTH)
    ) dut (
-      .c0_ddr4_act_n            (c0_ddr4_act_n),
-      .c0_ddr4_adr              (c0_ddr4_adr),
-      .c0_ddr4_ba               (c0_ddr4_ba),
-      .c0_ddr4_bg               (c0_ddr4_bg),
-      .c0_ddr4_cke              (c0_ddr4_cke),
-      .c0_ddr4_odt              (c0_ddr4_odt),
-      .c0_ddr4_cs_n             (c0_ddr4_cs_n),
-      .c0_ddr4_ck_t             (c0_ddr4_ck_t),
-      .c0_ddr4_ck_c             (c0_ddr4_ck_c),
-      .c0_ddr4_reset_n          (c0_ddr4_reset_n),
-      .c0_ddr4_dm_dbi_n         (c0_ddr4_dm_dbi_n),
-      .c0_ddr4_dq               (c0_ddr4_dq),
-      .c0_ddr4_dqs_c            (c0_ddr4_dqs_c),
-      .c0_ddr4_dqs_t            (c0_ddr4_dqs_t),
-      .dbg_clk                  (dbg_clk),
-      .ui_clk                   (ui_clk),
-      .ui_clk_sync_rst          (ui_clk_sync_rst),
-      .init_calib_complete      (init_calib_complete),
+      .m_axi_awid               (axi_awid),
+      .m_axi_awaddr             (axi_awaddr),
+      .m_axi_awlen              (axi_awlen),
+      .m_axi_awsize             (axi_awsize),
+      .m_axi_awburst            (axi_awburst),
+      .m_axi_awlock             (axi_awlock),
+      .m_axi_awcache            (axi_awcache),
+      .m_axi_awprot             (axi_awprot),
+      .m_axi_awqos              (axi_awqos),
+      .m_axi_awvalid            (axi_awvalid),
+      .m_axi_awready            (axi_awready),
+      .m_axi_wdata              (axi_wdata),
+      .m_axi_wstrb              (axi_wstrb),
+      .m_axi_wlast              (axi_wlast),
+      .m_axi_wvalid             (axi_wvalid),
+      .m_axi_wready             (axi_wready),
+      .m_axi_bid                (axi_bid),
+      .m_axi_bresp              (axi_bresp),
+      .m_axi_bvalid             (axi_bvalid),
+      .m_axi_bready             (axi_bready),
+      .m_axi_arid               (axi_arid),
+      .m_axi_araddr             (axi_araddr),
+      .m_axi_arlen              (axi_arlen),
+      .m_axi_arsize             (axi_arsize),
+      .m_axi_arburst            (axi_arburst),
+      .m_axi_arlock             (axi_arlock),
+      .m_axi_arcache            (axi_arcache),
+      .m_axi_arprot             (axi_arprot),
+      .m_axi_arqos              (axi_arqos),
+      .m_axi_arvalid            (axi_arvalid),
+      .m_axi_arready            (axi_arready),
+      .m_axi_rid                (axi_rid),
+      .m_axi_rdata              (axi_rdata),
+      .m_axi_rresp              (axi_rresp),
+      .m_axi_rlast              (axi_rlast),
+      .m_axi_rvalid             (axi_rvalid),
+      .m_axi_rready             (axi_rready),
       .user_r_valid             (user_r_valid),
       .user_r_data              (user_r_data),
       .user_r_empty             (user_r_empty),
@@ -125,31 +166,83 @@ module tb_ddr4_controller_mock;
       .ddr_wr_fifo_empty        (ddr_wr_fifo_empty),
       .ddr_rd_empty             (ddr_rd_empty),
       .make_data_p_edge_ddr_clk (make_data_p_edge_ddr_clk),
-      .clk_backbone             (clk_backbone),
+      .ui_clk                   (ui_clk),
+      .ui_clk_sync_rst          (ui_clk_sync_rst),
+      .init_calib_complete      (init_calib_complete),
       .clk                      (clk),
       .RESET                    (reset),
-      .c0_sys_clk_p             (c0_sys_clk_p),
-      .c0_sys_clk_n             (c0_sys_clk_n),
-      .rst_local_t_ddr_clk      (rst_local_t_ddr_clk),
       .data_from_ddr_en         (data_from_ddr_en),
       .data_from_ddr_dd         (data_from_ddr_dd),
       .user_r_rd_en             (user_r_rd_en),
       .ddr_rd_req               (ddr_rd_req),
       .req_stop                 (req_stop),
-      .rp_back_en               (rp_back_en),
-      .rp_back_view_addr        (rp_back_view_addr),
-      .Fault_inject_en          (Fault_inject_en),
+      .rst_local_t_ddr_clk      (rst_local_t_ddr_clk),
+      .fault_ddr_overrun        (Fault_inject_en),
+      .fault_ddr_warning        (Fault_inject_en),
       .make_data_on             (make_data_on),
       .make_data_p_edge         (make_data_p_edge),
-      .view_size                (view_size)
+      .view_size                (view_size),
+      .rp_back_en               (rp_back_en),
+      .rp_back_view_addr        (rp_back_view_addr)
+   );
+
+   ddr4_fast_mock #(
+      .AXI_ADDR_WIDTH      (AXI_ADDR_WIDTH),
+      .AXI_ID_WIDTH        (AXI_ID_WIDTH),
+      .MEM_WORDS           (MOCK_MEM_WORDS),
+      .CALIB_DELAY_CYCLES  (16),
+      .READ_LATENCY_CYCLES (3)
+   ) mock_u (
+      .clk_in              (fast_mock_clk),
+      .RESET               (reset),
+      .ui_clk              (ui_clk),
+      .ui_clk_sync_rst     (ui_clk_sync_rst),
+      .init_calib_complete (init_calib_complete),
+      .dbg_clk             (dbg_clk),
+      .axi_awid            (axi_awid),
+      .axi_awaddr          (axi_awaddr),
+      .axi_awlen           (axi_awlen),
+      .axi_awsize          (axi_awsize),
+      .axi_awburst         (axi_awburst),
+      .axi_awlock          (axi_awlock),
+      .axi_awcache         (axi_awcache),
+      .axi_awprot          (axi_awprot),
+      .axi_awqos           (axi_awqos),
+      .axi_awvalid         (axi_awvalid),
+      .axi_awready         (axi_awready),
+      .axi_wdata           (axi_wdata),
+      .axi_wstrb           (axi_wstrb),
+      .axi_wlast           (axi_wlast),
+      .axi_wvalid          (axi_wvalid),
+      .axi_wready          (axi_wready),
+      .axi_bid             (axi_bid),
+      .axi_bresp           (axi_bresp),
+      .axi_bvalid          (axi_bvalid),
+      .axi_bready          (axi_bready),
+      .axi_arid            (axi_arid),
+      .axi_araddr          (axi_araddr),
+      .axi_arlen           (axi_arlen),
+      .axi_arsize          (axi_arsize),
+      .axi_arburst         (axi_arburst),
+      .axi_arlock          (axi_arlock),
+      .axi_arcache         (axi_arcache),
+      .axi_arprot          (axi_arprot),
+      .axi_arqos           (axi_arqos),
+      .axi_arvalid         (axi_arvalid),
+      .axi_arready         (axi_arready),
+      .axi_rid             (axi_rid),
+      .axi_rdata           (axi_rdata),
+      .axi_rresp           (axi_rresp),
+      .axi_rlast           (axi_rlast),
+      .axi_rvalid          (axi_rvalid),
+      .axi_rready          (axi_rready)
    );
 
    initial clk = 1'b0;
    always #(CLK_PERIOD_PS / 2000.0) clk = ~clk;
 
-   initial c0_sys_clk_p = 1'b0;
-   always #(CLK_PERIOD_PS / 2000.0) c0_sys_clk_p = ~c0_sys_clk_p;
-   assign c0_sys_clk_n = ~c0_sys_clk_p;
+   initial fast_mock_clk = 1'b0;
+   always #(CLK_PERIOD_PS / 2000.0) fast_mock_clk = ~fast_mock_clk;
 
    always @(posedge clk) begin
       if (reset) begin
@@ -183,12 +276,14 @@ module tb_ddr4_controller_mock;
       actual_hash          = 64'h6a09_e667_f3bc_c909;
       consumer_enable      = 1'b0;
       send_done            = 1'b0;
+
       if ($value$plusargs("views=%d", sim_view_count)) begin
          if ((sim_view_count < 1) || (sim_view_count > MOCK_MAX_VIEWS)) begin
             $fatal(1, "Invalid +views=%0d, expected 1..%0d for this mock memory",
                    sim_view_count, MOCK_MAX_VIEWS);
          end
       end
+
       if ($value$plusargs("scoreboard=%s", scoreboard_mode)) begin
          if (scoreboard_mode == "hash") begin
             use_hash_scoreboard = 1'b1;
@@ -201,6 +296,7 @@ module tb_ddr4_controller_mock;
                    scoreboard_mode);
          end
       end
+      
       expected_total_beats = sim_view_count * VIEW_TOTAL_BEATS;
       view_size            = VIEW_TOTAL_BEATS[15:0];
 
@@ -233,17 +329,21 @@ module tb_ddr4_controller_mock;
       if (mismatch_count != 0) begin
          $fatal(1, "DDR controller mock test failed with %0d mismatches", mismatch_count);
       end
+
       if (overflow_count != 0) begin
          $fatal(1, "DDR controller mock test failed with %0d overflow/warning events", overflow_count);
       end
+
       if (timeout_count != 0) begin
          $fatal(1, "DDR controller mock test timed out after receiving %0d of %0d beats",
                 recv_count, sent_count);
       end
+
       if (use_hash_scoreboard && (actual_hash !== expected_hash)) begin
          $fatal(1, "DDR controller mock hash mismatch: actual=%h expected=%h",
                 actual_hash, expected_hash);
       end
+
       if ((!use_hash_scoreboard) && (expected_q.size() != 0)) begin
          $fatal(1, "DDR controller mock test ended with %0d expected beats still queued",
                 expected_q.size());
@@ -455,139 +555,3 @@ module tb_ddr4_controller_mock;
    endfunction
 
 endmodule
-
-`ifdef TB_DDR4_CONTROLLER_LOCAL_MIG_WRAPPER
-module ddr4_1200m (
-   output logic                  c0_init_calib_complete,
-   output logic                  c0_ddr4_ui_clk,
-   output logic                  c0_ddr4_ui_clk_sync_rst,
-   output logic [511:0]          dbg_bus,
-   output logic                  dbg_clk,
-
-   output logic [16:0]           c0_ddr4_adr,
-   output logic                  c0_ddr4_act_n,
-   output logic [1:0]            c0_ddr4_ba,
-   output logic [1:0]            c0_ddr4_bg,
-   output logic [0:0]            c0_ddr4_cke,
-   output logic [0:0]            c0_ddr4_odt,
-   output logic [0:0]            c0_ddr4_cs_n,
-   output logic [0:0]            c0_ddr4_ck_t,
-   output logic [0:0]            c0_ddr4_ck_c,
-   output logic                  c0_ddr4_reset_n,
-   inout  wire  [1:0]            c0_ddr4_dm_dbi_n,
-   inout  wire  [15:0]           c0_ddr4_dq,
-   inout  wire  [1:0]            c0_ddr4_dqs_c,
-   inout  wire  [1:0]            c0_ddr4_dqs_t,
-   input  logic                  sys_rst,
-   input  logic                  c0_sys_clk_p,
-   input  logic                  c0_sys_clk_n,
-
-   input  logic [0:0]            c0_ddr4_s_axi_awid,
-   input  logic [23:0]           c0_ddr4_s_axi_awaddr,
-   input  logic [7:0]            c0_ddr4_s_axi_awlen,
-   input  logic [2:0]            c0_ddr4_s_axi_awsize,
-   input  logic [1:0]            c0_ddr4_s_axi_awburst,
-   input  logic                  c0_ddr4_s_axi_awlock,
-   input  logic [3:0]            c0_ddr4_s_axi_awcache,
-   input  logic [2:0]            c0_ddr4_s_axi_awprot,
-   input  logic [3:0]            c0_ddr4_s_axi_awqos,
-   input  logic                  c0_ddr4_s_axi_awvalid,
-   output logic                  c0_ddr4_s_axi_awready,
-   input  logic [127:0]          c0_ddr4_s_axi_wdata,
-   input  logic [15:0]           c0_ddr4_s_axi_wstrb,
-   input  logic                  c0_ddr4_s_axi_wlast,
-   input  logic                  c0_ddr4_s_axi_wvalid,
-   output logic                  c0_ddr4_s_axi_wready,
-   output logic [0:0]            c0_ddr4_s_axi_bid,
-   output logic [1:0]            c0_ddr4_s_axi_bresp,
-   output logic                  c0_ddr4_s_axi_bvalid,
-   input  logic                  c0_ddr4_s_axi_bready,
-   input  logic [0:0]            c0_ddr4_s_axi_arid,
-   input  logic [23:0]           c0_ddr4_s_axi_araddr,
-   input  logic [7:0]            c0_ddr4_s_axi_arlen,
-   input  logic [2:0]            c0_ddr4_s_axi_arsize,
-   input  logic [1:0]            c0_ddr4_s_axi_arburst,
-   input  logic                  c0_ddr4_s_axi_arlock,
-   input  logic [3:0]            c0_ddr4_s_axi_arcache,
-   input  logic [2:0]            c0_ddr4_s_axi_arprot,
-   input  logic [3:0]            c0_ddr4_s_axi_arqos,
-   input  logic                  c0_ddr4_s_axi_arvalid,
-   output logic                  c0_ddr4_s_axi_arready,
-   output logic [0:0]            c0_ddr4_s_axi_rid,
-   output logic [127:0]          c0_ddr4_s_axi_rdata,
-   output logic [1:0]            c0_ddr4_s_axi_rresp,
-   output logic                  c0_ddr4_s_axi_rlast,
-   output logic                  c0_ddr4_s_axi_rvalid,
-   input  logic                  c0_ddr4_s_axi_rready
-);
-
-   assign dbg_bus           = '0;
-   assign c0_ddr4_adr       = '0;
-   assign c0_ddr4_act_n     = 1'b1;
-   assign c0_ddr4_ba        = '0;
-   assign c0_ddr4_bg        = '0;
-   assign c0_ddr4_cke       = '0;
-   assign c0_ddr4_odt       = '0;
-   assign c0_ddr4_cs_n      = '1;
-   assign c0_ddr4_ck_t      = '0;
-   assign c0_ddr4_ck_c      = '0;
-   assign c0_ddr4_reset_n   = ~sys_rst;
-   assign c0_ddr4_dm_dbi_n  = 'z;
-   assign c0_ddr4_dq        = 'z;
-   assign c0_ddr4_dqs_c     = 'z;
-   assign c0_ddr4_dqs_t     = 'z;
-
-   ddr4_fast_mock #(
-      .AXI_ADDR_WIDTH      (24),
-      .AXI_ID_WIDTH        (1),
-      .MEM_WORDS           (1048576),
-      .CALIB_DELAY_CYCLES  (16),
-      .READ_LATENCY_CYCLES (3)
-   ) mock_u (
-      .clk_in              (c0_sys_clk_p),
-      .RESET               (sys_rst),
-      .ui_clk              (c0_ddr4_ui_clk),
-      .ui_clk_sync_rst     (c0_ddr4_ui_clk_sync_rst),
-      .init_calib_complete (c0_init_calib_complete),
-      .dbg_clk             (dbg_clk),
-      .axi_awid            (c0_ddr4_s_axi_awid),
-      .axi_awaddr          (c0_ddr4_s_axi_awaddr),
-      .axi_awlen           (c0_ddr4_s_axi_awlen),
-      .axi_awsize          (c0_ddr4_s_axi_awsize),
-      .axi_awburst         (c0_ddr4_s_axi_awburst),
-      .axi_awlock          (c0_ddr4_s_axi_awlock),
-      .axi_awcache         (c0_ddr4_s_axi_awcache),
-      .axi_awprot          (c0_ddr4_s_axi_awprot),
-      .axi_awqos           (c0_ddr4_s_axi_awqos),
-      .axi_awvalid         (c0_ddr4_s_axi_awvalid),
-      .axi_awready         (c0_ddr4_s_axi_awready),
-      .axi_wdata           (c0_ddr4_s_axi_wdata),
-      .axi_wstrb           (c0_ddr4_s_axi_wstrb),
-      .axi_wlast           (c0_ddr4_s_axi_wlast),
-      .axi_wvalid          (c0_ddr4_s_axi_wvalid),
-      .axi_wready          (c0_ddr4_s_axi_wready),
-      .axi_bid             (c0_ddr4_s_axi_bid),
-      .axi_bresp           (c0_ddr4_s_axi_bresp),
-      .axi_bvalid          (c0_ddr4_s_axi_bvalid),
-      .axi_bready          (c0_ddr4_s_axi_bready),
-      .axi_arid            (c0_ddr4_s_axi_arid),
-      .axi_araddr          (c0_ddr4_s_axi_araddr),
-      .axi_arlen           (c0_ddr4_s_axi_arlen),
-      .axi_arsize          (c0_ddr4_s_axi_arsize),
-      .axi_arburst         (c0_ddr4_s_axi_arburst),
-      .axi_arlock          (c0_ddr4_s_axi_arlock),
-      .axi_arcache         (c0_ddr4_s_axi_arcache),
-      .axi_arprot          (c0_ddr4_s_axi_arprot),
-      .axi_arqos           (c0_ddr4_s_axi_arqos),
-      .axi_arvalid         (c0_ddr4_s_axi_arvalid),
-      .axi_arready         (c0_ddr4_s_axi_arready),
-      .axi_rid             (c0_ddr4_s_axi_rid),
-      .axi_rdata           (c0_ddr4_s_axi_rdata),
-      .axi_rresp           (c0_ddr4_s_axi_rresp),
-      .axi_rlast           (c0_ddr4_s_axi_rlast),
-      .axi_rvalid          (c0_ddr4_s_axi_rvalid),
-      .axi_rready          (c0_ddr4_s_axi_rready)
-   );
-
-endmodule
-`endif

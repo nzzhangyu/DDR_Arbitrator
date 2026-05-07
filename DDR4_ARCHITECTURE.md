@@ -12,7 +12,7 @@
 
 当前 RTL 已经不再使用原来的 MIG `app_*` 直接控制方式，而是统一由 AXI4 发起访问。这样更容易仿真、观察和后续扩展。
 
-当前仓库结构把设计代码和仿真代码分开：`rtl/` 存放 DDR 主链路 RTL 和 legacy RTL 候选模块，`sim/` 存放 testbench、fast mock、MIG adapter 以及 `sim/sim_mig/` 里的真实 MIG 仿真文件。
+当前仓库结构把设计代码和仿真代码分开：`rtl/` 存放 DDR 主链路 RTL 和 legacy RTL 候选模块，`sim/` 存放 testbench、fast mock、仿真专用 `ddr4_1200m` wrapper、legacy MIG adapter 以及 `sim/sim_mig/` 里的真实 MIG 仿真文件。
 
 ### 主要模块
 
@@ -24,7 +24,7 @@
   - XPM FIFO 缓冲和命令生成器的连接。
   - 写侧 overrun 监控。
 - `rtl/ddr4_controller.sv`
-  - 用户 AXI 和 MIG AXI 之间的顶层桥接。
+  - 用户 AXI 和 `ddr4_1200m` MIG AXI 之间的顶层桥接。
   - 把 DDR 状态反馈给用户侧输出。
 - `rtl/ddr_wr_2bank_pingpong.sv`
   - 旧版写侧 2 bank ping-pong 缓冲，当前顶层不再实例化。
@@ -182,8 +182,10 @@ DDR 这一层本身是按 beat 处理的。slice 和 view 的边界，不是由 
 
 当前验证环境分成两种模式：
 
-- 快速模式：`sim/ddr4_mig_adapter.sv` 默认实例化 `sim/ddr4_fast_mock.sv`，用于日常 slice/view 回归。这个模式不跑 MIG 校准，适合快速确认 AXI 写读闭环、FIFO 水位仲裁、数据顺序和 overrun/warning 标志。
-- 真实 MIG 模式：定义 `USE_REAL_MIG` 后，`sim/ddr4_mig_adapter.sv` 实例化 `ddr4_1200m` 仿真网表，并由 `sim/tb_ddr4_controller_mig_real.sv` 连接官方 DDR4 memory model。当前 memory model 按 `16 Gb x8` DDR4 颗粒配置，两个 x8 model 组成 16-bit DQ 总线。这个模式用于观察真实 MIG calibration、AXI ready/valid backpressure 和 DDR4 物理模型连接。
+- 快速模式：`sim/tb_ddr4_controller_mock.sv` 直接实例化 `rtl/user_app_top.sv` 和 `sim/ddr4_fast_mock.sv`，不经过 `rtl/ddr4_controller.sv`，也不需要 `ddr4_1200m` 或 MIG IP。这个模式不跑 MIG 校准，适合快速确认 AXI 写读闭环、FIFO 水位仲裁、数据顺序和 overrun/warning 标志。
+- 真实 MIG 模式：编译清单选择 `sim/sim_mig/ddr4_1200m_sim_netlist.v` 提供真正的 `ddr4_1200m` 仿真网表，并由 `sim/tb_ddr4_controller_mig_real.sv` 连接官方 DDR4 memory model。当前 memory model 按 `16 Gb x8` DDR4 颗粒配置，两个 x8 model 组成 16-bit DQ 总线。这个模式用于观察真实 MIG calibration、AXI ready/valid backpressure 和 DDR4 物理模型连接。
+
+`sim/ddr4_1200m_fast_wrapper.sv` 仍可用于需要完整 `rtl/ddr4_controller.sv` 外壳的 legacy fast compile，但主 mock 回归不再使用它；主 mock 回归也不再使用 `sim/ddr4_mig_adapter.sv`。
 
 两个 testbench 都按用户侧的 view/slice 数据结构生成输入：
 

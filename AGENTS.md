@@ -22,7 +22,7 @@ Keep the RTL and the documentation synchronized while preserving the current arc
 ## Directory Map
 
 - `rtl/`: design RTL plus legacy RTL candidates that are not currently instantiated.
-- `sim/`: testbenches, fast mock logic, MIG adapter, and copied MIG simulation files.
+- `sim/`: testbenches, fast mock logic, simulation-only `ddr4_1200m` wrapper, legacy MIG adapter, and copied MIG simulation files.
 - Markdown files remain at the repository root for quick cross-device reading.
 
 ## File Map

@@ -64,6 +64,16 @@ module ddr4_controller #(
    logic sys_rst;
    assign sys_rst = RESET;
 
+   logic c0_ddr4_aresetn;
+
+   always_ff @(posedge ui_clk or posedge sys_rst) begin
+      if (sys_rst) begin
+         c0_ddr4_aresetn <= 1'b0;
+      end else begin
+         c0_ddr4_aresetn <= ~ui_clk_sync_rst;
+      end
+   end
+
    logic [AXI_ID_WIDTH-1:0]   axi_awid;
    logic [AXI_ADDR_WIDTH-1:0] axi_awaddr;
    logic [7:0]                axi_awlen;
@@ -176,10 +186,7 @@ module ddr4_controller #(
       .rp_back_view_addr       (rp_back_view_addr)
    );
 
-   ddr4_mig_adapter #(
-      .AXI_ADDR_WIDTH (AXI_ADDR_WIDTH),
-      .AXI_ID_WIDTH   (AXI_ID_WIDTH)
-   ) ddr4_mig_uut (
+   ddr4_1200m ddr4_mig_uut (
       .c0_init_calib_complete  (init_calib_complete),
       .c0_ddr4_ui_clk          (ui_clk),
       .c0_ddr4_ui_clk_sync_rst (ui_clk_sync_rst),
@@ -202,6 +209,7 @@ module ddr4_controller #(
       .sys_rst                 (sys_rst),
       .c0_sys_clk_p            (c0_sys_clk_p),
       .c0_sys_clk_n            (c0_sys_clk_n),
+      .c0_ddr4_aresetn         (c0_ddr4_aresetn),
       .c0_ddr4_s_axi_awid      (axi_awid),
       .c0_ddr4_s_axi_awaddr    (axi_awaddr),
       .c0_ddr4_s_axi_awlen     (axi_awlen),
