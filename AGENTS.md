@@ -1,59 +1,64 @@
 # AGENTS.md
 
-This directory contains the DDR4 RTL sources, simulation support, and the notes that explain how the design is organized.
+This repository contains two parallel DDR4 interface variants:
+
+- `axi/`: current AXI4 implementation.
+- `native/`: native MIG `app_*` implementation.
+
+Both variants keep the same internal structure:
+
+- `rtl/`: design RTL and legacy RTL candidates.
+- `sim/`: testbenches, fast mock logic, wrappers, and simulation support for that variant.
 
 ## Purpose
 
-Keep the RTL and the documentation synchronized while preserving the current architecture:
+Keep RTL and documentation synchronized while preserving the architecture choices in each variant:
 
-- DDR4 access uses AXI4, not native MIG `app_*`
-- XPM FIFO buffering is the active DDR bridge path; ping-pong modules are kept as legacy RTL candidates
-- dynamic watermarks and arbitration stay in place
-- read replay / backtracking behavior stays in place
+- AXI access stays in `axi/`.
+- Native MIG `app_*` access stays in `native/`.
+- XPM FIFO buffering remains the active DDR bridge path in both variants.
+- Dynamic watermarks and arbitration stay in place.
+- Read replay / backtracking behavior stays in place.
 
 ## Working Rules
 
-- Edit design RTL under `rtl/` and simulation support under `sim/`.
+- Edit AXI RTL under `axi/rtl/` and AXI simulation support under `axi/sim/`.
+- Edit native RTL under `native/rtl/` and native simulation support under `native/sim/`.
 - Keep functional changes and comment / documentation changes separate when possible.
-- Do not reintroduce native MIG `app_*` logic unless the user explicitly requests it.
+- Do not mix AXI and native modules in the same Vivado compile set unless module names are library-isolated.
 - Prefer SystemVerilog style for new edits: `logic`, `always_ff`, `always_comb`, enums, and short explanatory comments.
-- Do not delete currently used AXI interface signals just because they look redundant.
-
-## Directory Map
-
-- `rtl/`: design RTL plus legacy RTL candidates that are not currently instantiated.
-- `sim/`: testbenches, fast mock logic, simulation-only `ddr4_1200m` wrapper, legacy MIG adapter, and copied MIG simulation files.
-- Markdown files remain at the repository root for quick cross-device reading.
+- Do not delete currently used interface signals just because they look redundant.
 
 ## File Map
 
-- `rtl/user_rw_cmd_gen.sv`: AXI4 command generation, arbitration, burst sizing, address tracking, and error flags.
-- `rtl/user_app_top.sv`: XPM FIFO staging, command-generator wiring, and write-side overrun tracking.
-- `rtl/ddr4_controller.sv`: top-level DDR4 wrapper, MIG AXI wiring, and user-side bridge wiring.
-- `rtl/ddr_wr_2bank_pingpong.sv`: legacy write-side 2-bank ping-pong RAM.
-- `rtl/ddr_rd_2bank_pingpong.sv`: legacy read-side 2-bank ping-pong RAM.
-- `rtl/ddr_cache_and_frame_gen.sv`: cache and frame-generation related logic.
-- `rtl/header_frame_gen.sv`: header/frame generation logic.
-- `rtl/header_parameter.sv`: header and parameter definitions.
-- `rtl/rd_cache_ctrl.sv`: read-cache control logic.
-- `rtl/reading_header_slice_gen.sv`: read-side header/slice handling.
+- `axi/rtl/user_rw_cmd_gen.sv`: AXI4 command generation, arbitration, burst sizing, address tracking, and error flags.
+- `axi/rtl/user_app_top.sv`: AXI XPM FIFO staging, command-generator wiring, and write-side overrun tracking.
+- `axi/rtl/ddr4_controller.sv`: top-level DDR4 wrapper, MIG AXI wiring, and user-side bridge wiring.
+- `native/rtl/user_rw_cmd_gen.sv`: native `app_*` command generation with the same arbitration, burst grouping, address tracking, and error flags.
+- `native/rtl/user_app_top.sv`: native XPM FIFO staging, command-generator wiring, and write-side overrun tracking.
+- `native/rtl/ddr4_controller.sv`: top-level DDR4 wrapper, MIG native app wiring, and user-side bridge wiring.
 - `DDR4_ARCHITECTURE.md`: readable architecture overview and signal cheat sheet.
 
 ## Cross-Device Sync Notes
 
+- If a device only needs the RTL sources, sync `axi/rtl/`, `native/rtl/`, and markdown docs.
+- If a device needs validation, sync the corresponding `sim/` tree too.
 - Keep generated simulation artifacts out of sync unless they are needed for debugging:
   - `xsim.dir/`
   - `xvlog.log`
   - `xvlog.pb`
-- If a device only needs the RTL sources, sync `rtl/` and markdown docs.
-- If a device needs validation, sync `sim/` too and re-run `xvlog -sv` on the affected files.
+  - `xelab.log`
+  - `xelab.pb`
 
 ## Verification
 
 Typical syntax checks:
 
 ```powershell
-xvlog -sv D:\FPGA\DDR\rtl\user_rw_cmd_gen.sv
-xvlog -sv D:\FPGA\DDR\rtl\user_app_top.sv
-xvlog -sv D:\FPGA\DDR\rtl\ddr4_controller.sv
+xvlog -sv axi\rtl\user_rw_cmd_gen.sv
+xvlog -sv axi\rtl\user_app_top.sv
+xvlog -sv axi\rtl\ddr4_controller.sv
+xvlog -sv native\rtl\user_rw_cmd_gen.sv
+xvlog -sv native\rtl\user_app_top.sv
+xvlog -sv native\rtl\ddr4_controller.sv
 ```
