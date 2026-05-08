@@ -13,7 +13,7 @@ module tb_ddr4_controller_mig_real;
    localparam int CTRL_ADDR_WIDTH      = 28;
    localparam int AXI_ADDR_WIDTH       = 32;
    localparam int AXI_ID_WIDTH         = 4;
-   localparam int DEFAULT_SIM_VIEWS    = 1;
+   localparam int DEFAULT_SIM_VIEWS    = 2;
    localparam int TOTAL_FRAME_VIEWS    = 2320;
    localparam int VIEW_PERIOD_US       = 232;
    localparam int CLK_PERIOD_PS        = 5000;

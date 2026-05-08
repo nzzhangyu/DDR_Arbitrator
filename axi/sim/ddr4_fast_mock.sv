@@ -3,11 +3,20 @@
 // Lightweight DDR4 AXI mock for fast simulation.
 // The model keeps a small 128-bit word memory and a simple calibration delay.
 module ddr4_fast_mock #(
-   parameter int AXI_ADDR_WIDTH      = 32,
-   parameter int AXI_ID_WIDTH        = 1,
-   parameter int MEM_WORDS           = 16384,
-   parameter int CALIB_DELAY_CYCLES  = 32,
-   parameter int READ_LATENCY_CYCLES = 2
+   parameter int AXI_ADDR_WIDTH                 = 32,
+   parameter int AXI_ID_WIDTH                   = 1,
+   parameter int MEM_WORDS                      = 16384,
+   parameter int CALIB_DELAY_CYCLES             = 32,
+   parameter int READ_LATENCY_CYCLES            = 2,
+   parameter int REFRESH_INTERVAL_CYCLES        = 0,
+   parameter int REFRESH_BLOCK_CYCLES           = 0,
+   parameter int MAINT_INTERVAL_CYCLES          = 0,
+   parameter int MAINT_BLOCK_CYCLES             = 0,
+   parameter int READY_STALL_INTERVAL_CYCLES    = 0,
+   parameter int READY_STALL_CYCLES             = 0,
+   parameter int READ_DATA_GAP_INTERVAL_CYCLES  = 0,
+   parameter int READ_DATA_GAP_CYCLES           = 0,
+   parameter int TURNAROUND_CYCLES              = 0
 ) (
    input  logic                      clk_in,
    input  logic                      RESET,
@@ -85,6 +94,24 @@ module ddr4_fast_mock #(
 
    logic [MEM_ADDR_BITS-1:0]  write_mem_index;
    logic [MEM_ADDR_BITS-1:0]  read_mem_index;
+   logic [31:0]               stress_cycle_q;
+   logic [15:0]               turnaround_cnt_q;
+   logic                      last_cmd_was_read_q;
+   logic                      cmd_stall_active;
+   logic                      data_stall_active;
+   logic                      turn_write_block;
+   logic                      turn_read_block;
+   logic                      write_data_fire;
+   logic                      read_data_fire;
+   int                        refresh_interval_cfg;
+   int                        refresh_block_cfg;
+   int                        maint_interval_cfg;
+   int                        maint_block_cfg;
+   int                        ready_stall_interval_cfg;
+   int                        ready_stall_block_cfg;
+   int                        read_gap_interval_cfg;
+   int                        read_gap_block_cfg;
+   int                        turnaround_cycles_cfg;
 
    integer i;
 
@@ -92,11 +119,63 @@ module ddr4_fast_mock #(
       for (i = 0; i < MEM_WORDS; i++) begin
          mem[i] = '0;
       end
+
+      refresh_interval_cfg     = REFRESH_INTERVAL_CYCLES;
+      refresh_block_cfg        = REFRESH_BLOCK_CYCLES;
+      maint_interval_cfg       = MAINT_INTERVAL_CYCLES;
+      maint_block_cfg          = MAINT_BLOCK_CYCLES;
+      ready_stall_interval_cfg = READY_STALL_INTERVAL_CYCLES;
+      ready_stall_block_cfg    = READY_STALL_CYCLES;
+      read_gap_interval_cfg    = READ_DATA_GAP_INTERVAL_CYCLES;
+      read_gap_block_cfg       = READ_DATA_GAP_CYCLES;
+      turnaround_cycles_cfg    = TURNAROUND_CYCLES;
+
+      void'($value$plusargs("mock_refresh_interval=%d", refresh_interval_cfg));
+      void'($value$plusargs("mock_refresh_block=%d", refresh_block_cfg));
+      void'($value$plusargs("mock_maint_interval=%d", maint_interval_cfg));
+      void'($value$plusargs("mock_maint_block=%d", maint_block_cfg));
+      void'($value$plusargs("mock_ready_stall_interval=%d", ready_stall_interval_cfg));
+      void'($value$plusargs("mock_ready_stall_block=%d", ready_stall_block_cfg));
+      void'($value$plusargs("mock_read_gap_interval=%d", read_gap_interval_cfg));
+      void'($value$plusargs("mock_read_gap_block=%d", read_gap_block_cfg));
+      void'($value$plusargs("mock_turnaround=%d", turnaround_cycles_cfg));
    end
 
    assign ui_clk = clk_in;
    assign dbg_clk = clk_in;
    assign ui_clk_sync_rst = RESET | (~init_calib_complete);
+
+   function automatic logic periodic_block_active(
+      input int interval_cycles,
+      input int block_cycles,
+      input logic [31:0] cycle
+   );
+      if ((interval_cycles <= 0) || (block_cycles <= 0)) begin
+         periodic_block_active = 1'b0;
+      end
+      else begin
+         periodic_block_active = ((cycle % interval_cycles) < block_cycles);
+      end
+   endfunction
+
+   always_ff @(posedge clk_in) begin
+      if (RESET || (~init_calib_complete)) begin
+         stress_cycle_q <= '0;
+      end
+      else begin
+         stress_cycle_q <= stress_cycle_q + 32'd1;
+      end
+   end
+
+   assign cmd_stall_active =
+      periodic_block_active(refresh_interval_cfg, refresh_block_cfg, stress_cycle_q) ||
+      periodic_block_active(maint_interval_cfg, maint_block_cfg, stress_cycle_q) ||
+      periodic_block_active(ready_stall_interval_cfg, ready_stall_block_cfg, stress_cycle_q);
+
+   assign data_stall_active =
+      periodic_block_active(refresh_interval_cfg, refresh_block_cfg, stress_cycle_q) ||
+      periodic_block_active(maint_interval_cfg, maint_block_cfg, stress_cycle_q) ||
+      periodic_block_active(read_gap_interval_cfg, read_gap_block_cfg, stress_cycle_q);
 
    always_ff @(posedge clk_in) begin
       if (RESET) begin
@@ -115,24 +194,57 @@ module ddr4_fast_mock #(
    end
 
    assign axi_awready     = init_calib_complete &&
+                            (~cmd_stall_active) &&
+                            (~turn_write_block) &&
                             (~write_active_q) &&
                             (~write_resp_pending_q);
-   assign axi_wready      = init_calib_complete && write_active_q;
+   assign axi_wready      = init_calib_complete && (~cmd_stall_active) && write_active_q;
    assign axi_bvalid      = write_resp_pending_q;
    assign axi_bid         = write_id_q;
    assign axi_bresp       = MEM_BRESP;
      
    assign axi_arready     = init_calib_complete &&
+                            (~cmd_stall_active) &&
+                            (~turn_read_block) &&
                             (~read_active_q) &&
                             (~read_data_valid_q);
    assign axi_rid         = read_id_q;
    assign axi_rresp       = MEM_RRESP;
-   assign axi_rvalid      = read_data_valid_q;
-   assign axi_rlast       = read_data_valid_q && (read_beats_left_q == 9'd1);
+   assign axi_rvalid      = read_data_valid_q && (~data_stall_active);
+   assign axi_rlast       = axi_rvalid && (read_beats_left_q == 9'd1);
 
    assign write_mem_index = write_addr_q[MEM_WORD_MSB:4];
    assign read_mem_index  = read_addr_q[MEM_WORD_MSB:4];
    assign axi_rdata       = mem[read_mem_index];
+   assign turn_write_block = (turnaround_cnt_q != 0) && last_cmd_was_read_q;
+   assign turn_read_block  = (turnaround_cnt_q != 0) && (~last_cmd_was_read_q);
+   assign write_data_fire  = write_active_q && axi_wvalid && axi_wready;
+   assign read_data_fire   = axi_rvalid && axi_rready;
+
+   always_ff @(posedge clk_in) begin
+      if (RESET || (~init_calib_complete)) begin
+         turnaround_cnt_q   <= '0;
+         last_cmd_was_read_q <= 1'b0;
+      end
+      else begin
+         if (turnaround_cnt_q != 0) begin
+            turnaround_cnt_q <= turnaround_cnt_q - 16'd1;
+         end
+
+         if (axi_awvalid && axi_awready) begin
+            if (last_cmd_was_read_q && (turnaround_cycles_cfg > 0)) begin
+               turnaround_cnt_q <= 16'(turnaround_cycles_cfg);
+            end
+            last_cmd_was_read_q <= 1'b0;
+         end
+         else if (axi_arvalid && axi_arready) begin
+            if ((~last_cmd_was_read_q) && (turnaround_cycles_cfg > 0)) begin
+               turnaround_cnt_q <= 16'(turnaround_cycles_cfg);
+            end
+            last_cmd_was_read_q <= 1'b1;
+         end
+      end
+   end
 
    always_ff @(posedge clk_in) begin
       if (RESET) begin
@@ -150,7 +262,7 @@ module ddr4_fast_mock #(
             write_active_q       <= 1'b1;
          end
 
-         if (write_active_q && axi_wvalid && axi_wready) begin
+         if (write_data_fire) begin
             integer byte_idx;
             logic [127:0] next_word;
 
@@ -205,7 +317,7 @@ module ddr4_fast_mock #(
                read_latency_q <= read_latency_q - 8'd1;
             end
          end
-         else if (read_data_valid_q && axi_rready) begin
+         else if (read_data_fire) begin
             if (read_beats_left_q == 9'd1) begin
                read_beats_left_q <= '0;
                read_active_q     <= 1'b0;

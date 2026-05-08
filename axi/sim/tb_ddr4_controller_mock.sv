@@ -186,6 +186,7 @@ module tb_ddr4_controller_mock;
       .rp_back_view_addr        (rp_back_view_addr)
    );
 
+   // Simulation Mock
    ddr4_fast_mock #(
       .AXI_ADDR_WIDTH      (AXI_ADDR_WIDTH),
       .AXI_ID_WIDTH        (AXI_ID_WIDTH),
@@ -238,12 +239,15 @@ module tb_ddr4_controller_mock;
       .axi_rready          (axi_rready)
    );
 
+   // Clock Generation
    initial clk = 1'b0;
    always #(CLK_PERIOD_PS / 2000.0) clk = ~clk;
 
    initial fast_mock_clk = 1'b0;
    always #(CLK_PERIOD_PS / 2000.0) fast_mock_clk = ~fast_mock_clk;
 
+
+   // Cycle Counts
    always @(posedge clk) begin
       if (reset) begin
          consume_cycle <= '0;
@@ -254,6 +258,7 @@ module tb_ddr4_controller_mock;
    end
 
    initial begin
+      // Initial Values
       reset                = 1'b1;
       rst_local_t_ddr_clk  = 1'b0;
       data_from_ddr_en     = 1'b0;
@@ -277,6 +282,7 @@ module tb_ddr4_controller_mock;
       consumer_enable      = 1'b0;
       send_done            = 1'b0;
 
+      // Print Config
       if ($value$plusargs("views=%d", sim_view_count)) begin
          if ((sim_view_count < 1) || (sim_view_count > MOCK_MAX_VIEWS)) begin
             $fatal(1, "Invalid +views=%0d, expected 1..%0d for this mock memory",
@@ -307,6 +313,7 @@ module tb_ddr4_controller_mock;
                SLICE_TOTAL_BEATS, SLICE_PAYLOAD_BEATS,
                VIEW_TOTAL_BEATS, VIEW_PERIOD_CYCLES);
 
+      // Sequence         
       repeat (12) @(posedge clk);
       reset = 1'b0;
       wait (init_calib_complete);
@@ -325,7 +332,8 @@ module tb_ddr4_controller_mock;
 
       send_slice_stream();
       wait_for_completion();
-
+      
+      // status check
       if (mismatch_count != 0) begin
          $fatal(1, "DDR controller mock test failed with %0d mismatches", mismatch_count);
       end

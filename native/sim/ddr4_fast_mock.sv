@@ -6,7 +6,16 @@ module ddr4_fast_mock #(
    parameter int APP_ADDR_WIDTH      = 32,
    parameter int MEM_WORDS           = 16384,
    parameter int CALIB_DELAY_CYCLES  = 32,
-   parameter int READ_LATENCY_CYCLES = 2
+   parameter int READ_LATENCY_CYCLES = 2,
+   parameter int REFRESH_INTERVAL_CYCLES = 0,
+   parameter int REFRESH_BLOCK_CYCLES    = 0,
+   parameter int MAINT_INTERVAL_CYCLES   = 0,
+   parameter int MAINT_BLOCK_CYCLES      = 0,
+   parameter int READY_STALL_INTERVAL_CYCLES = 0,
+   parameter int READY_STALL_CYCLES          = 0,
+   parameter int READ_DATA_GAP_INTERVAL_CYCLES = 0,
+   parameter int READ_DATA_GAP_CYCLES          = 0,
+   parameter int TURNAROUND_CYCLES = 0
 ) (
    input  logic                      clk_in,
    input  logic                      RESET,
@@ -48,6 +57,25 @@ module ddr4_fast_mock #(
 
    logic [MEM_ADDR_BITS-1:0] write_mem_index;
    logic [MEM_ADDR_BITS-1:0] read_mem_index;
+   logic [31:0]              stress_cycle_q;
+   logic [15:0]              turnaround_cnt_q;
+   logic                     last_cmd_was_read_q;
+   logic                     cmd_stall_active;
+   logic                     data_stall_active;
+   logic                     read_pipe_stall;
+   logic                     turn_write_block;
+   logic                     turn_read_block;
+   logic                     write_cmd_fire;
+   logic                     read_cmd_fire;
+   int                       refresh_interval_cfg;
+   int                       refresh_block_cfg;
+   int                       maint_interval_cfg;
+   int                       maint_block_cfg;
+   int                       ready_stall_interval_cfg;
+   int                       ready_stall_block_cfg;
+   int                       read_gap_interval_cfg;
+   int                       read_gap_block_cfg;
+   int                       turnaround_cycles_cfg;
 
    integer i;
 
@@ -55,18 +83,81 @@ module ddr4_fast_mock #(
       for (i = 0; i < MEM_WORDS; i++) begin
          mem[i] = '0;
       end
+
+      refresh_interval_cfg     = REFRESH_INTERVAL_CYCLES;
+      refresh_block_cfg        = REFRESH_BLOCK_CYCLES;
+      maint_interval_cfg       = MAINT_INTERVAL_CYCLES;
+      maint_block_cfg          = MAINT_BLOCK_CYCLES;
+      ready_stall_interval_cfg = READY_STALL_INTERVAL_CYCLES;
+      ready_stall_block_cfg    = READY_STALL_CYCLES;
+      read_gap_interval_cfg    = READ_DATA_GAP_INTERVAL_CYCLES;
+      read_gap_block_cfg       = READ_DATA_GAP_CYCLES;
+      turnaround_cycles_cfg    = TURNAROUND_CYCLES;
+
+      void'($value$plusargs("mock_refresh_interval=%d", refresh_interval_cfg));
+      void'($value$plusargs("mock_refresh_block=%d", refresh_block_cfg));
+      void'($value$plusargs("mock_maint_interval=%d", maint_interval_cfg));
+      void'($value$plusargs("mock_maint_block=%d", maint_block_cfg));
+      void'($value$plusargs("mock_ready_stall_interval=%d", ready_stall_interval_cfg));
+      void'($value$plusargs("mock_ready_stall_block=%d", ready_stall_block_cfg));
+      void'($value$plusargs("mock_read_gap_interval=%d", read_gap_interval_cfg));
+      void'($value$plusargs("mock_read_gap_block=%d", read_gap_block_cfg));
+      void'($value$plusargs("mock_turnaround=%d", turnaround_cycles_cfg));
    end
 
    assign ui_clk = clk_in;
    assign dbg_clk = clk_in;
    assign ui_clk_sync_rst = RESET | (~init_calib_complete);
-   assign app_rdy = init_calib_complete && (~write_cmd_pending_q);
-   assign app_wdf_rdy = init_calib_complete;
+
+   function automatic logic periodic_block_active(
+      input int interval_cycles,
+      input int block_cycles,
+      input logic [31:0] cycle
+   );
+      if ((interval_cycles <= 0) || (block_cycles <= 0)) begin
+         periodic_block_active = 1'b0;
+      end
+      else begin
+         periodic_block_active = ((cycle % interval_cycles) < block_cycles);
+      end
+   endfunction
+
+   always_ff @(posedge clk_in) begin
+      if (RESET || (~init_calib_complete)) begin
+         stress_cycle_q <= '0;
+      end
+      else begin
+         stress_cycle_q <= stress_cycle_q + 32'd1;
+      end
+   end
+
+   assign cmd_stall_active =
+      periodic_block_active(refresh_interval_cfg, refresh_block_cfg, stress_cycle_q) ||
+      periodic_block_active(maint_interval_cfg, maint_block_cfg, stress_cycle_q) ||
+      periodic_block_active(ready_stall_interval_cfg, ready_stall_block_cfg, stress_cycle_q);
+
+   assign data_stall_active =
+      periodic_block_active(refresh_interval_cfg, refresh_block_cfg, stress_cycle_q) ||
+      periodic_block_active(maint_interval_cfg, maint_block_cfg, stress_cycle_q) ||
+      periodic_block_active(read_gap_interval_cfg, read_gap_block_cfg, stress_cycle_q);
+
+   assign read_pipe_stall = read_valid_pipe[READ_LATENCY_CYCLES] && data_stall_active;
+   assign turn_write_block = (turnaround_cnt_q != 0) && last_cmd_was_read_q;
+   assign turn_read_block  = (turnaround_cnt_q != 0) && (~last_cmd_was_read_q);
+   assign app_rdy = init_calib_complete &&
+                    (~write_cmd_pending_q) &&
+                    (~cmd_stall_active) &&
+                    (~read_pipe_stall) &&
+                    (~(turn_write_block && (app_cmd == APP_CMD_WRITE))) &&
+                    (~(turn_read_block && (app_cmd == APP_CMD_READ)));
+   assign app_wdf_rdy = init_calib_complete && (~cmd_stall_active);
    assign write_mem_index = write_addr_q[MEM_WORD_MSB:4];
    assign read_mem_index = read_addr_pipe[READ_LATENCY_CYCLES][MEM_WORD_MSB:4];
    assign app_rd_data = mem[read_mem_index];
-   assign app_rd_data_valid = read_valid_pipe[READ_LATENCY_CYCLES];
+   assign app_rd_data_valid = read_valid_pipe[READ_LATENCY_CYCLES] && (~data_stall_active);
    assign app_rd_data_end = app_rd_data_valid;
+   assign write_cmd_fire = app_en && app_rdy && (app_cmd == APP_CMD_WRITE);
+   assign read_cmd_fire  = app_en && app_rdy && (app_cmd == APP_CMD_READ);
 
    always_ff @(posedge clk_in) begin
       if (RESET) begin
@@ -90,7 +181,7 @@ module ddr4_fast_mock #(
          write_cmd_pending_q <= 1'b0;
       end
       else begin
-         if (app_en && app_rdy && (app_cmd == APP_CMD_WRITE) &&
+         if (write_cmd_fire &&
              app_wdf_wren && app_wdf_rdy && app_wdf_end) begin
             integer byte_idx;
             logic [127:0] next_word;
@@ -105,7 +196,7 @@ module ddr4_fast_mock #(
             end
             mem[direct_write_index] <= next_word;
          end
-         else if (app_en && app_rdy && (app_cmd == APP_CMD_WRITE)) begin
+         else if (write_cmd_fire) begin
             write_addr_q        <= app_addr;
             write_cmd_pending_q <= 1'b1;
          end
@@ -127,14 +218,39 @@ module ddr4_fast_mock #(
    end
 
    always_ff @(posedge clk_in) begin
+      if (RESET || (~init_calib_complete)) begin
+         turnaround_cnt_q    <= '0;
+         last_cmd_was_read_q <= 1'b0;
+      end
+      else begin
+         if (turnaround_cnt_q != 0) begin
+            turnaround_cnt_q <= turnaround_cnt_q - 16'd1;
+         end
+
+         if (write_cmd_fire) begin
+            if (last_cmd_was_read_q && (turnaround_cycles_cfg > 0)) begin
+               turnaround_cnt_q <= 16'(turnaround_cycles_cfg);
+            end
+            last_cmd_was_read_q <= 1'b0;
+         end
+         else if (read_cmd_fire) begin
+            if ((~last_cmd_was_read_q) && (turnaround_cycles_cfg > 0)) begin
+               turnaround_cnt_q <= 16'(turnaround_cycles_cfg);
+            end
+            last_cmd_was_read_q <= 1'b1;
+         end
+      end
+   end
+
+   always_ff @(posedge clk_in) begin
       if (RESET) begin
          read_valid_pipe <= '0;
          for (int stage = 0; stage <= READ_LATENCY_CYCLES; stage++) begin
             read_addr_pipe[stage] <= '0;
          end
       end
-      else begin
-         read_valid_pipe[0] <= app_en && app_rdy && (app_cmd == APP_CMD_READ);
+      else if (~read_pipe_stall) begin
+         read_valid_pipe[0] <= read_cmd_fire;
          read_addr_pipe[0]  <= app_addr;
 
          for (int stage = 1; stage <= READ_LATENCY_CYCLES; stage++) begin
