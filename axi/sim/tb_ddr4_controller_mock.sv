@@ -400,6 +400,7 @@ module tb_ddr4_controller_mock;
       end
    end
 
+   // -------------------------------------------------------------------------------------------
    task automatic pulse_make_data();
       begin
          @(posedge clk);
@@ -438,9 +439,7 @@ module tb_ddr4_controller_mock;
          push_write_beat(make_slice_header0(view_idx, slice_idx));
          push_write_beat(make_slice_header1(view_idx, slice_idx));
 
-         for (payload_beat_idx = 0;
-              payload_beat_idx < SLICE_PAYLOAD_BEATS;
-              payload_beat_idx++) begin
+         for (payload_beat_idx = 0; payload_beat_idx < SLICE_PAYLOAD_BEATS; payload_beat_idx++) begin
             push_write_beat(make_payload_word(view_idx, slice_idx, payload_beat_idx));
          end
       end
