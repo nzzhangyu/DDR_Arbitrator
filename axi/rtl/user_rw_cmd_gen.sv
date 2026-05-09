@@ -87,23 +87,23 @@ module user_rw_cmd_gen #(
    // Watermark thresholds.
    // The write-side levels describe how full the upstream staging buffer is.
    // The read-side levels describe how much data should be kept available for replay / refill.
-   localparam logic [13:0] WR_LEVEL_LOW      = 14'd2048;
-   localparam logic [13:0] WR_LEVEL_HIGH     = 14'd8192;
-   localparam logic [13:0] WR_LEVEL_URGENT   = 14'd12288;
+   localparam logic [13:0] WR_LEVEL_LOW     = 14'd2048;
+   localparam logic [13:0] WR_LEVEL_HIGH    = 14'd8192;
+   localparam logic [13:0] WR_LEVEL_URGENT  = 14'd12288;
 
-   localparam logic [13:0] RD_LEVEL_URGENT   = 14'd4096;
-   localparam logic [13:0] RD_LEVEL_LOW      = 14'd8192;
-   localparam logic [13:0] RD_LEVEL_HIGH     = 14'd12288;
-   localparam logic [13:0] RD_FIFO_DEPTH     = 14'd16383;
+   localparam logic [13:0] RD_LEVEL_URGENT  = 14'd4096;
+   localparam logic [13:0] RD_LEVEL_LOW     = 14'd8192;
+   localparam logic [13:0] RD_LEVEL_HIGH    = 14'd12288;
+   localparam logic [13:0] RD_FIFO_DEPTH    = 14'd16383;
 
-   localparam logic [8:0]  RD_GRANT_MAX      = 9'd256;
-   localparam logic [8:0]  RD_GRANT_WR_HIGH  = 9'd128;
+   localparam logic [8:0]  RD_GRANT_MAX     = 9'd256;
+   localparam logic [8:0]  RD_GRANT_WR_HIGH = 9'd128;
 
-   localparam logic [2:0]  AXI_SIZE_16B      = 3'd4;
-   localparam logic [1:0]  AXI_BURST_INCR    = 2'b01;
+   localparam logic [2:0]  AXI_SIZE_16B     = 3'd4;
+   localparam logic [1:0]  AXI_BURST_INCR   = 2'b01;
 
    typedef enum logic [3:0] {
-      RW_IDLE,      // Wait for calibration and replay/backtracking blocks to clear.
+      RW_IDLE,      // Wait for calibration and replay/backtracking blocks to clr.
       RW_ARB_PRE,   // Fast arbitration entry for urgent or single-sided requests.
       RW_ARB,       // Full arbitration when read and write requests are both active.
       RW_WRITE_AW,  // Issue the AXI write address for the selected burst.
@@ -160,27 +160,31 @@ module user_rw_cmd_gen #(
 
    logic [10:0] wr_tail_age_cnt;
    logic        wr_tail_age_reached;
-   logic        clear_wr_wait_age;
+   logic        clr_wr_wait_age;
 
    // Write wait aging.
    // Allow a partial write tail below one full burst to drain after it waits long enough.
-   assign wr_tail_age_reached = wr_tail_age_cnt[10];
+   localparam logic [10:0] WR_TAIL_AGE_LIMIT = 11'd1024;
+
+   assign wr_tail_age_reached = (wr_tail_age_cnt >= WR_TAIL_AGE_LIMIT);
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
          wr_tail_age_cnt <= '0;
       end
-      else if (clear_wr_wait_age || (~wr_fifo_valid)) begin
+      else if (clr_wr_wait_age || (~wr_fifo_valid)) begin
          wr_tail_age_cnt <= '0;
       end
-      else if (~wr_tail_age_reached) begin
+      else if (wr_tail_age_cnt < WR_TAIL_AGE_LIMIT) begin
          wr_tail_age_cnt <= wr_tail_age_cnt + 11'd1;
       end
    end
 
+   // **************************************************************************
    // Pressure state.
    // These flags are the coarse "how much room do we still have?" view that
    // the arbiter uses before it decides whether to favor reads or writes.
+   // **************************************************************************
    logic        wr_level_low;
    logic        wr_level_high;
    logic        wr_level_urgent;
@@ -193,19 +197,21 @@ module user_rw_cmd_gen #(
    assign wr_level_low          = wr_fifo_rd_data_count >= WR_LEVEL_LOW;
    assign wr_level_high         = wr_fifo_rd_data_count >= WR_LEVEL_HIGH;
    assign wr_level_urgent       = wr_fifo_rd_data_count >= WR_LEVEL_URGENT;
-   assign wr_has_full_burst     = ~wr_fifo_prog_empty;
+   assign wr_has_full_burst     = ~wr_fifo_prog_empty;                       // wr_fifo has 256 beats
    
-   assign rd_level_urgent       = rd_fifo_almost_empty |
-                                  (rd_fifo_data_count <= RD_LEVEL_URGENT);
+   assign rd_level_urgent       = rd_fifo_almost_empty | (rd_fifo_data_count <= RD_LEVEL_URGENT);
    assign rd_level_low          = rd_fifo_data_count <= RD_LEVEL_LOW;
-   assign rd_fifo_free_count    = {1'b0, RD_FIFO_DEPTH} - {1'b0, rd_fifo_data_count};
+   assign rd_fifo_free_count    = {1'b0, RD_FIFO_DEPTH} - {1'b0, rd_fifo_data_count};         // rest of the fifo
    assign rd_fifo_can_prefetch  = (~rd_fifo_prog_full) &
-                                  (~rd_fifo_full) &
+                                  (~rd_fifo_full) & 
                                   (rd_fifo_data_count < RD_LEVEL_HIGH);
-
+   
+   
+   // ****************************************************************************
    // Request gating.
    // A request becomes eligible only after the corresponding buffer is non-empty
    // and the read cache has enough room to accept another burst.
+   // ****************************************************************************
    logic ddr_wr_req;
    logic ddr_rd_req_d;
    logic ddr_rd_req_dd;
@@ -232,87 +238,107 @@ module user_rw_cmd_gen #(
 
    assign ddr_rd_req_qual = (~ddr_rd_empty) & ddr_rd_req_dd & rd_fifo_can_prefetch;
 
-   // Arbitration state.
-   // The arbiter remembers the last granted direction so normal traffic does not
-   // starve one side when both read and write requests are active.
-   rw_state_t rw_state;
-   rw_state_t rw_next_state;
-
-   logic remember_write_grant;
-   logic remember_read_grant;
-   logic clear_last_grant;
-   logic last_grant_was_write;
-   logic last_grant_was_read;
+   // ******************************************************************************
+   // Last fair-grant direction, used to alternate service when reads and writes
+   // are both requesting. Urgent or single-sided grants clear this history.
+   // ******************************************************************************
+   logic set_last_wr;
+   logic set_last_rd;
+   logic clr_last_grant;
+   logic last_was_wr;
+   logic last_was_rd;
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
-         last_grant_was_write <= '0;
+         last_was_wr <= '0;
       end
-      else if (clear_last_grant || remember_read_grant) begin
-         last_grant_was_write <= '0;
+      else if (clr_last_grant || set_last_rd) begin
+         last_was_wr <= '0;
       end
-      else if (remember_write_grant) begin
-         last_grant_was_write <= 1'b1;
+      else if (set_last_wr) begin
+         last_was_wr <= 1'b1;
       end
    end
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
-         last_grant_was_read <= '0;
+         last_was_rd <= '0;
       end
-      else if (clear_last_grant || remember_write_grant) begin
-         last_grant_was_read <= '0;
+      else if (clr_last_grant || set_last_wr) begin
+         last_was_rd <= '0;
       end
-      else if (remember_read_grant) begin
-         last_grant_was_read <= 1'b1;
+      else if (set_last_rd) begin
+         last_was_rd <= 1'b1;
       end
    end
 
+   // **************************************************************************
    // Burst tracking.
-   // Burst length is re-evaluated from the current levels before each new grant.
-   // Once a burst starts, the write or read side runs to its AXI boundary.
+   // Track the active burst size/progress and gate new grants when read FIFO
+   // space or replay pointer updates make another DDR command unsafe.
+   // **************************************************************************
    logic [8:0] write_burst_len;
    logic [8:0] read_burst_len;
    logic [8:0] write_beat_cnt;
    logic [8:0] read_beat_cnt;
-   logic [8:0] rd_grant_limit;
    logic       write_burst_done;
    logic       read_burst_done;
+
+   logic [8:0] rd_grant_limit;
+   logic [8:0] rd_available_limit;
+   logic [8:0] rd_free_limit;
+   logic [8:0] rd_burst_limit;
+   logic [ADDR_WIDTH:0] ddr_rd_avail_count;
    logic       block_for_replay;
    logic       rd_fifo_has_grant_space;
 
    // Shorten read grants when write FIFO pressure is high so writes get back in sooner.
    assign rd_grant_limit = wr_level_high ? RD_GRANT_WR_HIGH : RD_GRANT_MAX;
    assign rd_fifo_has_grant_space = rd_fifo_free_count >= {6'd0, rd_grant_limit};
+   assign rd_available_limit = (|ddr_rd_avail_count[ADDR_WIDTH:8]) ?
+                               9'd256 : {1'b0, ddr_rd_avail_count[7:0]};
+   assign rd_free_limit      = (|rd_fifo_free_count[14:8]) ?
+                               9'd256 : {1'b0, rd_fifo_free_count[7:0]};
+   assign rd_burst_limit     = (rd_grant_limit < rd_available_limit) ?
+                               rd_grant_limit : rd_available_limit;
    // Hold new arbitration while the read pointer is being rewound for replay.
    assign block_for_replay = rp_back_en || (|rp_back_en_dly_cnt);
 
+   // **********************************************************************************
+   // Classify read/write requests by urgency, FIFO space, and fair-arbitration history.
+   // **********************************************************************************
    logic wr_urgent_req;
    logic wr_high_req;
    logic wr_fair_req;
+
    logic rd_req_with_space;
    logic rd_req_allowed;
    logic rd_urgent_req;
    logic rd_low_or_urgent_req;
    logic rd_fair_req;
+
    logic both_rw_req;
 
    assign wr_urgent_req        = wr_level_urgent && ddr_wr_req;
    assign wr_high_req          = wr_level_high && ddr_wr_req;
+   assign wr_fair_req          = ddr_wr_req && (~last_was_wr);
+
    assign rd_req_with_space    = ddr_rd_req_qual && rd_fifo_has_grant_space;
    assign rd_req_allowed       = rd_req_with_space && (~wr_level_urgent);
    assign rd_urgent_req        = rd_level_urgent && rd_req_allowed;
    assign rd_low_or_urgent_req = (rd_level_low || rd_level_urgent) && rd_req_allowed;
+   assign rd_fair_req          = rd_req_allowed && (~last_was_rd);
+
    assign both_rw_req          = ddr_wr_req && ddr_rd_req_qual;
-   assign wr_fair_req          = ddr_wr_req && (~last_grant_was_write);
-   assign rd_fair_req          = rd_req_allowed && (~last_grant_was_read);
 
-   grant_t arb_pre_grant;
-   grant_t arb_fair_grant;
-
+   // **************************************************************************
    // Grant selection.
    // This layer decides only the next service direction; AXI execution,
    // address update, and FIFO pop still happen in the state machine below.
+   // **************************************************************************
+   grant_t arb_pre_grant;    // for pre-arbitration
+   grant_t arb_fair_grant;   // for fair arbitration
+
    always_comb begin
       arb_pre_grant = GRANT_NONE;
 
@@ -342,7 +368,7 @@ module user_rw_cmd_gen #(
       else if (rd_low_or_urgent_req) begin
          arb_fair_grant = GRANT_READ;
       end
-      else if (wr_high_req && (~last_grant_was_write)) begin
+      else if (wr_high_req && (~last_was_wr)) begin
          arb_fair_grant = GRANT_WRITE;
       end
       else if (wr_fair_req) begin
@@ -359,6 +385,12 @@ module user_rw_cmd_gen #(
       end
    end
 
+   // ***************************************************************************
+   // RW Arbitration FSM
+   // ***************************************************************************
+   rw_state_t rw_state;
+   rw_state_t rw_next_state;
+
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
          rw_state <= RW_IDLE;
@@ -369,44 +401,44 @@ module user_rw_cmd_gen #(
    end
 
    // Arbitration policy:
-   // - urgent write protects the upstream FIFO from overflow;
-   // - low/urgent read refills the downstream cache when write is not urgent;
-   // - normal read/write contention uses last-grant memory to avoid one-sided service;
-   // - AXI bursts are not interrupted, so preemption happens only at burst boundaries.
+   // - replay/backtracking blocks new commands while the read pointer is rewound;
+   // - urgent writes protect the write FIFO from overflow;
+   // - low/urgent reads refill the read FIFO when writes are not urgent;
+   // - normal read/write contention alternates by last fair-grant direction.
    always_comb begin
-      rw_next_state        = rw_state;
-      remember_write_grant = 1'b0;
-      remember_read_grant  = 1'b0;
-      clear_last_grant     = 1'b0;
-      clear_wr_wait_age    = 1'b0;
+      rw_next_state   = rw_state;
+      set_last_wr     = 1'b0;
+      set_last_rd     = 1'b0;
+      clr_last_grant  = 1'b0;
+      clr_wr_wait_age = 1'b0;
 
       if (~init_calib_complete) begin
-         rw_next_state    = RW_IDLE;
-         clear_last_grant = 1'b1;
+         rw_next_state   = RW_IDLE;
+         clr_last_grant  = 1'b1;
       end
       else begin
          unique case (rw_state)
             RW_IDLE: begin
-               clear_last_grant = 1'b1;
-               rw_next_state    = block_for_replay ? RW_IDLE : RW_ARB_PRE;
+               clr_last_grant = 1'b1;
+               rw_next_state  = block_for_replay ? RW_IDLE : RW_ARB_PRE;
             end
 
             RW_ARB_PRE: begin
-               // Replay/backtracking has priority over issuing a fresh AXI command.
+               // Replay/backtracking has priority over issuing a fresh command.
                if (block_for_replay) begin
-                  rw_next_state    = RW_IDLE;
-                  clear_last_grant = 1'b1;
+                  rw_next_state  = RW_IDLE;
+                  clr_last_grant = 1'b1;
                end
                else begin
                   unique case (arb_pre_grant)
                      GRANT_WRITE: begin
-                        rw_next_state    = RW_WRITE_AW;
-                        clear_last_grant = 1'b1;
+                        rw_next_state  = RW_WRITE_AW;
+                        clr_last_grant = 1'b1;
                      end
 
                      GRANT_READ: begin
-                        rw_next_state    = RW_READ_AR;
-                        clear_last_grant = 1'b1;
+                        rw_next_state  = RW_READ_AR;
+                        clr_last_grant = 1'b1;
                      end
 
                      default: begin
@@ -422,24 +454,24 @@ module user_rw_cmd_gen #(
             RW_ARB: begin
                unique case (arb_fair_grant)
                   GRANT_WRITE: begin
-                     rw_next_state        = RW_WRITE_AW;
-                     remember_write_grant = 1'b1;
+                     rw_next_state = RW_WRITE_AW;
+                     set_last_wr   = 1'b1;
                   end
 
                   GRANT_READ: begin
-                     rw_next_state       = RW_READ_AR;
-                     remember_read_grant = 1'b1;
+                     rw_next_state = RW_READ_AR;
+                     set_last_rd   = 1'b1;
                   end
 
                   default: begin
-                     rw_next_state    = RW_ARB_PRE;
-                     clear_last_grant = 1'b1;
+                     rw_next_state  = RW_ARB_PRE;
+                     clr_last_grant = 1'b1;
                   end
                endcase
             end
 
             RW_WRITE_AW: begin
-               clear_wr_wait_age = 1'b1;
+               clr_wr_wait_age = 1'b1;
                if (write_burst_len == 0) begin
                   rw_next_state = RW_ARB_PRE;
                end
@@ -487,76 +519,30 @@ module user_rw_cmd_gen #(
       end
    end
 
-   // Helper functions.
-   // Keep burst and address helpers close to their use sites.
-   function automatic logic [8:0] clamp_count_256(input logic [13:0] level);
-      if (level >= 14'd256) begin
-         clamp_count_256 = 9'd256;
-      end
-      else begin
-         clamp_count_256 = {1'b0, level[7:0]};
-      end
-   endfunction
-
-   function automatic logic [8:0] min3_beat_count(
-      input logic [8:0] a,
-      input logic [8:0] b,
-      input logic [8:0] c
-   );
-      logic [8:0] min_ab;
-      begin
-         min_ab = (a < b) ? a : b;
-         min3_beat_count = (min_ab < c) ? min_ab : c;
-      end
-   endfunction
-
-   function automatic logic [8:0] clamp_available_count(input logic [ADDR_WIDTH:0] level);
-      if (|level[ADDR_WIDTH:8]) begin
-         clamp_available_count = 9'd256;
-      end
-      else begin
-         clamp_available_count = {1'b0, level[7:0]};
-      end
-   endfunction
-
-   function automatic logic [8:0] clamp_free_count(input logic [14:0] level);
-      if (|level[14:8]) begin
-         clamp_free_count = 9'd256;
-      end
-      else begin
-         clamp_free_count = {1'b0, level[7:0]};
-      end
-   endfunction
-
-   function automatic logic [AXI_ADDR_WIDTH-1:0] beat_to_axi_addr(
-      input logic [ADDR_WIDTH-1:0] beat_addr
-   );
-      // Internal addresses count 128-bit beats; AXI addresses count bytes.
-      beat_to_axi_addr = ({ {(AXI_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 4);
-   endfunction
-
-   // Address counters.
-   // Internal addresses are counted in 128-bit beats.
-   // AXI addresses are converted to byte addresses only at the boundary helper.
+   // ********************************************************************************
+   // Circular DDR address pointers.
+   // The extra MSB distinguishes empty from full after the lower address bits wrap.
+   // The lower bits drive the DDR address, while the full-width difference reports
+   // how many 128-bit beats are available to read.
+   // ********************************************************************************
    logic [ADDR_WIDTH:0]   user_ad_wr_i;
    logic [ADDR_WIDTH:0]   user_ad_rd_i;
    logic [ADDR_WIDTH-1:0] user_ad_wr;
    logic [ADDR_WIDTH-1:0] user_ad_rd;
-   logic [ADDR_WIDTH:0]   ddr_read_available_count;
 
-   assign user_ad_wr               = user_ad_wr_i[ADDR_WIDTH-1:0];
-   assign user_ad_rd               = user_ad_rd_i[ADDR_WIDTH-1:0];
-   assign ddr_rd_empty             = (user_ad_wr_i == user_ad_rd_i);
-   assign ddr_read_available_count = user_ad_wr_i - user_ad_rd_i;
+   assign user_ad_wr         = user_ad_wr_i[ADDR_WIDTH-1:0];
+   assign user_ad_rd         = user_ad_rd_i[ADDR_WIDTH-1:0];
+   assign ddr_rd_empty       = (user_ad_wr_i == user_ad_rd_i);
+   assign ddr_rd_avail_count = user_ad_wr_i - user_ad_rd_i;
 
-   // Legacy per-view counters.
-   // These counters are kept as comments to preserve the old view concept.
-   logic        write_data_fire;
-   logic        read_data_fire;
+   // Write/read data fire
+   logic write_data_fire;
+   logic read_data_fire;
 
    assign write_data_fire = m_axi_wvalid && m_axi_wready;
    assign read_data_fire  = m_axi_rvalid && m_axi_rready;
 
+   // Advance the write pointer on write data fire.
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
          user_ad_wr_i <= '0;
@@ -566,6 +552,7 @@ module user_rw_cmd_gen #(
       end
    end
 
+   // Advance the read pointer on read data fire.
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
          user_ad_rd_i <= '0;
@@ -585,8 +572,18 @@ module user_rw_cmd_gen #(
       end
       else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
          // Write bursts are based on FIFO level and clamped to the AXI maximum of 256 beats.
-         write_burst_len <= (wr_fifo_rd_data_count == 0 && wr_fifo_valid) ?
-                            9'd1 : clamp_count_256(wr_fifo_rd_data_count);
+         if (wr_fifo_rd_data_count >= 14'd256) begin
+            write_burst_len <= 9'd256;
+         end
+         else if (wr_fifo_rd_data_count != 0) begin
+            write_burst_len <= {1'b0, wr_fifo_rd_data_count[7:0]};
+         end
+         else if (wr_fifo_valid) begin
+            write_burst_len <= 9'd1;
+         end
+         else begin
+            write_burst_len <= '0;
+         end
       end
    end
 
@@ -596,11 +593,8 @@ module user_rw_cmd_gen #(
       end
       else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
          // Read bursts are limited by grant policy, DDR data available, and cache free space.
-         read_burst_len <= min3_beat_count(
-            rd_grant_limit,
-            clamp_available_count(ddr_read_available_count),
-            clamp_free_count(rd_fifo_free_count)
-         );
+         read_burst_len <= (rd_burst_limit < rd_free_limit) ?
+                           rd_burst_limit : rd_free_limit;
       end
    end
 
@@ -636,6 +630,11 @@ module user_rw_cmd_gen #(
                           wr_fifo_valid &&
                           (write_beat_cnt < write_burst_len);
 
+   // **********************************************************************
+   // AXI master channel drive.
+   // **********************************************************************
+
+   // AXI write-address channel: issue one INCR burst from the current write beat address.
    assign m_axi_awid    = '0;
    assign m_axi_awaddr  = beat_to_axi_addr(user_ad_wr);
    assign m_axi_awlen   = write_burst_len[7:0] - 8'd1;
@@ -647,6 +646,7 @@ module user_rw_cmd_gen #(
    assign m_axi_awqos   = 4'b0000;
    assign m_axi_awvalid = (rw_state == RW_WRITE_AW) && (write_burst_len != 0);
 
+   // AXI write-data channel: stream FIFO data until the selected burst length is reached.
    assign m_axi_wdata   = wr_fifo_dout;
    assign m_axi_wstrb   = 16'hffff;
    assign m_axi_wvalid  = (rw_state == RW_WRITE_W) &&
@@ -655,6 +655,7 @@ module user_rw_cmd_gen #(
    assign m_axi_wlast   = m_axi_wvalid && (write_beat_cnt == (write_burst_len - 1'b1));
    assign m_axi_bready  = (rw_state == RW_WRITE_B);
 
+   // AXI read-address channel: issue one INCR burst only when the read FIFO has space.
    assign m_axi_arid    = '0;
    assign m_axi_araddr  = beat_to_axi_addr(user_ad_rd);
    assign m_axi_arlen   = read_burst_len[7:0] - 8'd1;
@@ -672,11 +673,16 @@ module user_rw_cmd_gen #(
    assign rd_fifo_din   = m_axi_rdata;
    assign rd_fifo_wr_en = read_data_fire;
 
+   // Circular-buffer overrun / warning detection.
    logic [ADDR_WIDTH:0] wr_sub_rd;
    logic [ADDR_WIDTH:0] wr_sub_rd_diff;
-   logic                wr_rd_same_signal;
-   logic                wr_rd_diff_signal;
-   logic                set_ddr_overrun;
+
+   assign wr_sub_rd      = {1'b0, user_ad_wr_i[ADDR_WIDTH-1:0]} - {1'b0, user_ad_rd_i[ADDR_WIDTH-1:0]};
+   assign wr_sub_rd_diff = {1'b1, user_ad_wr_i[ADDR_WIDTH-1:0]} - {1'b0, user_ad_rd_i[ADDR_WIDTH-1:0]};
+
+   logic wr_rd_same_signal;
+   logic wr_rd_diff_signal;
+   logic set_ddr_overrun;
 
    assign wr_rd_same_signal = (user_ad_wr_i[ADDR_WIDTH] == user_ad_rd_i[ADDR_WIDTH]);
    assign wr_rd_diff_signal = (user_ad_wr_i[ADDR_WIDTH] ^ user_ad_rd_i[ADDR_WIDTH]);
@@ -697,11 +703,6 @@ module user_rw_cmd_gen #(
          ddr_overrun <= '0;
       end
    end
-
-   assign wr_sub_rd      = {1'b0, user_ad_wr_i[ADDR_WIDTH-1:0]} -
-                           {1'b0, user_ad_rd_i[ADDR_WIDTH-1:0]};
-   assign wr_sub_rd_diff = {1'b1, user_ad_wr_i[ADDR_WIDTH-1:0]} -
-                           {1'b0, user_ad_rd_i[ADDR_WIDTH-1:0]};
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
@@ -724,7 +725,13 @@ module user_rw_cmd_gen #(
       end
    end
 
-   // Legacy synchronizer.
-   // The old overrun synchronizer is kept as comment only for reference.
+   // Helper functions.
+   // Keep burst and address helpers close to their use sites.
+   function automatic logic [AXI_ADDR_WIDTH-1:0] beat_to_axi_addr(
+      input logic [ADDR_WIDTH-1:0] beat_addr
+   );
+      // Internal addresses count 128-bit beats; AXI addresses count bytes.
+      beat_to_axi_addr = ({ {(AXI_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 4);
+   endfunction
 
 endmodule

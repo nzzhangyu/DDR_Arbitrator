@@ -1,7 +1,8 @@
 `timescale 1ns/1ps
 
 // Lightweight DDR4 native-app mock for fast simulation.
-// The model keeps a small 128-bit word memory and a simple calibration delay.
+// The model keeps a small 128-bit word memory and can inject simple
+// ready/data stalls to exercise MIG app_* backpressure.
 module ddr4_fast_mock #(
    parameter int APP_ADDR_WIDTH      = 32,
    parameter int MEM_WORDS           = 16384,
@@ -20,43 +21,53 @@ module ddr4_fast_mock #(
    input  logic                      clk_in,
    input  logic                      RESET,
 
+   // MIG-style user clock/status outputs.
    output logic                      ui_clk,
    output logic                      ui_clk_sync_rst,
    output logic                      init_calib_complete,
    output logic                      dbg_clk,
 
+   // Native MIG app command channel.
    input  logic [APP_ADDR_WIDTH-1:0] app_addr,
    input  logic [2:0]                app_cmd,
    input  logic                      app_en,
    output logic                      app_rdy,
 
+   // Native MIG write-data FIFO channel.
    input  logic [127:0]              app_wdf_data,
    input  logic [15:0]               app_wdf_mask,
    input  logic                      app_wdf_wren,
    input  logic                      app_wdf_end,
    output logic                      app_wdf_rdy,
 
+   // Native MIG read-data channel.
    output logic [127:0]              app_rd_data,
    output logic                      app_rd_data_valid,
    output logic                      app_rd_data_end
 );
 
+   // Memory is addressed as 128-bit words. app_addr bits [3:0] select bytes
+   // within a word and are ignored by the array index.
    localparam int MEM_ADDR_BITS = $clog2(MEM_WORDS);
    localparam int MEM_WORD_MSB  = 4 + MEM_ADDR_BITS - 1;
    localparam logic [2:0] APP_CMD_WRITE = 3'b000;
    localparam logic [2:0] APP_CMD_READ  = 3'b001;
 
+   // Small behavioral storage used only by simulation.
    logic [127:0] mem [0:MEM_WORDS-1];
    logic [7:0]   calib_cnt;
 
    logic [APP_ADDR_WIDTH-1:0] write_addr_q;
    logic                      write_cmd_pending_q;
 
+   // Read commands move through this pipe before data appears on app_rd_data.
    logic [APP_ADDR_WIDTH-1:0] read_addr_pipe [0:READ_LATENCY_CYCLES];
    logic [READ_LATENCY_CYCLES:0] read_valid_pipe;
 
    logic [MEM_ADDR_BITS-1:0] write_mem_index;
    logic [MEM_ADDR_BITS-1:0] read_mem_index;
+   // Stress knobs model coarse DDR4 unavailability windows without pulling in
+   // the full MIG simulation model.
    logic [31:0]              stress_cycle_q;
    logic [15:0]              turnaround_cnt_q;
    logic                     last_cmd_was_read_q;
@@ -84,6 +95,8 @@ module ddr4_fast_mock #(
          mem[i] = '0;
       end
 
+      // Parameters provide defaults; plusargs let a test sweep stall behavior
+      // without recompiling the mock.
       refresh_interval_cfg     = REFRESH_INTERVAL_CYCLES;
       refresh_block_cfg        = REFRESH_BLOCK_CYCLES;
       maint_interval_cfg       = MAINT_INTERVAL_CYCLES;
@@ -105,10 +118,13 @@ module ddr4_fast_mock #(
       void'($value$plusargs("mock_turnaround=%d", turnaround_cycles_cfg));
    end
 
+   // The real MIG generates ui_clk/dbg_clk. The fast mock aliases them to the
+   // incoming simulation clock so the rest of the design sees the same ports.
    assign ui_clk = clk_in;
    assign dbg_clk = clk_in;
    assign ui_clk_sync_rst = RESET | (~init_calib_complete);
 
+   // Returns true during the first block_cycles of each interval_cycles window.
    function automatic logic periodic_block_active(
       input int interval_cycles,
       input int block_cycles,
@@ -131,6 +147,8 @@ module ddr4_fast_mock #(
       end
    end
 
+   // Command stalls block app_en acceptance. Data stalls hold the read pipe at
+   // its output stage, preserving read data until the stall clears.
    assign cmd_stall_active =
       periodic_block_active(refresh_interval_cfg, refresh_block_cfg, stress_cycle_q) ||
       periodic_block_active(maint_interval_cfg, maint_block_cfg, stress_cycle_q) ||
@@ -141,6 +159,8 @@ module ddr4_fast_mock #(
       periodic_block_active(maint_interval_cfg, maint_block_cfg, stress_cycle_q) ||
       periodic_block_active(read_gap_interval_cfg, read_gap_block_cfg, stress_cycle_q);
 
+   // Block command acceptance during read output stalls so the latency pipe
+   // cannot overwrite a valid response.
    assign read_pipe_stall = read_valid_pipe[READ_LATENCY_CYCLES] && data_stall_active;
    assign turn_write_block = (turnaround_cnt_q != 0) && last_cmd_was_read_q;
    assign turn_read_block  = (turnaround_cnt_q != 0) && (~last_cmd_was_read_q);
@@ -175,6 +195,8 @@ module ddr4_fast_mock #(
       end
    end
 
+   // Simple init_calib_complete generator. While calibration is incomplete,
+   // user logic remains in ui_clk_sync_rst.
    always_ff @(posedge clk_in) begin
       if (RESET) begin
          write_addr_q        <= '0;
@@ -187,6 +209,7 @@ module ddr4_fast_mock #(
             logic [127:0] next_word;
             logic [MEM_ADDR_BITS-1:0] direct_write_index;
 
+            // Same-cycle command/data case.
             direct_write_index = app_addr[MEM_WORD_MSB:4];
             next_word = mem[direct_write_index];
             for (byte_idx = 0; byte_idx < 16; byte_idx++) begin
@@ -205,6 +228,7 @@ module ddr4_fast_mock #(
             integer byte_idx;
             logic [127:0] next_word;
 
+            // Delayed write-data case after a command has been accepted.
             next_word = mem[write_mem_index];
             for (byte_idx = 0; byte_idx < 16; byte_idx++) begin
                if (~app_wdf_mask[byte_idx]) begin
@@ -217,6 +241,10 @@ module ddr4_fast_mock #(
       end
    end
 
+   // Write path supports either same-cycle command+data or a command followed
+   // later by one write-data beat. app_wdf_mask uses 0 to mean "write byte".
+   // Optional bus turnaround penalty prevents immediate read/write direction
+   // changes and approximates a coarse DDR scheduling delay.
    always_ff @(posedge clk_in) begin
       if (RESET || (~init_calib_complete)) begin
          turnaround_cnt_q    <= '0;
@@ -242,6 +270,8 @@ module ddr4_fast_mock #(
       end
    end
 
+   // Read path shifts accepted read addresses through a latency pipe. When the
+   // output is stalled, the pipe holds its current contents.
    always_ff @(posedge clk_in) begin
       if (RESET) begin
          read_valid_pipe <= '0;

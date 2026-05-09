@@ -100,9 +100,8 @@ module user_app_top #(
    logic [14:0]  ddr_wr_fifo_rd_count_raw;
    logic [13:0]  ddr_wr_fifo_level;
 
-   assign ddr_wr_fifo_level = ddr_wr_fifo_rd_count_raw[14] ?
-                              14'h3fff : ddr_wr_fifo_rd_count_raw[13:0];
-
+   assign ddr_wr_fifo_level = ddr_wr_fifo_rd_count_raw[14] ? 14'h3fff : ddr_wr_fifo_rd_count_raw[13:0];
+   
    xpm_fifo_async #(
       .CASCADE_HEIGHT      (0),
       .CDC_SYNC_STAGES     (2),

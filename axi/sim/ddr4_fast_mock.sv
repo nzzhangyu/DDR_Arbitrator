@@ -1,7 +1,8 @@
 `timescale 1ns/1ps
 
 // Lightweight DDR4 AXI mock for fast simulation.
-// The model keeps a small 128-bit word memory and a simple calibration delay.
+// The model keeps a small 128-bit word memory, returns OKAY responses, and
+// can inject simple ready/data stalls to exercise controller backpressure.
 module ddr4_fast_mock #(
    parameter int AXI_ADDR_WIDTH                 = 32,
    parameter int AXI_ID_WIDTH                   = 1,
@@ -21,11 +22,13 @@ module ddr4_fast_mock #(
    input  logic                      clk_in,
    input  logic                      RESET,
 
+   // MIG interface
    output logic                      ui_clk,
    output logic                      ui_clk_sync_rst,
    output logic                      init_calib_complete,
    output logic                      dbg_clk,
 
+   // AXI4 master write address channel
    input  logic [AXI_ID_WIDTH-1:0]   axi_awid,
    input  logic [AXI_ADDR_WIDTH-1:0] axi_awaddr,
    input  logic [7:0]                axi_awlen,
@@ -38,17 +41,20 @@ module ddr4_fast_mock #(
    input  logic                      axi_awvalid,
    output logic                      axi_awready,
 
+   // AXI4 master write data channel
    input  logic [127:0]              axi_wdata,
    input  logic [15:0]               axi_wstrb,
    input  logic                      axi_wlast,
    input  logic                      axi_wvalid,
    output logic                      axi_wready,
 
+   // AXI4 master write response channel
    output logic [AXI_ID_WIDTH-1:0]   axi_bid,
    output logic [1:0]                axi_bresp,
    output logic                      axi_bvalid,
    input  logic                      axi_bready,
 
+   // AXI4 master read address channel
    input  logic [AXI_ID_WIDTH-1:0]   axi_arid,
    input  logic [AXI_ADDR_WIDTH-1:0] axi_araddr,
    input  logic [7:0]                axi_arlen,
@@ -61,6 +67,7 @@ module ddr4_fast_mock #(
    input  logic                      axi_arvalid,
    output logic                      axi_arready,
 
+   // AXI4 master read data channel
    output logic [AXI_ID_WIDTH-1:0]   axi_rid,
    output logic [127:0]              axi_rdata,
    output logic [1:0]                axi_rresp,
@@ -69,6 +76,8 @@ module ddr4_fast_mock #(
    input  logic                      axi_rready
 );
 
+   // Memory is addressed as 128-bit words. AXI byte address bits [3:0] select
+   // bytes within a word and are ignored by the array index.
    localparam int MEM_ADDR_BITS   = $clog2(MEM_WORDS);
    localparam int MEM_WORD_MSB    = 4 + MEM_ADDR_BITS - 1;
    localparam logic [AXI_ADDR_WIDTH-1:0] AXI_WORD_BYTES = AXI_ADDR_WIDTH'(16);
@@ -76,6 +85,7 @@ module ddr4_fast_mock #(
    localparam logic [1:0] MEM_BRESP = OKAY;
    localparam logic [1:0] MEM_RRESP = OKAY;
 
+   // Small behavioral storage used only by simulation.
    logic [127:0] mem [0:MEM_WORDS-1];
    logic [7:0]   calib_cnt;
 
@@ -94,24 +104,26 @@ module ddr4_fast_mock #(
 
    logic [MEM_ADDR_BITS-1:0]  write_mem_index;
    logic [MEM_ADDR_BITS-1:0]  read_mem_index;
-   logic [31:0]               stress_cycle_q;
-   logic [15:0]               turnaround_cnt_q;
-   logic                      last_cmd_was_read_q;
-   logic                      cmd_stall_active;
-   logic                      data_stall_active;
-   logic                      turn_write_block;
-   logic                      turn_read_block;
-   logic                      write_data_fire;
-   logic                      read_data_fire;
-   int                        refresh_interval_cfg;
-   int                        refresh_block_cfg;
-   int                        maint_interval_cfg;
-   int                        maint_block_cfg;
-   int                        ready_stall_interval_cfg;
-   int                        ready_stall_block_cfg;
-   int                        read_gap_interval_cfg;
-   int                        read_gap_block_cfg;
-   int                        turnaround_cycles_cfg;
+   // Stress knobs model coarse DDR4 unavailability windows without pulling in
+   // the full MIG simulation model.
+   logic [31:0]               stress_cycle_q;             // Counts post-calibration cycles for periodic stall windows.
+   logic [15:0]               turnaround_cnt_q;           // Counts down the optional read/write direction-change delay.
+   logic                      last_cmd_was_read_q;        // Tracks whether the last accepted address command was a read.
+   logic                      cmd_stall_active;           // Blocks AW/AR/W acceptance during refresh/maintenance/ready stalls.
+   logic                      data_stall_active;          // Blocks RVALID during refresh/maintenance/read-gap stalls.
+   logic                      turn_write_block;           // Blocks a write command while a read-to-write turnaround is active.
+   logic                      turn_read_block;            // Blocks a read command while a write-to-read turnaround is active.
+   logic                      write_data_fire;            // One-cycle pulse when a write data beat is accepted.
+   logic                      read_data_fire;             // One-cycle pulse when a read data beat is accepted by the master.
+   int                        refresh_interval_cfg;       // Cycles between simulated DDR refresh stall windows.
+   int                        refresh_block_cfg;          // Number of cycles blocked during each refresh window.
+   int                        maint_interval_cfg;         // Cycles between simulated MIG maintenance stall windows.
+   int                        maint_block_cfg;            // Number of cycles blocked during each maintenance window.
+   int                        ready_stall_interval_cfg;   // Cycles between extra ready-deassertion windows.
+   int                        ready_stall_block_cfg;      // Number of cycles blocked during each ready-stall window.
+   int                        read_gap_interval_cfg;      // Cycles between read-data gap windows.
+   int                        read_gap_block_cfg;         // Number of cycles RVALID is suppressed during each read-data gap.
+   int                        turnaround_cycles_cfg;      // Configured cycles to wait when switching read/write direction.
 
    integer i;
 
@@ -120,6 +132,8 @@ module ddr4_fast_mock #(
          mem[i] = '0;
       end
 
+      // Parameters provide defaults; plusargs let a test sweep stall behavior
+      // without recompiling the mock.
       refresh_interval_cfg     = REFRESH_INTERVAL_CYCLES;
       refresh_block_cfg        = REFRESH_BLOCK_CYCLES;
       maint_interval_cfg       = MAINT_INTERVAL_CYCLES;
@@ -141,10 +155,13 @@ module ddr4_fast_mock #(
       void'($value$plusargs("mock_turnaround=%d", turnaround_cycles_cfg));
    end
 
+   // The real MIG generates ui_clk/dbg_clk. The fast mock aliases them to the
+   // incoming simulation clock so the rest of the design sees the same ports.
    assign ui_clk = clk_in;
    assign dbg_clk = clk_in;
    assign ui_clk_sync_rst = RESET | (~init_calib_complete);
 
+   // Returns true during the first block_cycles of each interval_cycles window.
    function automatic logic periodic_block_active(
       input int interval_cycles,
       input int block_cycles,
@@ -167,6 +184,8 @@ module ddr4_fast_mock #(
       end
    end
 
+   // Command stalls block address/command acceptance. Data stalls only delay
+   // read-data return, which is useful for replay/backpressure testing.
    assign cmd_stall_active =
       periodic_block_active(refresh_interval_cfg, refresh_block_cfg, stress_cycle_q) ||
       periodic_block_active(maint_interval_cfg, maint_block_cfg, stress_cycle_q) ||
@@ -177,6 +196,8 @@ module ddr4_fast_mock #(
       periodic_block_active(maint_interval_cfg, maint_block_cfg, stress_cycle_q) ||
       periodic_block_active(read_gap_interval_cfg, read_gap_block_cfg, stress_cycle_q);
 
+   // Simple init_calib_complete generator. While calibration is incomplete,
+   // user logic remains in ui_clk_sync_rst.
    always_ff @(posedge clk_in) begin
       if (RESET) begin
          calib_cnt            <= '0;
@@ -193,34 +214,38 @@ module ddr4_fast_mock #(
       end
    end
 
-   assign axi_awready     = init_calib_complete &&
-                            (~cmd_stall_active) &&
-                            (~turn_write_block) &&
-                            (~write_active_q) &&
-                            (~write_resp_pending_q);
-   assign axi_wready      = init_calib_complete && (~cmd_stall_active) && write_active_q;
-   assign axi_bvalid      = write_resp_pending_q;
-   assign axi_bid         = write_id_q;
-   assign axi_bresp       = MEM_BRESP;
-     
-   assign axi_arready     = init_calib_complete &&
-                            (~cmd_stall_active) &&
-                            (~turn_read_block) &&
-                            (~read_active_q) &&
-                            (~read_data_valid_q);
-   assign axi_rid         = read_id_q;
-   assign axi_rresp       = MEM_RRESP;
-   assign axi_rvalid      = read_data_valid_q && (~data_stall_active);
-   assign axi_rlast       = axi_rvalid && (read_beats_left_q == 9'd1);
+   // Accept only one outstanding write burst and one outstanding read burst.
+   assign axi_awready      = init_calib_complete &&
+                             (~cmd_stall_active) &&
+                             (~turn_write_block) &&
+                             (~write_active_q) &&
+                             (~write_resp_pending_q);
+   assign axi_wready       = init_calib_complete && (~cmd_stall_active) && write_active_q;
+   assign axi_bvalid       = write_resp_pending_q;
+   assign axi_bid          = write_id_q;
+   assign axi_bresp        = MEM_BRESP;
+      
+   assign axi_arready      = init_calib_complete &&
+                             (~cmd_stall_active) &&
+                             (~turn_read_block) &&
+                             (~read_active_q) &&
+                             (~read_data_valid_q);
+   assign axi_rid          = read_id_q;
+   assign axi_rresp        = MEM_RRESP;
+   assign axi_rvalid       = read_data_valid_q && (~data_stall_active);
+   assign axi_rlast        = axi_rvalid && (read_beats_left_q == 9'd1);
 
-   assign write_mem_index = write_addr_q[MEM_WORD_MSB:4];
-   assign read_mem_index  = read_addr_q[MEM_WORD_MSB:4];
-   assign axi_rdata       = mem[read_mem_index];
+   // Convert byte addresses to 128-bit word indexes.
+   assign write_mem_index  = write_addr_q[MEM_WORD_MSB:4];
+   assign read_mem_index   = read_addr_q[MEM_WORD_MSB:4];
+   assign axi_rdata        = mem[read_mem_index];
    assign turn_write_block = (turnaround_cnt_q != 0) && last_cmd_was_read_q;
    assign turn_read_block  = (turnaround_cnt_q != 0) && (~last_cmd_was_read_q);
    assign write_data_fire  = write_active_q && axi_wvalid && axi_wready;
    assign read_data_fire   = axi_rvalid && axi_rready;
 
+   // Optional bus turnaround penalty prevents immediate read/write direction
+   // changes and approximates a coarse DDR scheduling delay.
    always_ff @(posedge clk_in) begin
       if (RESET || (~init_calib_complete)) begin
          turnaround_cnt_q   <= '0;
@@ -246,6 +271,8 @@ module ddr4_fast_mock #(
       end
    end
 
+   // AXI write path: latch AW, consume W beats, apply byte strobes, then hold
+   // BVALID until the master accepts the response.
    always_ff @(posedge clk_in) begin
       if (RESET) begin
          write_addr_q           <= '0;
@@ -266,6 +293,7 @@ module ddr4_fast_mock #(
             integer byte_idx;
             logic [127:0] next_word;
 
+            // AXI WSTRB uses 1 to mean "write this byte".
             next_word = mem[write_mem_index];
             for (byte_idx = 0; byte_idx < 16; byte_idx++) begin
                if (axi_wstrb[byte_idx]) begin
@@ -291,6 +319,8 @@ module ddr4_fast_mock #(
       end
    end
 
+   // AXI read path: latch AR, wait the configured latency, then return one
+   // 128-bit word per accepted R beat.
    always_ff @(posedge clk_in) begin
       if (RESET) begin
          read_addr_q         <= '0;

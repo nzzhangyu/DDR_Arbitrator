@@ -130,7 +130,9 @@ module user_rw_cmd_gen #(
 
    // Write wait aging.
    // Allow a partial write tail below one full burst to drain after it waits long enough.
-   assign wr_tail_age_reached = wr_tail_age_cnt[10];
+   localparam logic [10:0] WR_TAIL_AGE_LIMIT = 11'd1024;
+
+   assign wr_tail_age_reached = (wr_tail_age_cnt >= WR_TAIL_AGE_LIMIT);
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
@@ -139,7 +141,7 @@ module user_rw_cmd_gen #(
       else if (clear_wr_wait_age || (~wr_fifo_valid)) begin
          wr_tail_age_cnt <= '0;
       end
-      else if (~wr_tail_age_reached) begin
+      else if (wr_tail_age_cnt < WR_TAIL_AGE_LIMIT) begin
          wr_tail_age_cnt <= wr_tail_age_cnt + 11'd1;
       end
    end
@@ -204,33 +206,33 @@ module user_rw_cmd_gen #(
    rw_state_t rw_state;
    rw_state_t rw_next_state;
 
-   logic remember_write_grant;
-   logic remember_read_grant;
-   logic clear_last_grant;
-   logic last_grant_was_write;
-   logic last_grant_was_read;
+   logic set_last_wr;
+   logic set_last_rd;
+   logic clr_last_grant;
+   logic last_was_wr;
+   logic last_was_rd;
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
-         last_grant_was_write <= '0;
+         last_was_wr <= '0;
       end
-      else if (clear_last_grant || remember_read_grant) begin
-         last_grant_was_write <= '0;
+      else if (clr_last_grant || set_last_rd) begin
+         last_was_wr <= '0;
       end
-      else if (remember_write_grant) begin
-         last_grant_was_write <= 1'b1;
+      else if (set_last_wr) begin
+         last_was_wr <= 1'b1;
       end
    end
 
    always_ff @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
-         last_grant_was_read <= '0;
+         last_was_rd <= '0;
       end
-      else if (clear_last_grant || remember_write_grant) begin
-         last_grant_was_read <= '0;
+      else if (clr_last_grant || set_last_wr) begin
+         last_was_rd <= '0;
       end
-      else if (remember_read_grant) begin
-         last_grant_was_read <= 1'b1;
+      else if (set_last_rd) begin
+         last_was_rd <= 1'b1;
       end
    end
 
@@ -242,6 +244,10 @@ module user_rw_cmd_gen #(
    logic [8:0] write_beat_cnt;
    logic [8:0] read_beat_cnt;
    logic [8:0] rd_grant_limit;
+   logic [8:0] rd_available_limit;
+   logic [8:0] rd_free_limit;
+   logic [8:0] rd_burst_limit;
+   logic [ADDR_WIDTH:0] ddr_rd_avail_count;
    logic       write_burst_done;
    logic       read_burst_done;
    logic       app_cmd_fire;
@@ -253,6 +259,12 @@ module user_rw_cmd_gen #(
    // Shorten read grants when write FIFO pressure is high so writes get back in sooner.
    assign rd_grant_limit = wr_level_high ? RD_GRANT_WR_HIGH : RD_GRANT_MAX;
    assign rd_fifo_has_grant_space = rd_fifo_free_count >= {6'd0, rd_grant_limit};
+   assign rd_available_limit = (|ddr_rd_avail_count[ADDR_WIDTH:8]) ?
+                               9'd256 : {1'b0, ddr_rd_avail_count[7:0]};
+   assign rd_free_limit      = (|rd_fifo_free_count[14:8]) ?
+                               9'd256 : {1'b0, rd_fifo_free_count[7:0]};
+   assign rd_burst_limit     = (9'd1 < rd_available_limit) ?
+                               9'd1 : rd_available_limit;
    // Hold new arbitration while the read pointer is being rewound for replay.
    assign block_for_replay = rp_back_en || (|rp_back_en_dly_cnt);
 
@@ -273,8 +285,8 @@ module user_rw_cmd_gen #(
    assign rd_urgent_req        = rd_level_urgent && rd_req_allowed;
    assign rd_low_or_urgent_req = (rd_level_low || rd_level_urgent) && rd_req_allowed;
    assign both_rw_req          = ddr_wr_req && ddr_rd_req_qual;
-   assign wr_fair_req          = ddr_wr_req && (~last_grant_was_write);
-   assign rd_fair_req          = rd_req_allowed && (~last_grant_was_read);
+   assign wr_fair_req          = ddr_wr_req && (~last_was_wr);
+   assign rd_fair_req          = rd_req_allowed && (~last_was_rd);
 
    grant_t arb_pre_grant;
    grant_t arb_fair_grant;
@@ -311,7 +323,7 @@ module user_rw_cmd_gen #(
       else if (rd_low_or_urgent_req) begin
          arb_fair_grant = GRANT_READ;
       end
-      else if (wr_high_req && (~last_grant_was_write)) begin
+      else if (wr_high_req && (~last_was_wr)) begin
          arb_fair_grant = GRANT_WRITE;
       end
       else if (wr_fair_req) begin
@@ -344,19 +356,19 @@ module user_rw_cmd_gen #(
    // - Native request groups are not interrupted, so preemption happens only at burst boundaries.
    always_comb begin
       rw_next_state        = rw_state;
-      remember_write_grant = 1'b0;
-      remember_read_grant  = 1'b0;
-      clear_last_grant     = 1'b0;
+      set_last_wr        = 1'b0;
+      set_last_rd        = 1'b0;
+      clr_last_grant     = 1'b0;
       clear_wr_wait_age    = 1'b0;
 
       if (~init_calib_complete) begin
          rw_next_state    = RW_IDLE;
-         clear_last_grant = 1'b1;
+         clr_last_grant  = 1'b1;
       end
       else begin
          unique case (rw_state)
             RW_IDLE: begin
-               clear_last_grant = 1'b1;
+               clr_last_grant = 1'b1;
                rw_next_state    = block_for_replay ? RW_IDLE : RW_ARB_PRE;
             end
 
@@ -364,18 +376,18 @@ module user_rw_cmd_gen #(
                   // Replay/backtracking has priority over issuing a fresh native command.
                if (block_for_replay) begin
                   rw_next_state    = RW_IDLE;
-                  clear_last_grant = 1'b1;
+                  clr_last_grant = 1'b1;
                end
                else begin
                   unique case (arb_pre_grant)
                      GRANT_WRITE: begin
                         rw_next_state    = RW_WRITE_AW;
-                        clear_last_grant = 1'b1;
+                        clr_last_grant = 1'b1;
                      end
 
                      GRANT_READ: begin
                         rw_next_state    = RW_READ_AR;
-                        clear_last_grant = 1'b1;
+                        clr_last_grant = 1'b1;
                      end
 
                      default: begin
@@ -392,17 +404,17 @@ module user_rw_cmd_gen #(
                unique case (arb_fair_grant)
                   GRANT_WRITE: begin
                      rw_next_state        = RW_WRITE_AW;
-                     remember_write_grant = 1'b1;
+                     set_last_wr = 1'b1;
                   end
 
                   GRANT_READ: begin
                      rw_next_state       = RW_READ_AR;
-                     remember_read_grant = 1'b1;
+                     set_last_rd = 1'b1;
                   end
 
                   default: begin
                      rw_next_state    = RW_ARB_PRE;
-                     clear_last_grant = 1'b1;
+                     clr_last_grant = 1'b1;
                   end
                endcase
             end
@@ -464,45 +476,6 @@ module user_rw_cmd_gen #(
 
    // Helper functions.
    // Keep burst and address helpers close to their use sites.
-   function automatic logic [8:0] clamp_count_256(input logic [13:0] level);
-      if (level >= 14'd256) begin
-         clamp_count_256 = 9'd256;
-      end
-      else begin
-         clamp_count_256 = {1'b0, level[7:0]};
-      end
-   endfunction
-
-   function automatic logic [8:0] min3_beat_count(
-      input logic [8:0] a,
-      input logic [8:0] b,
-      input logic [8:0] c
-   );
-      logic [8:0] min_ab;
-      begin
-         min_ab = (a < b) ? a : b;
-         min3_beat_count = (min_ab < c) ? min_ab : c;
-      end
-   endfunction
-
-   function automatic logic [8:0] clamp_available_count(input logic [ADDR_WIDTH:0] level);
-      if (|level[ADDR_WIDTH:8]) begin
-         clamp_available_count = 9'd256;
-      end
-      else begin
-         clamp_available_count = {1'b0, level[7:0]};
-      end
-   endfunction
-
-   function automatic logic [8:0] clamp_free_count(input logic [14:0] level);
-      if (|level[14:8]) begin
-         clamp_free_count = 9'd256;
-      end
-      else begin
-         clamp_free_count = {1'b0, level[7:0]};
-      end
-   endfunction
-
    function automatic logic [APP_ADDR_WIDTH-1:0] beat_to_app_addr(
       input logic [ADDR_WIDTH-1:0] beat_addr
    );
@@ -517,12 +490,11 @@ module user_rw_cmd_gen #(
    logic [ADDR_WIDTH:0]   user_ad_rd_i;
    logic [ADDR_WIDTH-1:0] user_ad_wr;
    logic [ADDR_WIDTH-1:0] user_ad_rd;
-   logic [ADDR_WIDTH:0]   ddr_read_available_count;
 
    assign user_ad_wr               = user_ad_wr_i[ADDR_WIDTH-1:0];
    assign user_ad_rd               = user_ad_rd_i[ADDR_WIDTH-1:0];
    assign ddr_rd_empty             = (user_ad_wr_i == user_ad_rd_i);
-   assign ddr_read_available_count = user_ad_wr_i - user_ad_rd_i;
+   assign ddr_rd_avail_count       = user_ad_wr_i - user_ad_rd_i;
 
    assign app_cmd_fire    = app_en && app_rdy;
    assign write_data_fire = (rw_state == RW_WRITE_AW) &&
@@ -560,8 +532,18 @@ module user_rw_cmd_gen #(
       end
       else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
          // Write groups are based on FIFO level and clamped to 256 native beats.
-         write_burst_len <= (wr_fifo_rd_data_count == 0 && wr_fifo_valid) ?
-                            9'd1 : clamp_count_256(wr_fifo_rd_data_count);
+         if (wr_fifo_rd_data_count >= 14'd256) begin
+            write_burst_len <= 9'd256;
+         end
+         else if (wr_fifo_rd_data_count != 0) begin
+            write_burst_len <= {1'b0, wr_fifo_rd_data_count[7:0]};
+         end
+         else if (wr_fifo_valid) begin
+            write_burst_len <= 9'd1;
+         end
+         else begin
+            write_burst_len <= '0;
+         end
       end
    end
 
@@ -571,11 +553,8 @@ module user_rw_cmd_gen #(
       end
       else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
          // Read bursts are limited by grant policy, DDR data available, and cache free space.
-         read_burst_len <= min3_beat_count(
-            9'd1,
-            clamp_available_count(ddr_read_available_count),
-            clamp_free_count(rd_fifo_free_count)
-         );
+         read_burst_len <= (rd_burst_limit < rd_free_limit) ?
+                           rd_burst_limit : rd_free_limit;
       end
    end
 
