@@ -63,14 +63,15 @@
 
 主要水位阈值保持一致：
 
-- `WR_LEVEL_LOW = 2048`
 - `WR_LEVEL_HIGH = 8192`
 - `WR_LEVEL_URGENT = 12288`
 - `RD_LEVEL_URGENT = 4096`
 - `RD_LEVEL_LOW = 8192`
 - `RD_LEVEL_HIGH = 12288`
 
-这些阈值让写侧在压力高时优先排空，同时在读侧低水位时及时预取。
+`WR_LEVEL_HIGH` 在写 FIFO 压力高时缩短读服务，让写侧更快回到仲裁；
+`WR_LEVEL_URGENT` 在写 FIFO 紧急时禁止普通读并强制优先写。读侧水位
+继续用于低水位及时预取和高水位停止预取。
 
 ## 4. AXI 与 Native 边界
 
