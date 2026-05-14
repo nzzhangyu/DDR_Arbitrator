@@ -439,17 +439,19 @@ module user_rw_cmd_gen #(
                 end
 
                 RW_READ_CMD: begin
-                    if ((read_burst_len == 0) || (~rd_fifo_has_grant_space)) begin
+                    if ((read_burst_len == 0) || (~rd_fifo_has_grant_space) || wr_level_urgent) begin
                         rw_next_state = RW_ARB_PRE;
                     end
-                    // Command handshake requests one read beat; data follows in R state.
+                    // Command handshake requests one read beat; urgent write may cancel
+                    // a read command only before it is accepted by the native app port.
                     else if (app_cmd_fire) begin
                         rw_next_state = RW_READ_DATA;
                     end
                 end
 
                 RW_READ_DATA: begin
-                    // app_rd_data_valid marks each native read return beat.
+                    // Once a read command is accepted, keep waiting for its return beat.
+                    // Urgent write preempts after the current read data beat is received.
                     if (read_burst_done || wr_level_urgent) begin
                         rw_next_state = RW_ARB_PRE;
                     end
@@ -560,7 +562,7 @@ module user_rw_cmd_gen #(
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
             read_beat_cnt <= '0;
         end
-        else if (rw_state != RW_READ_DATA) begin
+        else if ((rw_state != RW_READ_CMD) && (rw_state != RW_READ_DATA)) begin
             read_beat_cnt <= '0;
         end
         else if (read_data_fire) begin
@@ -587,7 +589,8 @@ module user_rw_cmd_gen #(
                             app_wdf_rdy) ||
                             ((rw_state == RW_READ_CMD) &&
                             (read_burst_len != 0) &&
-                            rd_fifo_has_grant_space);
+                            rd_fifo_has_grant_space &&
+                            (~wr_level_urgent));
 
     assign app_wdf_data = wr_fifo_dout;
     assign app_wdf_mask = 16'h0000;
