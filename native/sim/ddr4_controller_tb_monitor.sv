@@ -1,9 +1,11 @@
 `timescale 1ns/1ps
 
 // Native controller testbench monitor.
-// This helper keeps the main controller testbench focused on stimulus and
-// scoreboard flow. It owns the diagnostic counters, worst-case assertions, and
-// final summary log for FIFO occupancy and native MIG backpressure behavior.
+//
+// This helper is intentionally passive: it observes DUT/mock/testbench signals,
+// increments diagnostic counters, and writes summary lines. It never drives the
+// DUT. Keeping these checks outside the main testbench makes the stimulus and
+// scoreboard flow easier to read while preserving detailed failure reporting.
 module ddr4_controller_tb_monitor (
    input  logic        ui_clk,
    input  logic        ui_clk_sync_rst,
@@ -11,6 +13,9 @@ module ddr4_controller_tb_monitor (
    input  logic        reset,
    input  int          log_fd,
 
+   // Optional assertion thresholds. The monitor always records the measured
+   // maxima/counters; worst_check_enable decides whether configured limits also
+   // become hard errors.
    input  bit          worst_check_enable,
    input  int          max_wr_fifo_level_limit,
    input  int          min_rd_fifo_level_limit,
@@ -19,6 +24,8 @@ module ddr4_controller_tb_monitor (
    input  int          max_app_wdf_stall_limit,
    input  int          max_read_data_gap_limit,
 
+   // Native app/MIG mock observation points. These represent backpressure and
+   // read-return timing as seen by the controller.
    input  logic        init_calib_complete,
    input  logic        app_rdy,
    input  logic        app_wdf_rdy,
@@ -26,13 +33,14 @@ module ddr4_controller_tb_monitor (
    input  logic        user_r_valid,
    input  logic        user_r_empty,
    input  logic        consumer_enable,
-   input  logic        consumer_stall_active,
    input  logic        expected_data_remaining,
    input  logic        native_read_cmd_fire,
    input  logic        native_write_cmd_fire,
    input  logic        in_read_data_state,
    input  logic        urgent_read_data_event_fire,
 
+   // Internal DUT observations. The main testbench connects these through
+   // hierarchy to avoid changing synthesizable RTL ports just for simulation.
    input  logic [13:0] wr_fifo_level,
    input  logic        wr_fifo_full,
    input  logic [13:0] rd_fifo_level,
@@ -44,13 +52,12 @@ module ddr4_controller_tb_monitor (
    input  logic        wr_level_urgent,
    input  logic        read_data_fire,
 
+   // End-to-end scoreboard totals from the main testbench. They are used only
+   // for summary context and underflow diagnostics.
    input  int          sent_count,
    input  int          recv_count,
    input  int          mismatch_count,
    input  int          overflow_count,
-   input  int          write_gap_cycle_count,
-   input  int          consumer_stall_cycle_count,
-   input  int          rd_req_stall_cycle_count,
 
    output int          native_read_cmd_count,
    output int          native_write_cmd_count,
@@ -94,6 +101,9 @@ module ddr4_controller_tb_monitor (
 
    task automatic write_summary(input string result);
       begin
+         // Summary lines are intentionally compact and machine-grepable. They
+         // are written before PASS/FATAL so a failed console run still leaves a
+         // useful log artifact.
          if (log_fd != 0) begin
             $fdisplay(log_fd, "SUMMARY: result=%s sent=%0d received=%0d mismatch=%0d overflow=%0d underflow=%0d worst_errors=%0d",
                       result, sent_count, recv_count, mismatch_count,
@@ -105,11 +115,9 @@ module ddr4_controller_tb_monitor (
             $fdisplay(log_fd, "SUMMARY: max_app_rdy_stall=%0d max_app_wdf_stall=%0d max_read_data_gap=%0d max_user_underflow=%0d",
                       max_app_rdy_stall_run, max_app_wdf_stall_run,
                       max_read_data_gap_run, max_user_underflow_run);
-            $fdisplay(log_fd, "SUMMARY: stall_cycles app_rdy=%0d app_wdf=%0d read_data_gap=%0d user_underflow=%0d write_gap=%0d consumer_stall=%0d rd_req_stall=%0d",
+            $fdisplay(log_fd, "SUMMARY: stall_cycles app_rdy=%0d app_wdf=%0d read_data_gap=%0d user_underflow=%0d",
                       app_rdy_stall_cycle_count, app_wdf_stall_cycle_count,
-                      read_data_gap_cycle_count, user_underflow_cycle_count,
-                      write_gap_cycle_count, consumer_stall_cycle_count,
-                      rd_req_stall_cycle_count);
+                      read_data_gap_cycle_count, user_underflow_cycle_count);
             $fdisplay(log_fd, "SUMMARY: native_read_cmds=%0d native_write_cmds=%0d urgent_read_events=%0d read_budget_errors=%0d urgent_interrupt_errors=%0d",
                       native_read_cmd_count, native_write_cmd_count,
                       urgent_read_data_event_count, read_budget_error_count,
@@ -119,9 +127,15 @@ module ddr4_controller_tb_monitor (
       end
    endtask
 
-   // FIFO levels are sampled from user_app_top internals and passed in by the
-   // testbench. This keeps RTL ports unchanged while still recording the real
-   // XPM FIFO occupancy envelope under stress.
+   // FIFO and native backpressure monitor, ui_clk domain.
+   //
+   // The FIFO levels are sampled from user_app_top internals and passed in by
+   // the testbench. This keeps RTL ports unchanged while still recording the
+   // real XPM FIFO occupancy envelope while the business side runs continuously.
+   //
+   // app_rdy/app_wdf_rdy stalls approximate MIG command/write-data acceptance
+   // gaps. app_rd_data_valid gaps are tracked separately because they matter
+   // only while the state machine is waiting in RW_READ_DATA.
    always @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
          wr_fifo_min_level          <= 16383;
@@ -167,7 +181,7 @@ module ddr4_controller_tb_monitor (
          end
 
          if (worst_check_enable && (!rd_fifo_limit_reported) &&
-             consumer_enable && (!consumer_stall_active) &&
+             consumer_enable &&
              expected_data_remaining && (rd_fifo_level < min_rd_fifo_level_limit)) begin
             worst_case_error_count <= worst_case_error_count + 1;
             rd_fifo_limit_reported <= 1'b1;
@@ -219,6 +233,9 @@ module ddr4_controller_tb_monitor (
       input  string name
    );
       begin
+         // Generic run-length tracker for ready-like signals. A run is a
+         // consecutive window where the observed ready signal is low after
+         // calibration. limit < 0 means "record only, never fail".
          if (init_calib_complete && (!ready_signal)) begin
             cycle_count = cycle_count + 1;
             run_count = run_count + 1;
@@ -239,9 +256,12 @@ module ddr4_controller_tb_monitor (
       end
    endtask
 
-   // Business-underflow is checked in the user clock domain. Testbench-injected
-   // consumer stalls are excluded; a gap is only an error candidate when the
-   // consumer is allowed to read and pending expected data exists.
+   // Business-underflow monitor, user clk domain.
+   //
+   // The testbench models a continuous consumer. Once consumer_enable is set,
+   // any cycle with pending expected data but no user_r_valid is counted as an
+   // output gap. By default this is reported but not fatal unless the user turns
+   // on worst_check with max_user_underflow_cycles.
    always @(posedge clk) begin
       if (reset) begin
          underflow_count <= 0;
@@ -251,8 +271,7 @@ module ddr4_controller_tb_monitor (
          max_user_underflow_run <= 0;
          user_underflow_limit_reported <= 1'b0;
       end
-      else if (consumer_enable && (!consumer_stall_active) &&
-               expected_data_remaining && (!user_r_valid)) begin
+      else if (consumer_enable && expected_data_remaining && (!user_r_valid)) begin
          underflow_count <= underflow_count + 1;
          user_underflow_cycle_count <= user_underflow_cycle_count + 1;
          user_underflow_run <= user_underflow_run + 1;
@@ -275,7 +294,14 @@ module ddr4_controller_tb_monitor (
       end
    end
 
-   // Native arbitration policy checks and command counters.
+   // Native arbitration policy checks and command counters, ui_clk domain.
+   //
+   // These checks encode the intended native read-service contract:
+   // - normal read service length must not exceed 512 beats;
+   // - when write FIFO is high, new read service must not exceed 128 beats;
+   // - urgent write must block new read commands;
+   // - if a read command was already accepted, the controller must still wait
+   //   for its return data before leaving RW_READ_DATA.
    always @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
          native_read_cmd_count        <= 0;

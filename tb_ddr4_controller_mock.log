@@ -1,8 +1,8 @@
 DDR controller mock log: tb_ddr4_controller_mock.log
-CONFIG: views=2/2320 scoreboard=queue stress=0 worst_check=0 slices/view=128 beats/slice=182 payload_beats/slice=180 view_beats=23296 period_cycles=46400 write_gap=0/0 consumer_stall=0/0 rd_req_stall=0/0 max_wr_fifo=16383 min_rd_fifo=1 max_user_underflow=0 max_app_rdy_stall=-1 max_app_wdf_stall=-1 max_read_data_gap=-1
-SUMMARY: result=PASS sent=46592 received=46592 mismatch=0 overflow=0 underflow=187021 worst_errors=0
+CONFIG: views=2/2320 scoreboard=queue worst_check=0 slices/view=128 beats/slice=182 payload_beats/slice=180 view_beats=23296 period_cycles=46400 max_wr_fifo=16383 min_rd_fifo=1 max_user_underflow=0 max_app_rdy_stall=-1 max_app_wdf_stall=-1 max_read_data_gap=-1
+SUMMARY: result=PASS sent=46592 received=46592 mismatch=0 overflow=0 underflow=187147 worst_errors=0
 SUMMARY: wr_fifo_min=0 wr_fifo_max=12380 wr_fifo_full_events=0 rd_fifo_min=0 rd_fifo_max=3 rd_fifo_full_events=0 rd_fifo_empty_events=187437
 SUMMARY: max_app_rdy_stall=0 max_app_wdf_stall=0 max_read_data_gap=3 max_user_underflow=23390
-SUMMARY: stall_cycles app_rdy=0 app_wdf=0 read_data_gap=139776 user_underflow=187021 write_gap=0 consumer_stall=0 rd_req_stall=0
+SUMMARY: stall_cycles app_rdy=0 app_wdf=0 read_data_gap=139776 user_underflow=187147
 SUMMARY: native_read_cmds=46592 native_write_cmds=46592 urgent_read_events=1 read_budget_errors=0 urgent_interrupt_errors=0
 PASS: views=2 sent=46592 received=46592 read_cmds=46592 write_cmds=46592 urgent_read_events=1

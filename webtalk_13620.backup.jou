@@ -1,0 +1,12 @@
+#-----------------------------------------------------------
+# Webtalk v2021.1 (64-bit)
+# SW Build 3247384 on Thu Jun 10 19:36:33 MDT 2021
+# IP Build 3246043 on Fri Jun 11 00:30:35 MDT 2021
+# Start of session at: Thu May 14 23:18:49 2026
+# Process ID: 13620
+# Current directory: C:/FPGA/DDR_arb/DDR_Arbitrator
+# Command line: wbtcv.exe -mode batch -source C:/FPGA/DDR_arb/DDR_Arbitrator/xsim.dir/work.tb_ddr4_controller_mock#work.glbl/webtalk/xsim_webtalk.tcl -notrace
+# Log file: C:/FPGA/DDR_arb/DDR_Arbitrator/webtalk.log
+# Journal file: C:/FPGA/DDR_arb/DDR_Arbitrator\webtalk.jou
+#-----------------------------------------------------------
+source C:/FPGA/DDR_arb/DDR_Arbitrator/xsim.dir/work.tb_ddr4_controller_mock#work.glbl/webtalk/xsim_webtalk.tcl -notrace

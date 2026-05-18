@@ -4,7 +4,7 @@ module user_rw_cmd_gen #(
     parameter int ADDR_WIDTH     = 24,
     parameter int APP_ADDR_WIDTH = ADDR_WIDTH + 4
 ) (
-    // MIG native application interface
+    // Native app interface.
     output logic [APP_ADDR_WIDTH-1:0] app_addr,
     output logic [2:0]                app_cmd,
     output logic                      app_en,
@@ -51,8 +51,6 @@ module user_rw_cmd_gen #(
 );
 
     // Watermark thresholds.
-    // The write-side levels describe how full the upstream staging buffer is.
-    // The read-side levels describe how much data should be kept available for replay / refill.
     localparam logic [13:0] WR_LEVEL_HIGH     = 14'd8192;
     localparam logic [13:0] WR_LEVEL_URGENT   = 14'd12288;
 
@@ -68,12 +66,12 @@ module user_rw_cmd_gen #(
     localparam logic [2:0]  APP_CMD_READ      = 3'b001;
 
     typedef enum logic [3:0] {
-        RW_IDLE,      // Wait for calibration and replay/backtracking blocks to clear.
-        RW_ARB_PRE,   // Fast arbitration entry for urgent or single-sided requests.
-        RW_ARB,       // Full arbitration when read and write requests are both active.
-        RW_WRITE_REQ, // Issue one native write command with its data beat.
-        RW_READ_CMD,  // Issue one native read command.
-        RW_READ_DATA  // Accept one native read return beat.
+        RW_IDLE,      // Wait/blocked.
+        RW_ARB_PRE,   // Fast arbitration.
+        RW_ARB,       // Fair arbitration.
+        RW_WRITE_REQ, // Native write beat.
+        RW_READ_CMD,  // Native read command.
+        RW_READ_DATA  // Native read data.
     } rw_state_t;
 
     typedef enum logic [1:0] {
@@ -82,8 +80,7 @@ module user_rw_cmd_gen #(
         GRANT_READ
     } grant_t;
 
-    // Start pulse sync.
-    // Synchronize the start pulse into ui_clk and extract a clean rising edge.
+    // Start pulse CDC and edge detect.
     (* ASYNC_REG = "true" *) logic make_data_on_rcom_cdc_to_d;
     (* ASYNC_REG = "true" *) logic make_data_on_dd;
     (* ASYNC_REG = "true" *) logic make_data_on_ddd;
@@ -105,8 +102,7 @@ module user_rw_cmd_gen #(
     assign make_data_on_edge         = make_data_on_dd & (~make_data_on_ddd);
     assign make_data_p_edge_ddr_clk  = make_data_on_edge;
 
-    // Replay delay.
-    // Delay replay request so the current native transaction can settle first.
+    // Replay settle delay.
     logic [7:0] rp_back_en_dly_cnt;
 
     always_ff @(posedge ui_clk) begin
@@ -125,8 +121,7 @@ module user_rw_cmd_gen #(
     logic        wr_tail_age_reached;
     logic        clr_wr_wait_age;
 
-    // Write wait aging.
-    // Allow a partial write tail below one full burst to drain after it waits long enough.
+    // Partial-write aging.
     localparam logic [10:0] WR_TAIL_AGE_LIMIT = 11'd1024;
 
     assign wr_tail_age_reached = (wr_tail_age_cnt >= WR_TAIL_AGE_LIMIT);
@@ -143,11 +138,7 @@ module user_rw_cmd_gen #(
         end
     end
 
-    // **************************************************************************
-    // Pressure state.
-    // These flags are the coarse "how much room do we still have?" view that
-    // the arbiter uses before it decides whether to favor reads or writes.
-    // **************************************************************************
+    // FIFO pressure flags.
     logic        wr_level_high;
     logic        wr_level_urgent;
     logic        wr_has_full_burst;
@@ -168,19 +159,13 @@ module user_rw_cmd_gen #(
                                     (~rd_fifo_full) &
                                     (rd_fifo_data_count < RD_LEVEL_HIGH);
 
-    // ****************************************************************************
     // Request gating.
-    // A request becomes eligible only after the corresponding buffer is non-empty
-    // and the read cache has enough room to accept another burst.
-    // ****************************************************************************
     logic ddr_wr_req;
     logic ddr_rd_req_d;
     logic ddr_rd_req_dd;
     logic ddr_rd_req_qual;
 
-    // Write request sources:
-    // - enough data for a full native request group;
-    // - a small tail has waited long enough and should not be stranded.
+    // Full group or aged tail.
     assign ddr_wr_req = wr_fifo_valid &
                         (wr_has_full_burst | wr_tail_age_reached);
 
@@ -197,10 +182,7 @@ module user_rw_cmd_gen #(
 
     assign ddr_rd_req_qual = (~ddr_rd_empty) & ddr_rd_req_dd & rd_fifo_can_prefetch;
 
-    // ******************************************************************************
-    // Last fair-grant direction, used to alternate service when reads and writes
-    // are both requesting. Urgent or single-sided grants clear this history.
-    // ******************************************************************************
+    // Fair-grant history.
     logic set_last_wr;
     logic set_last_rd;
     logic clr_last_grant;
@@ -231,11 +213,7 @@ module user_rw_cmd_gen #(
         end
     end
 
-    // **************************************************************************
-    // Burst tracking.
-    // Track the active burst size/progress and gate new grants when read FIFO
-    // space or replay pointer updates make another DDR command unsafe.
-    // **************************************************************************
+    // Burst/service tracking.
     logic [8:0] write_burst_len;
     logic [9:0] read_burst_len;
     logic [8:0] write_beat_cnt;
@@ -253,17 +231,15 @@ module user_rw_cmd_gen #(
     logic       block_for_replay;
     logic       rd_fifo_has_grant_space;
 
-    // Limit each native read service window, but keep one-command-at-a-time flow.
+    // Read service budget.
     assign rd_service_limit = wr_level_high ? RD_SERVICE_WR_HIGH : RD_SERVICE_MAX;
     assign rd_available_len = (|ddr_rd_avail_count[ADDR_WIDTH:9]) ?
                                 RD_SERVICE_MAX : ddr_rd_avail_count[9:0];
     assign rd_fifo_has_grant_space = (~rd_fifo_full) && (rd_fifo_free_count != 0);
-    // Hold new arbitration while the read pointer is being rewound for replay.
+    // Replay blocks arbitration.
     assign block_for_replay = rp_back_en || (|rp_back_en_dly_cnt);
 
-    // **********************************************************************************
-    // Classify read/write requests by urgency, FIFO space, and fair-arbitration history.
-    // **********************************************************************************
+    // Request classes.
     logic wr_urgent_req;
     logic wr_high_req;
     logic wr_fair_req;
@@ -285,13 +261,9 @@ module user_rw_cmd_gen #(
     assign wr_fair_req          = ddr_wr_req && (~last_was_wr);
     assign rd_fair_req          = rd_req_allowed && (~last_was_rd);
 
-    // **************************************************************************
     // Grant selection.
-    // This layer decides only the next service direction; AXI execution,
-    // address update, and FIFO pop still happen in the state machine below.
-    // **************************************************************************
-    grant_t arb_pre_grant;      // for pre-arbitratio
-    grant_t arb_fair_grant;     // for fair arbitration
+    grant_t arb_pre_grant;      // Pre-arbitration grant.
+    grant_t arb_fair_grant;     // Fair grant.
     
     always_comb begin
         arb_pre_grant = GRANT_NONE;
@@ -339,9 +311,7 @@ module user_rw_cmd_gen #(
         end
     end
 
-    // ***************************************************************************
-    // RW Arbitration FSM
-    // ***************************************************************************
+    // RW arbitration FSM.
     rw_state_t rw_state;
     rw_state_t rw_next_state;
 
@@ -354,11 +324,7 @@ module user_rw_cmd_gen #(
         end
     end
 
-    // Arbitration policy:
-    // - urgent write protects the upstream FIFO from overflow;
-    // - low/urgent read refills the downstream cache when write is not urgent;
-    // - normal read/write contention uses last-grant memory to avoid one-sided service;
-    // - Native request groups are not interrupted, so preemption happens only at burst boundaries.
+    // Urgent writes protect FIFO space; fair grants avoid one-sided service.
     always_comb begin
         rw_next_state      = rw_state;
         set_last_wr        = 1'b0;
@@ -378,7 +344,7 @@ module user_rw_cmd_gen #(
                 end
 
                 RW_ARB_PRE: begin
-                    // Replay/backtracking has priority over issuing a fresh native command.
+                    // Replay has priority.
                     if (block_for_replay) begin
                         rw_next_state  = RW_IDLE;
                         clr_last_grant = 1'b1;
@@ -396,7 +362,7 @@ module user_rw_cmd_gen #(
                             end
 
                             default: begin
-                                // Both sides are active, so enter the fair grant layer.
+                                // Use fair grant.
                                 if (both_rw_req) begin
                                 rw_next_state = RW_ARB;
                                 end
@@ -432,7 +398,7 @@ module user_rw_cmd_gen #(
                     else if (~wr_fifo_valid) begin
                         rw_next_state = RW_ARB_PRE;
                     end
-                    // Native write command and write data are accepted together.
+                    // Native write command/data handshake.
                     else if (write_burst_done) begin
                         rw_next_state = RW_ARB_PRE;
                     end
@@ -442,16 +408,14 @@ module user_rw_cmd_gen #(
                     if ((read_burst_len == 0) || (~rd_fifo_has_grant_space) || wr_level_urgent) begin
                         rw_next_state = RW_ARB_PRE;
                     end
-                    // Command handshake requests one read beat; urgent write may cancel
-                    // a read command only before it is accepted by the native app port.
+                    // Unaccepted reads may be aborted by urgent write.
                     else if (app_cmd_fire) begin
                         rw_next_state = RW_READ_DATA;
                     end
                 end
 
                 RW_READ_DATA: begin
-                    // Once a read command is accepted, keep waiting for its return beat.
-                    // Urgent write preempts after the current read data beat is received.
+                    // Accepted reads wait for their return beat.
                     if (read_burst_done || wr_level_urgent) begin
                         rw_next_state = RW_ARB_PRE;
                     end
@@ -467,12 +431,7 @@ module user_rw_cmd_gen #(
         end
     end
 
-    // ********************************************************************************
     // Circular DDR address pointers.
-    // The extra MSB distinguishes empty from full after the lower address bits wrap.
-    // The lower bits drive the DDR address, while the full-width difference reports
-    // how many 128-bit beats are available to read.
-    // ********************************************************************************
     logic [ADDR_WIDTH:0]   user_ad_wr_i;
     logic [ADDR_WIDTH:0]   user_ad_rd_i;
     logic [ADDR_WIDTH-1:0] user_ad_wr;
@@ -483,7 +442,7 @@ module user_rw_cmd_gen #(
     assign ddr_rd_empty             = (user_ad_wr_i == user_ad_rd_i);
     assign ddr_rd_avail_count       = user_ad_wr_i - user_ad_rd_i;
 
-    // Write/read data fire.
+    // Handshake pulses.
     assign app_cmd_fire    = app_en && app_rdy;
     assign write_data_fire = (rw_state == RW_WRITE_REQ) &&
                                 app_en &&
@@ -505,7 +464,7 @@ module user_rw_cmd_gen #(
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
             user_ad_rd_i <= '0;
         end
-        // Replay rewinds the read pointer to the requested view address.
+        // Replay read pointer.
         else if (rp_back_en) begin
             user_ad_rd_i <= {1'b0, rp_back_view_addr};
         end
@@ -519,7 +478,7 @@ module user_rw_cmd_gen #(
             write_burst_len <= '0;
         end
         else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
-            // Write groups are based on FIFO level and clamped to 256 native beats.
+            // Clamp write group to 256 beats.
             if (wr_fifo_rd_data_count >= 14'd256) begin
                 write_burst_len <= 9'd256;
             end
@@ -540,7 +499,7 @@ module user_rw_cmd_gen #(
             read_burst_len <= '0;
         end
         else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
-            // Native reads use a service budget, saturated by DDR data availability.
+            // Clamp read service by availability.
             read_burst_len <= (rd_available_len < rd_service_limit) ?
                                 rd_available_len : rd_service_limit;
         end
@@ -575,9 +534,7 @@ module user_rw_cmd_gen #(
 
     assign wr_fifo_rd_en = write_data_fire;
 
-    // **********************************************************************
     // Native app channel drive.
-    // **********************************************************************
 
     assign app_addr     = (rw_state == RW_READ_CMD) ?
                             beat_to_app_addr(user_ad_rd) :
@@ -603,7 +560,7 @@ module user_rw_cmd_gen #(
     assign rd_fifo_din   = app_rd_data;
     assign rd_fifo_wr_en = read_data_fire;
 
-    // Circular-buffer overrun / warning detection.
+    // Circular-buffer warning/overrun.
     logic [ADDR_WIDTH:0] wr_sub_rd;
     logic [ADDR_WIDTH:0] wr_sub_rd_diff;
     logic                wr_rd_same_signal;
@@ -656,15 +613,11 @@ module user_rw_cmd_gen #(
         end
     end
 
-    // Legacy synchronizer.
-    // The old overrun synchronizer is kept as comment only for reference.
-
     // Helper functions.
-    // Keep burst and address helpers close to their use sites.
     function automatic logic [APP_ADDR_WIDTH-1:0] beat_to_app_addr(
         input logic [ADDR_WIDTH-1:0] beat_addr
     );
-        // Internal addresses count 128-bit beats; MIG app addresses count bytes here.
+        // Beat address to byte address.
         beat_to_app_addr = ({ {(APP_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 4);
     endfunction
 
