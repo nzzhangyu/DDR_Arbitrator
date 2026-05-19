@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 
-// Event-style native-app stall model for the DDR fast mock.
+// Stall, backpressure, and read-return timing models for the DDR fast mock.
 module ddr4_fast_mock_stall_model #(
     parameter int REFRESH_INTERVAL_CYCLES = 0,
     parameter int REFRESH_BLOCK_CYCLES    = 0,
@@ -39,20 +39,21 @@ module ddr4_fast_mock_stall_model #(
     localparam logic [2:0] APP_CMD_WRITE = 3'b000;
     localparam logic [2:0] APP_CMD_READ  = 3'b001;
 
-    int   refresh_interval_cfg;        // Refresh stall period.
-    int   refresh_block_cfg;           // Refresh stall length.
-    int   maint_interval_cfg;          // Maintenance period.
-    int   maint_block_cfg;             // Maintenance length.
-    int   ready_stall_interval_cfg;    // Ready stall period.
-    int   ready_stall_block_cfg;       // Ready stall length.
-    int   read_gap_interval_cfg;       // Read gap period.
-    int   read_gap_block_cfg;          // Read gap length.
+    int   refresh_interval_cfg;        // Injected refresh period.
+    int   refresh_block_cfg;           // Injected refresh length.
+    int   maint_interval_cfg;          // Injected maintenance period.
+    int   maint_block_cfg;             // Injected maintenance length.
+    int   ready_stall_interval_cfg;    // Injected ready period.
+    int   ready_stall_block_cfg;       // Injected ready length.
+    int   read_gap_interval_cfg;       // Injected read-gap period.
+    int   read_gap_block_cfg;          // Injected read-gap length.
     int   rtw_turnaround_cycles_cfg;   // Read-to-write block cycles.
     int   wtr_turnaround_cycles_cfg;   // Write-to-read block cycles.
     int   cmd_queue_depth_cfg;         // Command queue depth.
     int   cmd_drain_interval_cfg;      // Command drain period.
     bit   plusarg_seen;                // Plusarg return sink.
 
+    // External pressure state.
     int   refresh_cnt_q;               // Refresh interval count.
     int   refresh_left_q;              // Refresh active count.
     int   maint_cnt_q;                 // Maintenance interval count.
@@ -61,14 +62,13 @@ module ddr4_fast_mock_stall_model #(
     int   ready_stall_left_q;          // Ready stall active count.
     int   read_gap_cnt_q;              // Read gap interval count.
     int   read_gap_left_q;             // Read gap active count.
-    int   cmd_queue_level_q;           // Command queue level.
-    int   cmd_drain_cnt_q;             // Command drain count.
 
     logic refresh_active_q;            // Refresh active state.
     logic maint_active_q;              // Maintenance active state.
     logic ready_stall_active_q;        // Ready stall active state.
     logic read_gap_active_q;           // Read gap active state.
 
+    // Direction-turnaround state.
     logic [15:0] turnaround_cnt_q;            // Turnaround countdown.
     logic        last_cmd_valid_q;            // Direction valid flag.
     logic        last_cmd_was_read_q;         // Last command direction.
@@ -76,6 +76,10 @@ module ddr4_fast_mock_stall_model #(
     logic        turnaround_target_is_read_q; // Pending target direction.
     logic        write_turn_request;          // Write turn request.
     logic        read_turn_request;           // Read turn request.
+
+    // Command-queue state.
+    int          cmd_queue_level_q;           // Command queue level.
+    int          cmd_drain_cnt_q;             // Command drain count.
     logic        write_cmd_fire;              // Accepted write command.
     logic        read_cmd_fire;               // Accepted read command.
     logic        cmd_queue_enabled;           // Queue model enable.
@@ -114,10 +118,16 @@ module ddr4_fast_mock_stall_model #(
         plusarg_seen = $value$plusargs("mock_cmd_drain_interval=%d", cmd_drain_interval_cfg);
     end
 
-    // Periodic refresh event; active holds for the configured block length.
+    assign write_cmd_fire = app_en && app_rdy && (app_cmd == APP_CMD_WRITE);
+    assign read_cmd_fire  = app_en && app_rdy && (app_cmd == APP_CMD_READ);
+
+    // -------------------------------------------------------------------------
+    // External pressure injection.
+    // -------------------------------------------------------------------------
+
+    // External refresh pressure; disabled unless interval/block are configured.
     always_ff @(posedge clk) begin
-        if (reset || (~init_calib_complete) ||
-            (refresh_interval_cfg <= 0) || (refresh_block_cfg <= 0)) begin
+        if (reset || (~init_calib_complete) || (refresh_interval_cfg <= 0) || (refresh_block_cfg <= 0)) begin
             refresh_cnt_q    <= 0;
             refresh_left_q   <= 0;
             refresh_active_q <= 1'b0;
@@ -142,10 +152,9 @@ module ddr4_fast_mock_stall_model #(
         end
     end
 
-    // Periodic maintenance event; active holds for the configured block length.
+    // External maintenance pressure; disabled unless interval/block are configured.
     always_ff @(posedge clk) begin
-        if (reset || (~init_calib_complete) ||
-            (maint_interval_cfg <= 0) || (maint_block_cfg <= 0)) begin
+        if (reset || (~init_calib_complete) || (maint_interval_cfg <= 0) || (maint_block_cfg <= 0)) begin
             maint_cnt_q    <= 0;
             maint_left_q   <= 0;
             maint_active_q <= 1'b0;
@@ -170,7 +179,7 @@ module ddr4_fast_mock_stall_model #(
         end
     end
 
-    // Periodic ready stall event; active holds for the configured block length.
+    // External command-ready pressure; disabled unless interval/block are configured.
     always_ff @(posedge clk) begin
         if (reset || (~init_calib_complete) ||
             (ready_stall_interval_cfg <= 0) || (ready_stall_block_cfg <= 0)) begin
@@ -198,7 +207,7 @@ module ddr4_fast_mock_stall_model #(
         end
     end
 
-    // Periodic read-data gap event; active holds for the configured block length.
+    // External read-return pressure; disabled unless interval/block are configured.
     always_ff @(posedge clk) begin
         if (reset || (~init_calib_complete) ||
             (read_gap_interval_cfg <= 0) || (read_gap_block_cfg <= 0)) begin
@@ -231,10 +240,9 @@ module ddr4_fast_mock_stall_model #(
     assign ready_stall_active = ready_stall_active_q;
     assign read_gap_active    = read_gap_active_q;
 
-    assign cmd_stall_active  = refresh_active || maint_active ||
-                                ready_stall_active || cmd_queue_full_active;
-    assign data_stall_active = refresh_active || maint_active || read_gap_active;
-    assign read_pipe_stall   = read_pipe_output_valid && data_stall_active;
+    // -------------------------------------------------------------------------
+    // Direction turnaround stall.
+    // -------------------------------------------------------------------------
 
     // Block a new direction before accepting it.
     assign write_turn_request = app_en &&
@@ -260,8 +268,48 @@ module ddr4_fast_mock_stall_model #(
                                (turnaround_cnt_q != 0));
     assign turnaround_active = turn_write_block || turn_read_block;
 
-    assign write_cmd_fire = app_en && app_rdy && (app_cmd == APP_CMD_WRITE);
-    assign read_cmd_fire  = app_en && app_rdy && (app_cmd == APP_CMD_READ);
+    // Track read/write direction and block the first opposite-direction request.
+    always_ff @(posedge clk) begin
+        if (reset || (~init_calib_complete)) begin
+            turnaround_cnt_q            <= '0;
+            last_cmd_valid_q            <= 1'b0;
+            last_cmd_was_read_q         <= 1'b0;
+            turnaround_pending_q        <= 1'b0;
+            turnaround_target_is_read_q <= 1'b0;
+        end
+        else begin
+            if (turnaround_cnt_q != 0) begin
+                turnaround_cnt_q <= turnaround_cnt_q - 16'd1;
+            end
+
+            if (write_turn_request) begin
+                turnaround_cnt_q            <= 16'(rtw_turnaround_cycles_cfg - 1);
+                turnaround_pending_q        <= 1'b1;
+                turnaround_target_is_read_q <= 1'b0;
+            end
+            else if (read_turn_request) begin
+                turnaround_cnt_q            <= 16'(wtr_turnaround_cycles_cfg - 1);
+                turnaround_pending_q        <= 1'b1;
+                turnaround_target_is_read_q <= 1'b1;
+            end
+
+            if (write_cmd_fire) begin
+                last_cmd_valid_q     <= 1'b1;
+                last_cmd_was_read_q  <= 1'b0;
+                turnaround_pending_q <= 1'b0;
+            end
+            else if (read_cmd_fire) begin
+                last_cmd_valid_q     <= 1'b1;
+                last_cmd_was_read_q  <= 1'b1;
+                turnaround_pending_q <= 1'b0;
+            end
+        end
+    end
+
+    // -------------------------------------------------------------------------
+    // Command queue full stall.
+    // -------------------------------------------------------------------------
+
     assign cmd_queue_enabled = (cmd_queue_depth_cfg > 0) && (cmd_drain_interval_cfg > 0);
     assign cmd_queue_push = cmd_queue_enabled && (write_cmd_fire || read_cmd_fire);
     assign cmd_queue_drain_blocked = refresh_active || maint_active || turnaround_active;
@@ -307,41 +355,147 @@ module ddr4_fast_mock_stall_model #(
         end
     end
 
-    // Track read/write direction and block the first opposite-direction request.
+    // -------------------------------------------------------------------------
+    // Final stall outputs.
+    // -------------------------------------------------------------------------
+
+    assign cmd_stall_active  = refresh_active || maint_active ||
+                                ready_stall_active || cmd_queue_full_active;
+    assign data_stall_active = refresh_active || maint_active || read_gap_active;
+    assign read_pipe_stall   = read_pipe_output_valid && data_stall_active;
+
+endmodule
+
+// Read pending queue and variable-latency return model.
+module ddr4_fast_mock_read_pending_model #(
+    parameter int APP_ADDR_WIDTH = 32,
+    parameter int MEM_WORDS = 16384,
+    parameter int READ_LATENCY_CYCLES = 2,
+    parameter int READ_LATENCY_MIN_CYCLES = READ_LATENCY_CYCLES,
+    parameter int READ_LATENCY_MAX_CYCLES = READ_LATENCY_CYCLES,
+    parameter int READ_PENDING_DEPTH = 16
+) (
+    input  logic                      clk,
+    input  logic                      reset,
+    input  logic                      init_calib_complete,
+    input  logic                      read_cmd_fire,
+    input  logic [APP_ADDR_WIDTH-1:0] read_addr,
+    input  logic                      data_stall_active,
+    output logic [$clog2(MEM_WORDS)-1:0] read_mem_index,
+    output logic                      read_return_ready,
+    output logic                      read_return_fire,
+    output logic                      read_pending_full_active
+);
+
+    localparam int MEM_ADDR_BITS = $clog2(MEM_WORDS);
+    localparam int MEM_WORD_MSB  = 4 + MEM_ADDR_BITS - 1;
+    localparam int READ_PENDING_PTR_BITS =
+        (READ_PENDING_DEPTH <= 1) ? 1 : $clog2(READ_PENDING_DEPTH);
+
+    logic [APP_ADDR_WIDTH-1:0] read_pending_addr_q [0:READ_PENDING_DEPTH-1];
+    int                        read_pending_latency_q [0:READ_PENDING_DEPTH-1];
+    logic [READ_PENDING_PTR_BITS-1:0] read_pending_head_q;
+    logic [READ_PENDING_PTR_BITS-1:0] read_pending_tail_q;
+    int                        read_pending_count_q;
+    int                        read_latency_min_cfg;       // Latency floor.
+    int                        read_latency_max_cfg;       // Latency ceiling.
+    int                        read_pending_depth_cfg;     // Effective depth.
+    int                        read_latency_next_q;        // Next latency.
+    bit                        plusarg_seen;               // Plusarg sink.
+
+    initial begin
+        read_latency_min_cfg   = READ_LATENCY_MIN_CYCLES;
+        read_latency_max_cfg   = READ_LATENCY_MAX_CYCLES;
+        read_pending_depth_cfg = READ_PENDING_DEPTH;
+
+        plusarg_seen = $value$plusargs("mock_read_latency_min=%d",
+                                       read_latency_min_cfg);
+        plusarg_seen = $value$plusargs("mock_read_latency_max=%d",
+                                       read_latency_max_cfg);
+        plusarg_seen = $value$plusargs("mock_read_pending_depth=%d",
+                                       read_pending_depth_cfg);
+
+        if ((READ_PENDING_DEPTH <= 0) ||
+            (read_pending_depth_cfg <= 0) ||
+            (read_pending_depth_cfg > READ_PENDING_DEPTH) ||
+            (read_latency_min_cfg < 0) ||
+            (read_latency_max_cfg < read_latency_min_cfg)) begin
+            $fatal(1, "Invalid DDR fast mock read latency/pending config: min=%0d max=%0d depth=%0d compiled_depth=%0d",
+                   read_latency_min_cfg, read_latency_max_cfg,
+                   read_pending_depth_cfg, READ_PENDING_DEPTH);
+        end
+    end
+
+    assign read_mem_index =
+        read_pending_addr_q[read_pending_head_q][MEM_WORD_MSB:4];
+    assign read_return_ready = (read_pending_count_q != 0) &&
+                               (read_pending_latency_q[read_pending_head_q] <= 1);
+    assign read_return_fire = read_return_ready && (~data_stall_active);
+    assign read_pending_full_active =
+        init_calib_complete && (read_pending_count_q >= read_pending_depth_cfg);
+
+    function automatic logic [READ_PENDING_PTR_BITS-1:0] next_read_pending_index(
+        input logic [READ_PENDING_PTR_BITS-1:0] index
+    );
+        begin
+            if (index >= (read_pending_depth_cfg - 1)) begin
+                next_read_pending_index = '0;
+            end
+            else begin
+                next_read_pending_index = index + 1'b1;
+            end
+        end
+    endfunction
+
+    function automatic int next_read_latency(input int current_latency);
+        begin
+            if (current_latency >= read_latency_max_cfg) begin
+                next_read_latency = read_latency_min_cfg;
+            end
+            else begin
+                next_read_latency = current_latency + 1;
+            end
+        end
+    endfunction
+
+    // Read commands enter a pending queue; each entry returns after its latency.
     always_ff @(posedge clk) begin
-        if (reset || (~init_calib_complete)) begin
-            turnaround_cnt_q            <= '0;
-            last_cmd_valid_q            <= 1'b0;
-            last_cmd_was_read_q         <= 1'b0;
-            turnaround_pending_q        <= 1'b0;
-            turnaround_target_is_read_q <= 1'b0;
+        if (reset) begin
+            read_pending_head_q  <= '0;
+            read_pending_tail_q  <= '0;
+            read_pending_count_q <= 0;
+            read_latency_next_q  <= read_latency_min_cfg;
+            for (int slot = 0; slot < READ_PENDING_DEPTH; slot++) begin
+                read_pending_addr_q[slot]    <= '0;
+                read_pending_latency_q[slot] <= 0;
+            end
         end
         else begin
-            if (turnaround_cnt_q != 0) begin
-                turnaround_cnt_q <= turnaround_cnt_q - 16'd1;
+            if (~data_stall_active) begin
+                for (int slot = 0; slot < READ_PENDING_DEPTH; slot++) begin
+                    if (read_pending_latency_q[slot] > 0) begin
+                        read_pending_latency_q[slot] <=
+                            read_pending_latency_q[slot] - 1;
+                    end
+                end
             end
 
-            if (write_turn_request) begin
-                turnaround_cnt_q            <= 16'(rtw_turnaround_cycles_cfg - 1);
-                turnaround_pending_q        <= 1'b1;
-                turnaround_target_is_read_q <= 1'b0;
-            end
-            else if (read_turn_request) begin
-                turnaround_cnt_q            <= 16'(wtr_turnaround_cycles_cfg - 1);
-                turnaround_pending_q        <= 1'b1;
-                turnaround_target_is_read_q <= 1'b1;
+            if (read_cmd_fire) begin
+                read_pending_addr_q[read_pending_tail_q]    <= read_addr;
+                read_pending_latency_q[read_pending_tail_q] <= read_latency_next_q;
+                read_pending_tail_q <= next_read_pending_index(read_pending_tail_q);
+                read_latency_next_q <= next_read_latency(read_latency_next_q);
             end
 
-            if (write_cmd_fire) begin
-                last_cmd_valid_q     <= 1'b1;
-                last_cmd_was_read_q  <= 1'b0;
-                turnaround_pending_q <= 1'b0;
+            if (read_return_fire) begin
+                read_pending_head_q <= next_read_pending_index(read_pending_head_q);
             end
-            else if (read_cmd_fire) begin
-                last_cmd_valid_q     <= 1'b1;
-                last_cmd_was_read_q  <= 1'b1;
-                turnaround_pending_q <= 1'b0;
-            end
+
+            unique case ({read_cmd_fire, read_return_fire})
+                2'b10: read_pending_count_q <= read_pending_count_q + 1;
+                2'b01: read_pending_count_q <= read_pending_count_q - 1;
+                default: read_pending_count_q <= read_pending_count_q;
+            endcase
         end
     end
 

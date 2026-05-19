@@ -6,6 +6,9 @@ module ddr4_fast_mock #(
     parameter int MEM_WORDS           = 16384,
     parameter int CALIB_DELAY_CYCLES  = 32,
     parameter int READ_LATENCY_CYCLES = 2,
+    parameter int READ_LATENCY_MIN_CYCLES = READ_LATENCY_CYCLES,
+    parameter int READ_LATENCY_MAX_CYCLES = READ_LATENCY_CYCLES,
+    parameter int READ_PENDING_DEPTH  = 16,
     parameter int REFRESH_INTERVAL_CYCLES = 0,
     parameter int REFRESH_BLOCK_CYCLES    = 0,
     parameter int MAINT_INTERVAL_CYCLES   = 0,
@@ -61,15 +64,13 @@ module ddr4_fast_mock #(
     logic [APP_ADDR_WIDTH-1:0] write_addr_q;
     logic                      write_cmd_pending_q;
 
-    // Read latency pipe.
-    logic [APP_ADDR_WIDTH-1:0]    read_addr_pipe [0:READ_LATENCY_CYCLES];
-    logic [READ_LATENCY_CYCLES:0] read_valid_pipe;
-
     logic [MEM_ADDR_BITS-1:0] write_mem_index;
     logic [MEM_ADDR_BITS-1:0] read_mem_index;
+    logic                     read_return_ready;           // Queue head ready.
+    logic                     read_return_fire;            // Returned read beat.
     logic                     cmd_stall_active;            // Command stall.
     logic                     data_stall_active;           // Read-data stall.
-    logic                     read_pipe_stall;             // Read pipe hold.
+    logic                     read_pipe_stall;             // Read return hold.
     logic                     turn_write_block;            // Read-to-write block.
     logic                     turn_read_block;             // Write-to-read block.
     logic                     write_cmd_fire;              // Accepted write command.
@@ -80,6 +81,7 @@ module ddr4_fast_mock #(
     logic                     read_gap_active;             // Read gap reason.
     logic                     turnaround_active;           // Turnaround reason.
     logic                     cmd_queue_full_active;       // Command queue full.
+    logic                     read_pending_full_active;    // Read queue full.
 
     integer i;
 
@@ -116,7 +118,7 @@ module ddr4_fast_mock #(
         .app_en                 (app_en),
         .app_cmd                (app_cmd),
         .app_rdy                (app_rdy),
-        .read_pipe_output_valid (read_valid_pipe[READ_LATENCY_CYCLES]),
+        .read_pipe_output_valid (read_return_ready),
         .cmd_stall_active       (cmd_stall_active),
         .data_stall_active      (data_stall_active),
         .read_pipe_stall        (read_pipe_stall),
@@ -130,30 +132,51 @@ module ddr4_fast_mock #(
         .cmd_queue_full_active  (cmd_queue_full_active)
     );
 
+    // Read transaction timing model.
+    ddr4_fast_mock_read_pending_model #(
+        .APP_ADDR_WIDTH          (APP_ADDR_WIDTH),
+        .MEM_WORDS               (MEM_WORDS),
+        .READ_LATENCY_CYCLES     (READ_LATENCY_CYCLES),
+        .READ_LATENCY_MIN_CYCLES (READ_LATENCY_MIN_CYCLES),
+        .READ_LATENCY_MAX_CYCLES (READ_LATENCY_MAX_CYCLES),
+        .READ_PENDING_DEPTH      (READ_PENDING_DEPTH)
+    ) read_pending_model_u (
+        .clk                      (clk_in),
+        .reset                    (RESET),
+        .init_calib_complete      (init_calib_complete),
+        .read_cmd_fire            (read_cmd_fire),
+        .read_addr                (app_addr),
+        .data_stall_active        (data_stall_active),
+        .read_mem_index           (read_mem_index),
+        .read_return_ready        (read_return_ready),
+        .read_return_fire         (read_return_fire),
+        .read_pending_full_active (read_pending_full_active)
+    );
+
     assign app_rdy = init_calib_complete &&
                         (~write_cmd_pending_q) &&
                         (~cmd_stall_active) &&
+                        (~(read_pending_full_active &&
+                           (app_cmd == APP_CMD_READ))) &&
                         (~read_pipe_stall) &&
                         (~(turn_write_block && (app_cmd == APP_CMD_WRITE))) &&
                         (~(turn_read_block && (app_cmd == APP_CMD_READ)));
     assign app_wdf_rdy = init_calib_complete && (~cmd_stall_active);
     assign write_mem_index = write_addr_q[MEM_WORD_MSB:4];
-    assign read_mem_index = read_addr_pipe[READ_LATENCY_CYCLES][MEM_WORD_MSB:4];
     assign app_rd_data = mem[read_mem_index];
-    assign app_rd_data_valid = read_valid_pipe[READ_LATENCY_CYCLES] && (~data_stall_active);
+    assign app_rd_data_valid = read_return_fire;
     assign app_rd_data_end = app_rd_data_valid;
     assign write_cmd_fire = app_en && app_rdy && (app_cmd == APP_CMD_WRITE);
     assign read_cmd_fire  = app_en && app_rdy && (app_cmd == APP_CMD_READ);
 
-   // Mock calibration delay.
-   always_ff @(posedge clk_in) begin
-      if (RESET) begin
-         calib_cnt           <= '0;
-         init_calib_complete <= 1'b0;
+    // Mock calibration delay.
+    always_ff @(posedge clk_in) begin
+        if (RESET) begin
+            calib_cnt           <= '0;
+            init_calib_complete <= 1'b0;
         end
         else if (~init_calib_complete) begin
-            if ((CALIB_DELAY_CYCLES <= 1) ||
-                (calib_cnt >= (CALIB_DELAY_CYCLES - 1))) begin
+            if ((CALIB_DELAY_CYCLES <= 1) || (calib_cnt >= (CALIB_DELAY_CYCLES - 1))) begin
                 init_calib_complete <= 1'b1;
             end
             else begin
@@ -202,25 +225,6 @@ module ddr4_fast_mock #(
                 end
                 mem[write_mem_index] <= next_word;
                 write_cmd_pending_q  <= 1'b0;
-            end
-        end
-    end
-
-    // Read latency pipe with output hold.
-    always_ff @(posedge clk_in) begin
-        if (RESET) begin
-            read_valid_pipe <= '0;
-            for (int stage = 0; stage <= READ_LATENCY_CYCLES; stage++) begin
-                read_addr_pipe[stage] <= '0;
-            end
-        end
-        else if (~read_pipe_stall) begin
-            read_valid_pipe[0] <= read_cmd_fire;
-            read_addr_pipe[0]  <= app_addr;
-
-            for (int stage = 1; stage <= READ_LATENCY_CYCLES; stage++) begin
-                read_valid_pipe[stage] <= read_valid_pipe[stage-1];
-                read_addr_pipe[stage]  <= read_addr_pipe[stage-1];
             end
         end
     end

@@ -38,6 +38,13 @@ module ddr4_controller_tb_monitor (
    input  logic        native_write_cmd_fire,
    input  logic        in_read_data_state,
    input  logic        urgent_read_data_event_fire,
+   input  logic        refresh_active,
+   input  logic        maint_active,
+   input  logic        ready_stall_active,
+   input  logic        read_gap_active,
+   input  logic        turnaround_active,
+   input  logic        cmd_queue_full_active,
+   input  logic        read_pending_full_active,
 
    // Internal DUT observations. The main testbench connects these through
    // hierarchy to avoid changing synthesizable RTL ports just for simulation.
@@ -89,6 +96,27 @@ module ddr4_controller_tb_monitor (
    int   wr_fifo_full_event_count;
    int   rd_fifo_full_event_count;
    int   rd_fifo_empty_event_count;
+   int   refresh_cycle_count;
+   int   maint_cycle_count;
+   int   ready_stall_reason_cycle_count;
+   int   read_gap_reason_cycle_count;
+   int   turnaround_cycle_count;
+   int   cmd_queue_full_cycle_count;
+   int   read_pending_full_cycle_count;
+   int   refresh_run;
+   int   maint_run;
+   int   ready_stall_reason_run;
+   int   read_gap_reason_run;
+   int   turnaround_run;
+   int   cmd_queue_full_run;
+   int   read_pending_full_run;
+   int   max_refresh_run;
+   int   max_maint_run;
+   int   max_ready_stall_reason_run;
+   int   max_read_gap_reason_run;
+   int   max_turnaround_run;
+   int   max_cmd_queue_full_run;
+   int   max_read_pending_full_run;
    logic urgent_read_data_pending;
    logic wr_fifo_limit_reported;
    logic rd_fifo_limit_reported;
@@ -122,20 +150,23 @@ module ddr4_controller_tb_monitor (
                       native_read_cmd_count, native_write_cmd_count,
                       urgent_read_data_event_count, read_budget_error_count,
                       urgent_interrupt_error_count);
+            $fdisplay(log_fd, "SUMMARY: stall_reason_cycles refresh=%0d maint=%0d ready=%0d read_gap=%0d turnaround=%0d cmd_queue_full=%0d read_pending_full=%0d",
+                      refresh_cycle_count, maint_cycle_count,
+                      ready_stall_reason_cycle_count, read_gap_reason_cycle_count,
+                      turnaround_cycle_count, cmd_queue_full_cycle_count,
+                      read_pending_full_cycle_count);
+            $fdisplay(log_fd, "SUMMARY: stall_reason_max refresh=%0d maint=%0d ready=%0d read_gap=%0d turnaround=%0d cmd_queue_full=%0d read_pending_full=%0d",
+                      max_refresh_run, max_maint_run,
+                      max_ready_stall_reason_run, max_read_gap_reason_run,
+                      max_turnaround_run, max_cmd_queue_full_run,
+                      max_read_pending_full_run);
             $fflush(log_fd);
          end
       end
    endtask
 
-   // FIFO and native backpressure monitor, ui_clk domain.
-   //
-   // The FIFO levels are sampled from user_app_top internals and passed in by
-   // the testbench. This keeps RTL ports unchanged while still recording the
-   // real XPM FIFO occupancy envelope while the business side runs continuously.
-   //
-   // app_rdy/app_wdf_rdy stalls approximate MIG command/write-data acceptance
-   // gaps. app_rd_data_valid gaps are tracked separately because they matter
-   // only while the state machine is waiting in RW_READ_DATA.
+   // FIFO levels, backpressure windows, and mock stall reasons are sampled here.
+   // Reason counters are diagnostic only and do not create failures.
    always @(posedge ui_clk) begin
       if (ui_clk_sync_rst) begin
          wr_fifo_min_level          <= 16383;
@@ -155,6 +186,27 @@ module ddr4_controller_tb_monitor (
          max_app_rdy_stall_run      <= 0;
          max_app_wdf_stall_run      <= 0;
          max_read_data_gap_run      <= 0;
+         refresh_cycle_count        <= 0;
+         maint_cycle_count          <= 0;
+         ready_stall_reason_cycle_count <= 0;
+         read_gap_reason_cycle_count <= 0;
+         turnaround_cycle_count     <= 0;
+         cmd_queue_full_cycle_count <= 0;
+         read_pending_full_cycle_count <= 0;
+         refresh_run                <= 0;
+         maint_run                  <= 0;
+         ready_stall_reason_run     <= 0;
+         read_gap_reason_run        <= 0;
+         turnaround_run             <= 0;
+         cmd_queue_full_run         <= 0;
+         read_pending_full_run      <= 0;
+         max_refresh_run            <= 0;
+         max_maint_run              <= 0;
+         max_ready_stall_reason_run <= 0;
+         max_read_gap_reason_run    <= 0;
+         max_turnaround_run         <= 0;
+         max_cmd_queue_full_run     <= 0;
+         max_read_pending_full_run  <= 0;
          wr_fifo_limit_reported     <= 1'b0;
          rd_fifo_limit_reported     <= 1'b0;
          app_rdy_limit_reported     <= 1'b0;
@@ -198,6 +250,25 @@ module ddr4_controller_tb_monitor (
                              app_wdf_stall_cycle_count, app_wdf_limit_reported,
                              max_app_wdf_stall_limit, "app_wdf_rdy");
 
+         update_reason_window(refresh_active, refresh_run, max_refresh_run,
+                              refresh_cycle_count);
+         update_reason_window(maint_active, maint_run, max_maint_run,
+                              maint_cycle_count);
+         update_reason_window(ready_stall_active, ready_stall_reason_run,
+                              max_ready_stall_reason_run,
+                              ready_stall_reason_cycle_count);
+         update_reason_window(read_gap_active, read_gap_reason_run,
+                              max_read_gap_reason_run,
+                              read_gap_reason_cycle_count);
+         update_reason_window(turnaround_active, turnaround_run,
+                              max_turnaround_run, turnaround_cycle_count);
+         update_reason_window(cmd_queue_full_active, cmd_queue_full_run,
+                              max_cmd_queue_full_run,
+                              cmd_queue_full_cycle_count);
+         update_reason_window(read_pending_full_active, read_pending_full_run,
+                              max_read_pending_full_run,
+                              read_pending_full_cycle_count);
+
          // Read-data gaps are only meaningful while the native state machine is
          // waiting for a read return beat.
          if (in_read_data_state && (!app_rd_data_valid)) begin
@@ -222,6 +293,25 @@ module ddr4_controller_tb_monitor (
          end
       end
    end
+
+   task automatic update_reason_window(
+      input  logic active,
+      inout  int   run_count,
+      inout  int   max_run_count,
+      inout  int   cycle_count
+   );
+      begin
+         // Generic run tracker for active-high diagnostic reason signals.
+         if (init_calib_complete && active) begin
+            cycle_count = cycle_count + 1;
+            run_count = run_count + 1;
+            if (run_count > max_run_count) max_run_count = run_count;
+         end
+         else begin
+            run_count = 0;
+         end
+      end
+   endtask
 
    task automatic update_stall_window(
       input  logic ready_signal,
