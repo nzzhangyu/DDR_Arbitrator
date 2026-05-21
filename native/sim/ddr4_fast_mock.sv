@@ -9,19 +9,12 @@ module ddr4_fast_mock #(
     parameter int READ_LATENCY_MIN_CYCLES = READ_LATENCY_CYCLES,
     parameter int READ_LATENCY_MAX_CYCLES = READ_LATENCY_CYCLES,
     parameter int READ_PENDING_DEPTH  = 16,
-    parameter int REFRESH_INTERVAL_CYCLES = 0,
-    parameter int REFRESH_BLOCK_CYCLES    = 0,
-    parameter int MAINT_INTERVAL_CYCLES   = 0,
-    parameter int MAINT_BLOCK_CYCLES      = 0,
-    parameter int READY_STALL_INTERVAL_CYCLES = 0,
-    parameter int READY_STALL_CYCLES          = 0,
-    parameter int READ_DATA_GAP_INTERVAL_CYCLES = 0,
-    parameter int READ_DATA_GAP_CYCLES          = 0,
-    parameter int TURNAROUND_CYCLES     = 0,
-    parameter int RTW_TURNAROUND_CYCLES = TURNAROUND_CYCLES,
-    parameter int WTR_TURNAROUND_CYCLES = TURNAROUND_CYCLES,
-    parameter int CMD_QUEUE_DEPTH = 0,
-    parameter int CMD_DRAIN_INTERVAL_CYCLES = 1
+    parameter int GLOBAL_STALL_INTERVAL_CYCLES = 0,
+    parameter int GLOBAL_STALL_CYCLES          = 0,
+    parameter int CMD_STALL_INTERVAL_CYCLES    = 0,
+    parameter int CMD_STALL_CYCLES             = 0,
+    parameter int READ_STALL_INTERVAL_CYCLES   = 0,
+    parameter int READ_STALL_CYCLES            = 0
 ) (
     input  logic                      clk_in,
     input  logic                      RESET,
@@ -68,19 +61,14 @@ module ddr4_fast_mock #(
     logic [MEM_ADDR_BITS-1:0] read_mem_index;
     logic                     read_return_ready;           // Queue head ready.
     logic                     read_return_fire;            // Returned read beat.
-    logic                     cmd_stall_active;            // Command stall.
+    logic                     cmd_block_active;            // Command block.
     logic                     data_stall_active;           // Read-data stall.
     logic                     read_pipe_stall;             // Read return hold.
-    logic                     turn_write_block;            // Read-to-write block.
-    logic                     turn_read_block;             // Write-to-read block.
     logic                     write_cmd_fire;              // Accepted write command.
     logic                     read_cmd_fire;               // Accepted read command.
-    logic                     refresh_active;              // Refresh stall reason.
-    logic                     maint_active;                // Maintenance stall reason.
-    logic                     ready_stall_active;          // Ready stall reason.
-    logic                     read_gap_active;             // Read gap reason.
-    logic                     turnaround_active;           // Turnaround reason.
-    logic                     cmd_queue_full_active;       // Command queue full.
+    logic                     global_stall_active;         // Global pressure.
+    logic                     cmd_stall_active;            // Command pressure.
+    logic                     read_stall_active;           // Read pressure.
     logic                     read_pending_full_active;    // Read queue full.
 
     integer i;
@@ -96,40 +84,24 @@ module ddr4_fast_mock #(
     assign dbg_clk = clk_in;
     assign ui_clk_sync_rst = RESET | (~init_calib_complete);
 
-    // Coarse stall and turnaround model.
+    // Coarse pressure model.
     ddr4_fast_mock_stall_model #(
-        .REFRESH_INTERVAL_CYCLES       (REFRESH_INTERVAL_CYCLES),
-        .REFRESH_BLOCK_CYCLES          (REFRESH_BLOCK_CYCLES),
-        .MAINT_INTERVAL_CYCLES         (MAINT_INTERVAL_CYCLES),
-        .MAINT_BLOCK_CYCLES            (MAINT_BLOCK_CYCLES),
-        .READY_STALL_INTERVAL_CYCLES   (READY_STALL_INTERVAL_CYCLES),
-        .READY_STALL_CYCLES            (READY_STALL_CYCLES),
-        .READ_DATA_GAP_INTERVAL_CYCLES (READ_DATA_GAP_INTERVAL_CYCLES),
-        .READ_DATA_GAP_CYCLES          (READ_DATA_GAP_CYCLES),
-        .TURNAROUND_CYCLES             (TURNAROUND_CYCLES),
-        .RTW_TURNAROUND_CYCLES         (RTW_TURNAROUND_CYCLES),
-        .WTR_TURNAROUND_CYCLES         (WTR_TURNAROUND_CYCLES),
-        .CMD_QUEUE_DEPTH               (CMD_QUEUE_DEPTH),
-        .CMD_DRAIN_INTERVAL_CYCLES     (CMD_DRAIN_INTERVAL_CYCLES)
+        .GLOBAL_STALL_INTERVAL_CYCLES (GLOBAL_STALL_INTERVAL_CYCLES),
+        .GLOBAL_STALL_CYCLES          (GLOBAL_STALL_CYCLES),
+        .CMD_STALL_INTERVAL_CYCLES    (CMD_STALL_INTERVAL_CYCLES),
+        .CMD_STALL_CYCLES             (CMD_STALL_CYCLES),
+        .READ_STALL_INTERVAL_CYCLES   (READ_STALL_INTERVAL_CYCLES),
+        .READ_STALL_CYCLES            (READ_STALL_CYCLES)
     ) stall_model_u (
         .clk                    (clk_in),
         .reset                  (RESET),
         .init_calib_complete    (init_calib_complete),
-        .app_en                 (app_en),
-        .app_cmd                (app_cmd),
-        .app_rdy                (app_rdy),
         .read_pipe_output_valid (read_return_ready),
+        .global_stall_active    (global_stall_active),
         .cmd_stall_active       (cmd_stall_active),
+        .read_stall_active      (read_stall_active),
         .data_stall_active      (data_stall_active),
-        .read_pipe_stall        (read_pipe_stall),
-        .turn_write_block       (turn_write_block),
-        .turn_read_block        (turn_read_block),
-        .refresh_active         (refresh_active),
-        .maint_active           (maint_active),
-        .ready_stall_active     (ready_stall_active),
-        .read_gap_active        (read_gap_active),
-        .turnaround_active      (turnaround_active),
-        .cmd_queue_full_active  (cmd_queue_full_active)
+        .read_pipe_stall        (read_pipe_stall)
     );
 
     // Read transaction timing model.
@@ -155,13 +127,12 @@ module ddr4_fast_mock #(
 
     assign app_rdy = init_calib_complete &&
                         (~write_cmd_pending_q) &&
-                        (~cmd_stall_active) &&
+                        (~cmd_block_active) &&
                         (~(read_pending_full_active &&
                            (app_cmd == APP_CMD_READ))) &&
-                        (~read_pipe_stall) &&
-                        (~(turn_write_block && (app_cmd == APP_CMD_WRITE))) &&
-                        (~(turn_read_block && (app_cmd == APP_CMD_READ)));
-    assign app_wdf_rdy = init_calib_complete && (~cmd_stall_active);
+                        (~read_pipe_stall);
+    assign app_wdf_rdy = init_calib_complete && (~cmd_block_active);
+    assign cmd_block_active = global_stall_active || cmd_stall_active;
     assign write_mem_index = write_addr_q[MEM_WORD_MSB:4];
     assign app_rd_data = mem[read_mem_index];
     assign app_rd_data_valid = read_return_fire;

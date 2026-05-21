@@ -96,6 +96,12 @@ module tb_ddr4_controller_mock;
     int                    max_app_rdy_stall_limit;             // app_rdy stall limit.
     int                    max_app_wdf_stall_limit;             // app_wdf_rdy stall limit.
     int                    max_read_data_gap_limit;             // Read-data gap limit.
+    int                    mock_global_stall_interval_cfg;      // Global pressure period.
+    int                    mock_global_stall_block_cfg;         // Global pressure length.
+    int                    mock_cmd_stall_interval_cfg;         // Command pressure period.
+    int                    mock_cmd_stall_block_cfg;            // Command pressure length.
+    int                    mock_read_stall_interval_cfg;        // Read pressure period.
+    int                    mock_read_stall_block_cfg;           // Read pressure length.
     int                    underflow_count;                     // Underflow count.
     int                    monitor_error_count;                 // Monitor errors.
     int                    log_fd;                              // Log file handle.
@@ -248,13 +254,9 @@ module tb_ddr4_controller_mock;
         .native_write_cmd_fire          (native_write_cmd_fire),
         .in_read_data_state             (in_read_data_state),
         .urgent_read_data_event_fire    (urgent_read_data_event_fire),
-        .refresh_active                 (mock_u.stall_model_u.refresh_active),
-        .maint_active                   (mock_u.stall_model_u.maint_active),
-        .ready_stall_active             (mock_u.stall_model_u.ready_stall_active),
-        .read_gap_active                (mock_u.stall_model_u.read_gap_active),
-        .turnaround_active              (mock_u.stall_model_u.turnaround_active),
-        .cmd_queue_full_active          (mock_u.stall_model_u.cmd_queue_full_active),
-        .read_pending_full_active       (mock_u.read_pending_full_active),
+        .global_stall_active            (mock_u.stall_model_u.global_stall_active),
+        .cmd_stall_active               (mock_u.stall_model_u.cmd_stall_active),
+        .read_stall_active              (mock_u.stall_model_u.read_stall_active),
         .wr_fifo_level                  (dut.ddr_wr_fifo_level),
         .wr_fifo_full                   (dut.ddr_wr_fifo_full),
         .rd_fifo_level                  (dut.ddr_rd_fifo_level),
@@ -309,6 +311,12 @@ module tb_ddr4_controller_mock;
         log_path             = "tb_ddr4_controller_mock.log";
         consumer_enable      = 1'b0;
         stream_start         = 1'b0;
+        mock_global_stall_interval_cfg = 0;
+        mock_global_stall_block_cfg    = 0;
+        mock_cmd_stall_interval_cfg    = 0;
+        mock_cmd_stall_block_cfg       = 0;
+        mock_read_stall_interval_cfg   = 0;
+        mock_read_stall_block_cfg      = 0;
 
         if (!$value$plusargs("log=%s", log_path)) begin
             log_path = "tb_ddr4_controller_mock.log";
@@ -352,13 +360,31 @@ module tb_ddr4_controller_mock;
         void'($value$plusargs("max_app_rdy_stall=%d", max_app_rdy_stall_limit));
         void'($value$plusargs("max_app_wdf_stall=%d", max_app_wdf_stall_limit));
         void'($value$plusargs("max_read_data_gap=%d", max_read_data_gap_limit));
+        void'($value$plusargs("mock_global_stall_interval=%d",
+                              mock_global_stall_interval_cfg));
+        void'($value$plusargs("mock_global_stall_block=%d",
+                              mock_global_stall_block_cfg));
+        void'($value$plusargs("mock_cmd_stall_interval=%d",
+                              mock_cmd_stall_interval_cfg));
+        void'($value$plusargs("mock_cmd_stall_block=%d",
+                              mock_cmd_stall_block_cfg));
+        void'($value$plusargs("mock_read_stall_interval=%d",
+                              mock_read_stall_interval_cfg));
+        void'($value$plusargs("mock_read_stall_block=%d",
+                              mock_read_stall_block_cfg));
 
         if ((max_wr_fifo_level_limit < 0) || (max_wr_fifo_level_limit > 16383) ||
             (min_rd_fifo_level_limit < 0) || (min_rd_fifo_level_limit > 16383) ||
             (max_user_underflow_cycles_limit < 0) ||
             (max_app_rdy_stall_limit < -1) ||
             (max_app_wdf_stall_limit < -1) ||
-            (max_read_data_gap_limit < -1)) begin
+            (max_read_data_gap_limit < -1) ||
+            (mock_global_stall_interval_cfg < 0) ||
+            (mock_global_stall_block_cfg < 0) ||
+            (mock_cmd_stall_interval_cfg < 0) ||
+            (mock_cmd_stall_block_cfg < 0) ||
+            (mock_read_stall_interval_cfg < 0) ||
+            (mock_read_stall_block_cfg < 0)) begin
             $fdisplay(log_fd, "FATAL: Invalid worst-case threshold");
             $fatal(1, "Invalid worst-case threshold");
         end
@@ -373,7 +399,7 @@ module tb_ddr4_controller_mock;
                 SLICE_NUM,
                 SLICE_TOTAL_BEATS, SLICE_PAYLOAD_BEATS,
                 VIEW_TOTAL_BEATS, VIEW_PERIOD_CYCLES);
-        $fdisplay(log_fd, "CONFIG: views=%0d/%0d scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d max_wr_fifo=%0d min_rd_fifo=%0d max_user_underflow=%0d max_app_rdy_stall=%0d max_app_wdf_stall=%0d max_read_data_gap=%0d",
+        $fdisplay(log_fd, "CONFIG: views=%0d/%0d scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d max_wr_fifo=%0d min_rd_fifo=%0d max_user_underflow=%0d max_app_rdy_stall=%0d max_app_wdf_stall=%0d max_read_data_gap=%0d global_stall=%0d/%0d cmd_stall=%0d/%0d read_stall=%0d/%0d",
                     sim_view_count, TOTAL_VIEWS,
                     use_hash_scoreboard ? "hash" : "queue",
                     worst_check_enable,
@@ -383,7 +409,10 @@ module tb_ddr4_controller_mock;
                     max_wr_fifo_level_limit, min_rd_fifo_level_limit,
                     max_user_underflow_cycles_limit,
                     max_app_rdy_stall_limit, max_app_wdf_stall_limit,
-                    max_read_data_gap_limit);
+                    max_read_data_gap_limit,
+                    mock_global_stall_interval_cfg, mock_global_stall_block_cfg,
+                    mock_cmd_stall_interval_cfg, mock_cmd_stall_block_cfg,
+                    mock_read_stall_interval_cfg, mock_read_stall_block_cfg);
 
         repeat (12) @(posedge clk);
         reset = 1'b0;

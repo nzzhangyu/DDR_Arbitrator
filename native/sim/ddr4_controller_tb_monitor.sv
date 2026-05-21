@@ -38,13 +38,9 @@ module ddr4_controller_tb_monitor (
    input  logic        native_write_cmd_fire,
    input  logic        in_read_data_state,
    input  logic        urgent_read_data_event_fire,
-   input  logic        refresh_active,
-   input  logic        maint_active,
-   input  logic        ready_stall_active,
-   input  logic        read_gap_active,
-   input  logic        turnaround_active,
-   input  logic        cmd_queue_full_active,
-   input  logic        read_pending_full_active,
+   input  logic        global_stall_active,
+   input  logic        cmd_stall_active,
+   input  logic        read_stall_active,
 
    // Internal DUT observations. The main testbench connects these through
    // hierarchy to avoid changing synthesizable RTL ports just for simulation.
@@ -96,27 +92,15 @@ module ddr4_controller_tb_monitor (
    int   wr_fifo_full_event_count;
    int   rd_fifo_full_event_count;
    int   rd_fifo_empty_event_count;
-   int   refresh_cycle_count;
-   int   maint_cycle_count;
-   int   ready_stall_reason_cycle_count;
-   int   read_gap_reason_cycle_count;
-   int   turnaround_cycle_count;
-   int   cmd_queue_full_cycle_count;
-   int   read_pending_full_cycle_count;
-   int   refresh_run;
-   int   maint_run;
-   int   ready_stall_reason_run;
-   int   read_gap_reason_run;
-   int   turnaround_run;
-   int   cmd_queue_full_run;
-   int   read_pending_full_run;
-   int   max_refresh_run;
-   int   max_maint_run;
-   int   max_ready_stall_reason_run;
-   int   max_read_gap_reason_run;
-   int   max_turnaround_run;
-   int   max_cmd_queue_full_run;
-   int   max_read_pending_full_run;
+   int   global_pressure_cycle_count;
+   int   cmd_pressure_cycle_count;
+   int   read_pressure_cycle_count;
+   int   global_pressure_run;
+   int   cmd_pressure_run;
+   int   read_pressure_run;
+   int   max_global_pressure_run;
+   int   max_cmd_pressure_run;
+   int   max_read_pressure_run;
    logic urgent_read_data_pending;
    logic wr_fifo_limit_reported;
    logic rd_fifo_limit_reported;
@@ -150,16 +134,14 @@ module ddr4_controller_tb_monitor (
                       native_read_cmd_count, native_write_cmd_count,
                       urgent_read_data_event_count, read_budget_error_count,
                       urgent_interrupt_error_count);
-            $fdisplay(log_fd, "SUMMARY: stall_reason_cycles refresh=%0d maint=%0d ready=%0d read_gap=%0d turnaround=%0d cmd_queue_full=%0d read_pending_full=%0d",
-                      refresh_cycle_count, maint_cycle_count,
-                      ready_stall_reason_cycle_count, read_gap_reason_cycle_count,
-                      turnaround_cycle_count, cmd_queue_full_cycle_count,
-                      read_pending_full_cycle_count);
-            $fdisplay(log_fd, "SUMMARY: stall_reason_max refresh=%0d maint=%0d ready=%0d read_gap=%0d turnaround=%0d cmd_queue_full=%0d read_pending_full=%0d",
-                      max_refresh_run, max_maint_run,
-                      max_ready_stall_reason_run, max_read_gap_reason_run,
-                      max_turnaround_run, max_cmd_queue_full_run,
-                      max_read_pending_full_run);
+            $fdisplay(log_fd, "SUMMARY: pressure_cycles global=%0d cmd=%0d read=%0d",
+                      global_pressure_cycle_count,
+                      cmd_pressure_cycle_count,
+                      read_pressure_cycle_count);
+            $fdisplay(log_fd, "SUMMARY: pressure_max global=%0d cmd=%0d read=%0d",
+                      max_global_pressure_run,
+                      max_cmd_pressure_run,
+                      max_read_pressure_run);
             $fflush(log_fd);
          end
       end
@@ -186,27 +168,15 @@ module ddr4_controller_tb_monitor (
          max_app_rdy_stall_run      <= 0;
          max_app_wdf_stall_run      <= 0;
          max_read_data_gap_run      <= 0;
-         refresh_cycle_count        <= 0;
-         maint_cycle_count          <= 0;
-         ready_stall_reason_cycle_count <= 0;
-         read_gap_reason_cycle_count <= 0;
-         turnaround_cycle_count     <= 0;
-         cmd_queue_full_cycle_count <= 0;
-         read_pending_full_cycle_count <= 0;
-         refresh_run                <= 0;
-         maint_run                  <= 0;
-         ready_stall_reason_run     <= 0;
-         read_gap_reason_run        <= 0;
-         turnaround_run             <= 0;
-         cmd_queue_full_run         <= 0;
-         read_pending_full_run      <= 0;
-         max_refresh_run            <= 0;
-         max_maint_run              <= 0;
-         max_ready_stall_reason_run <= 0;
-         max_read_gap_reason_run    <= 0;
-         max_turnaround_run         <= 0;
-         max_cmd_queue_full_run     <= 0;
-         max_read_pending_full_run  <= 0;
+         global_pressure_cycle_count <= 0;
+         cmd_pressure_cycle_count    <= 0;
+         read_pressure_cycle_count   <= 0;
+         global_pressure_run         <= 0;
+         cmd_pressure_run            <= 0;
+         read_pressure_run           <= 0;
+         max_global_pressure_run     <= 0;
+         max_cmd_pressure_run        <= 0;
+         max_read_pressure_run       <= 0;
          wr_fifo_limit_reported     <= 1'b0;
          rd_fifo_limit_reported     <= 1'b0;
          app_rdy_limit_reported     <= 1'b0;
@@ -250,24 +220,15 @@ module ddr4_controller_tb_monitor (
                              app_wdf_stall_cycle_count, app_wdf_limit_reported,
                              max_app_wdf_stall_limit, "app_wdf_rdy");
 
-         update_reason_window(refresh_active, refresh_run, max_refresh_run,
-                              refresh_cycle_count);
-         update_reason_window(maint_active, maint_run, max_maint_run,
-                              maint_cycle_count);
-         update_reason_window(ready_stall_active, ready_stall_reason_run,
-                              max_ready_stall_reason_run,
-                              ready_stall_reason_cycle_count);
-         update_reason_window(read_gap_active, read_gap_reason_run,
-                              max_read_gap_reason_run,
-                              read_gap_reason_cycle_count);
-         update_reason_window(turnaround_active, turnaround_run,
-                              max_turnaround_run, turnaround_cycle_count);
-         update_reason_window(cmd_queue_full_active, cmd_queue_full_run,
-                              max_cmd_queue_full_run,
-                              cmd_queue_full_cycle_count);
-         update_reason_window(read_pending_full_active, read_pending_full_run,
-                              max_read_pending_full_run,
-                              read_pending_full_cycle_count);
+         update_reason_window(global_stall_active, global_pressure_run,
+                              max_global_pressure_run,
+                              global_pressure_cycle_count);
+         update_reason_window(cmd_stall_active, cmd_pressure_run,
+                              max_cmd_pressure_run,
+                              cmd_pressure_cycle_count);
+         update_reason_window(read_stall_active, read_pressure_run,
+                              max_read_pressure_run,
+                              read_pressure_cycle_count);
 
          // Read-data gaps are only meaningful while the native state machine is
          // waiting for a read return beat.
