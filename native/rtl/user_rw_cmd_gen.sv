@@ -416,11 +416,13 @@ module user_rw_cmd_gen #(
 
                 RW_READ_DATA: begin
                     // Accepted reads wait for their return beat.
-                    if (read_burst_done || wr_level_urgent) begin
-                        rw_next_state = RW_ARB_PRE;
-                    end
-                    else if (read_data_fire) begin
-                        rw_next_state = RW_READ_CMD;
+                    if (read_data_fire) begin
+                        if (read_burst_done || wr_level_urgent) begin
+                            rw_next_state = RW_ARB_PRE;
+                        end
+                        else begin
+                            rw_next_state = RW_READ_CMD;
+                        end
                     end
                 end
 

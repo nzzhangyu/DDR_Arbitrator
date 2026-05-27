@@ -1,0 +1,270 @@
+from pathlib import Path
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
+
+
+OUT_DIR = Path("artifacts/resume")
+PDF_PATH = OUT_DIR / "张宇-个人简历-优化版.pdf"
+
+FONT = "MSYH"
+FONT_BOLD = "MSYH-Bold"
+INK = colors.HexColor("#333333")
+MUTED = colors.HexColor("#555555")
+BAR = colors.HexColor("#F5F7FA")
+RED = colors.HexColor("#FF4D4F")
+
+
+def register_fonts():
+    pdfmetrics.registerFont(TTFont(FONT, r"C:\Windows\Fonts\msyh.ttc"))
+    pdfmetrics.registerFont(TTFont(FONT_BOLD, r"C:\Windows\Fonts\msyhbd.ttc"))
+
+
+def text_width(text, font, size):
+    return pdfmetrics.stringWidth(text, font, size)
+
+
+def wrap_text(text, width, font, size):
+    lines = []
+    current = ""
+    tokens = []
+    token = ""
+    for ch in text:
+        if ord(ch) < 128 and (ch.isalnum() or ch in "/+-_"):
+            token += ch
+        else:
+            if token:
+                tokens.append(token)
+                token = ""
+            tokens.append(ch)
+    if token:
+        tokens.append(token)
+
+    for token in tokens:
+        trial = current + token
+        if text_width(trial, font, size) <= width:
+            current = trial
+        else:
+            if current:
+                lines.append(current)
+            current = token
+    if current:
+        lines.append(current)
+    return lines
+
+
+def draw_text(c, x, y, text, size=10, font=FONT, color=INK):
+    c.setFont(font, size)
+    c.setFillColor(color)
+    c.drawString(x, y, text)
+
+
+def draw_wrapped(c, x, y, text, width, size=10, leading=14, font=FONT, color=INK):
+    for line in wrap_text(text, width, font, size):
+        draw_text(c, x, y, line, size=size, font=font, color=color)
+        y -= leading
+    return y
+
+
+def section(c, y, title, page_w, margin):
+    bar_h = 10.0 * mm
+    c.setFillColor(BAR)
+    c.roundRect(margin, y - bar_h + 2, page_w - 2 * margin, bar_h, 5, stroke=0, fill=1)
+    c.setFillColor(RED)
+    c.roundRect(margin, y - bar_h + 2, 2.3 * mm, bar_h, 4, stroke=0, fill=1)
+    draw_text(c, margin + 8 * mm, y - 6.1 * mm, title, size=12, font=FONT_BOLD, color=INK)
+    return y - bar_h - 5
+
+
+def bullet(c, x, y, text, width, size=9.5, leading=13, color=MUTED, bold_prefix=None, indent=5 * mm):
+    c.setFillColor(color)
+    c.circle(x + 1.6 * mm, y + 2.3, 0.8, stroke=0, fill=1)
+    text_x = x + indent
+    if bold_prefix and text.startswith(bold_prefix):
+        draw_text(c, text_x, y, bold_prefix, size=size, font=FONT_BOLD, color=INK)
+        rest = text[len(bold_prefix):]
+        rest_x = text_x + text_width(bold_prefix, FONT_BOLD, size)
+        first_width = width - (rest_x - text_x)
+        lines = wrap_text(rest, first_width, FONT, size)
+        if lines:
+            draw_text(c, rest_x, y, lines[0], size=size, font=FONT, color=color)
+            y -= leading
+            for line in lines[1:]:
+                draw_text(c, text_x, y, line, size=size, font=FONT, color=color)
+                y -= leading
+        else:
+            y -= leading
+        return y
+    return draw_wrapped(c, text_x, y, text, width, size=size, leading=leading, font=FONT, color=color)
+
+
+def build():
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    register_fonts()
+
+    page_w, page_h = A4
+    margin = 15 * mm
+    right = page_w - margin
+    width = page_w - 2 * margin
+    c = canvas.Canvas(str(PDF_PATH), pagesize=A4)
+    c.setTitle("张宇-个人简历-优化版")
+    c.setAuthor("张宇")
+
+    y = page_h - 16 * mm
+
+    draw_text(c, margin, y, "张宇", size=23, font=FONT_BOLD, color=INK)
+    y -= 17 * mm
+
+    left_label_x = margin
+    left_value_x = margin + 23 * mm
+    right_label_x = margin + 86 * mm
+    right_value_x = right_label_x + 23 * mm
+    rows = [
+        ("求职方向", "FPGA开发工程师", "电    话", "18842345241"),
+        ("工作年限", "2年经验", "邮    箱", "nzzhangyu123@163.com"),
+    ]
+    for l1, v1, l2, v2 in rows:
+        draw_text(c, left_label_x, y, l1, size=10.0, font=FONT_BOLD, color=INK)
+        draw_text(c, left_value_x, y, v1, size=10.0, font=FONT, color=MUTED)
+        draw_text(c, right_label_x, y, l2, size=10.0, font=FONT_BOLD, color=INK)
+        draw_text(c, right_value_x, y, v2, size=10.0, font=FONT, color=MUTED)
+        y -= 8.5 * mm
+    y -= 1 * mm
+
+    y = section(c, y, "教育背景", page_w, margin)
+    edu_rows = [
+        ("2021-09 ～ 2024-06", "北京理工大学", "电子科学与技术（硕士）"),
+        ("2016-09 ～ 2020-06", "东北大学", "电子信息工程（本科）"),
+    ]
+    for date, school, major in edu_rows:
+        draw_text(c, margin + 4 * mm, y, date, size=10.5, font=FONT_BOLD, color=INK)
+        draw_text(c, margin + 63 * mm, y, school, size=10.5, font=FONT_BOLD, color=INK)
+        draw_text(c, right - text_width(major, FONT_BOLD, 10.5), y, major, size=10.5, font=FONT_BOLD, color=INK)
+        y -= 7.8 * mm
+    y -= 1 * mm
+
+    y = section(c, y, "个人摘要", page_w, margin)
+    y = draw_wrapped(
+        c,
+        margin + 4 * mm,
+        y,
+        "硕士学历，2年医疗影像设备 FPGA 开发经验，主要参与 CT 探测器数据采集、旋转通信链路和 DDR 缓存调度相关模块开发。熟悉高速数据接收、CDC、FIFO、DSP 流水线、Aurora 链路、DDR 读写仲裁及板级调试流程，具备从 RTL 设计、仿真验证到板级调试和系统联调的问题闭环经验。",
+        width - 8 * mm,
+        size=9.3,
+        leading=12.2,
+        color=MUTED,
+    )
+    y -= 2 * mm
+
+    y = section(c, y, "工作经历", page_w, margin)
+    draw_text(c, margin + 4 * mm, y, "2024-07 ～ 至今", size=10.5, font=FONT_BOLD, color=INK)
+    draw_text(c, margin + 62 * mm, y, "东软医疗系统股份有限公司", size=10.5, font=FONT_BOLD, color=INK)
+    draw_text(c, right - text_width("CT电子工程师", FONT_BOLD, 10.5), y, "CT电子工程师", size=10.5, font=FONT_BOLD, color=INK)
+    y -= 7.2 * mm
+    for item in [
+        "负责 CT 产品部件 FPGA 代码设计、模块仿真、板级调试与系统联调。",
+        "参与 ASIC 数据采集、像素处理、Aurora 高速链路、DDR 缓存仲裁等核心模块开发。",
+        "配合硬件工程师完成单板 bring-up、接口联调、时序问题定位和 ILA 抓波分析。",
+    ]:
+        y = bullet(c, margin + 4 * mm, y, item, width - 12 * mm, size=9.25, leading=11.6)
+    y -= 2 * mm
+
+    y = section(c, y, "项目经历", page_w, margin)
+    draw_text(c, margin + 4 * mm, y, "数据采集接口（DASI）固件开发", size=10.4, font=FONT_BOLD, color=INK)
+    y -= 7 * mm
+    y = bullet(
+        c,
+        margin + 4 * mm,
+        y,
+        "项目描述：负责 CT 探测器 ASIC 数据采集链路相关 FPGA 固件开发，实现多通道 LVDS 数据接收、跨时钟域同步、像素处理、数据重排与成帧输出。",
+        width - 12 * mm,
+        size=8.95,
+        leading=11.4,
+        bold_prefix="项目描述：",
+    )
+    y = bullet(
+        c,
+        margin + 4 * mm,
+        y,
+        "核心工作：设计 ASIC 读出状态机，完成多通道 LVDS 串行数据接收、过采样判决和通道对齐；设计 CDC 与 FIFO 缓冲结构，解决多 bit 数据跨时钟域传输和多通道同步问题。",
+        width - 12 * mm,
+        size=8.95,
+        leading=11.4,
+        bold_prefix="核心工作：",
+    )
+    for item in [
+        "搭建 DSP 流水线与双口 RAM 结构，实现多帧权重累加、增益校正、暗电流扣除和像素值计算。",
+        "基于 ROM 查找表完成空间映射和数据重排，采用乒乓 RAM 实现连续读写与成帧输出。",
+    ]:
+        y = bullet(c, margin + 8 * mm, y, item, width - 16 * mm, size=8.85, leading=11.2)
+    y = bullet(
+        c,
+        margin + 4 * mm,
+        y,
+        "技术栈：Verilog/SystemVerilog、LVDS、CDC、FIFO、DSP流水线、双口RAM、乒乓缓存",
+        width - 12 * mm,
+        size=8.85,
+        leading=11.2,
+        bold_prefix="技术栈：",
+    )
+    y -= 2 * mm
+
+    draw_text(c, margin + 4 * mm, y, "旋转通信板（Rcomm）模块固件开发", size=10.4, font=FONT_BOLD, color=INK)
+    y -= 7 * mm
+    y = bullet(
+        c,
+        margin + 4 * mm,
+        y,
+        "项目描述：负责 CT 旋转端数据链路部分固件开发与重构，覆盖数据接收、组帧、缓存、无损传输、异常恢复和 DDR 缓存仲裁。",
+        width - 12 * mm,
+        size=8.95,
+        leading=11.4,
+        bold_prefix="项目描述：",
+    )
+    for item in [
+        "8B/10B链路层重构：使用弹性 FIFO + 状态机替代原硬延迟线结构，剔除无效空拍，实现有效载荷连续输出。",
+        "搭建轻量化自仿真环境，在虚拟信道中注入 skew、比特翻转、光纤断联等场景，验证数据完整性、异常恢复和 CRC 报错拦截能力。",
+        "DDR动态水位仲裁：设计双重水位线机制替代原写优先策略，实现写侧高水位优先排空、读侧低水位预取及读写公平仲裁；搭建 DDR fast mock，对 refresh、命令反压、读返回断流、可变读延迟和 pending read 场景进行仿真验证，提升连续数据流缓存稳定性。",
+    ]:
+        prefix = None
+        if item.startswith("8B/10B链路层重构："):
+            prefix = "8B/10B链路层重构："
+        elif item.startswith("DDR动态水位仲裁："):
+            prefix = "DDR动态水位仲裁："
+        y = bullet(c, margin + 4 * mm, y, item, width - 12 * mm, size=8.85, leading=11.2, bold_prefix=prefix)
+    y = bullet(
+        c,
+        margin + 4 * mm,
+        y,
+        "技术栈：Aurora 8B/10B、DDR、FIFO、状态机、动态水位仲裁、轻量化mock仿真、ILA",
+        width - 12 * mm,
+        size=8.85,
+        leading=11.2,
+        bold_prefix="技术栈：",
+    )
+
+    y -= 2.5 * mm
+
+    y = section(c, y, "自我评价", page_w, margin)
+    y = draw_wrapped(
+        c,
+        margin + 4 * mm,
+        y,
+        "具备较强的问题定位和工程闭环能力，能够从 RTL 仿真、时序分析、ILA 抓波到板级联调推进问题解决。对高速数据链路、跨时钟域处理、缓存仲裁和 FPGA 系统稳定性优化有持续实践经验，学习能力强，能快速适应复杂硬件系统开发。",
+        width - 8 * mm,
+        size=8.95,
+        leading=11.4,
+        color=MUTED,
+    )
+
+    c.showPage()
+    c.save()
+    print(PDF_PATH)
+
+
+if __name__ == "__main__":
+    build()

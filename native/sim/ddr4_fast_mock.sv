@@ -86,43 +86,43 @@ module ddr4_fast_mock #(
 
     // Coarse pressure model.
     ddr4_fast_mock_stall_model #(
-        .GLOBAL_STALL_INTERVAL_CYCLES (GLOBAL_STALL_INTERVAL_CYCLES),
-        .GLOBAL_STALL_CYCLES          (GLOBAL_STALL_CYCLES),
-        .CMD_STALL_INTERVAL_CYCLES    (CMD_STALL_INTERVAL_CYCLES),
-        .CMD_STALL_CYCLES             (CMD_STALL_CYCLES),
-        .READ_STALL_INTERVAL_CYCLES   (READ_STALL_INTERVAL_CYCLES),
-        .READ_STALL_CYCLES            (READ_STALL_CYCLES)
+        .GLOBAL_STALL_INTERVAL_CYCLES (GLOBAL_STALL_INTERVAL_CYCLES ),
+        .GLOBAL_STALL_CYCLES          (GLOBAL_STALL_CYCLES          ),
+        .CMD_STALL_INTERVAL_CYCLES    (CMD_STALL_INTERVAL_CYCLES    ),
+        .CMD_STALL_CYCLES             (CMD_STALL_CYCLES             ),
+        .READ_STALL_INTERVAL_CYCLES   (READ_STALL_INTERVAL_CYCLES   ),
+        .READ_STALL_CYCLES            (READ_STALL_CYCLES            )
     ) stall_model_u (
-        .clk                    (clk_in),
-        .reset                  (RESET),
-        .init_calib_complete    (init_calib_complete),
-        .read_pipe_output_valid (read_return_ready),
-        .global_stall_active    (global_stall_active),
-        .cmd_stall_active       (cmd_stall_active),
-        .read_stall_active      (read_stall_active),
-        .data_stall_active      (data_stall_active),
-        .read_pipe_stall        (read_pipe_stall)
+        .clk                    (clk_in                 ),
+        .reset                  (RESET                  ),
+        .init_calib_complete    (init_calib_complete    ),
+        .read_pipe_output_valid (read_return_ready      ),
+        .global_stall_active    (global_stall_active    ),
+        .cmd_stall_active       (cmd_stall_active       ),
+        .read_stall_active      (read_stall_active      ),
+        .data_stall_active      (data_stall_active      ),
+        .read_pipe_stall        (read_pipe_stall        )
     );
 
     // Read transaction timing model.
     ddr4_fast_mock_read_pending_model #(
-        .APP_ADDR_WIDTH          (APP_ADDR_WIDTH),
-        .MEM_WORDS               (MEM_WORDS),
-        .READ_LATENCY_CYCLES     (READ_LATENCY_CYCLES),
-        .READ_LATENCY_MIN_CYCLES (READ_LATENCY_MIN_CYCLES),
-        .READ_LATENCY_MAX_CYCLES (READ_LATENCY_MAX_CYCLES),
-        .READ_PENDING_DEPTH      (READ_PENDING_DEPTH)
+        .APP_ADDR_WIDTH          (APP_ADDR_WIDTH            ),
+        .MEM_WORDS               (MEM_WORDS                 ),
+        .READ_LATENCY_CYCLES     (READ_LATENCY_CYCLES       ),
+        .READ_LATENCY_MIN_CYCLES (READ_LATENCY_MIN_CYCLES   ),
+        .READ_LATENCY_MAX_CYCLES (READ_LATENCY_MAX_CYCLES   ),
+        .READ_PENDING_DEPTH      (READ_PENDING_DEPTH        )   
     ) read_pending_model_u (
-        .clk                      (clk_in),
-        .reset                    (RESET),
-        .init_calib_complete      (init_calib_complete),
-        .read_cmd_fire            (read_cmd_fire),
-        .read_addr                (app_addr),
-        .data_stall_active        (data_stall_active),
-        .read_mem_index           (read_mem_index),
-        .read_return_ready        (read_return_ready),
-        .read_return_fire         (read_return_fire),
-        .read_pending_full_active (read_pending_full_active)
+        .clk                      (clk_in                   ),
+        .reset                    (RESET                    ),
+        .init_calib_complete      (init_calib_complete      ),
+        .read_cmd_fire            (read_cmd_fire            ),
+        .read_addr                (app_addr                 ),
+        .data_stall_active        (data_stall_active        ),
+        .read_mem_index           (read_mem_index           ),
+        .read_return_ready        (read_return_ready        ),
+        .read_return_fire         (read_return_fire         ),
+        .read_pending_full_active (read_pending_full_active )
     );
 
     assign app_rdy = init_calib_complete &&
