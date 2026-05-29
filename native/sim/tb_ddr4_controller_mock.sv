@@ -15,7 +15,7 @@ module tb_ddr4_controller_mock;
 
     // Native app bus dimensions.
     localparam int ADDR_WIDTH     = 20;
-    localparam int APP_ADDR_WIDTH = ADDR_WIDTH + 4;
+    localparam int APP_ADDR_WIDTH = ADDR_WIDTH + 3;
     localparam int APP_DATA_BITS  = 128;
     
     // Derived frame and mock-memory limits.

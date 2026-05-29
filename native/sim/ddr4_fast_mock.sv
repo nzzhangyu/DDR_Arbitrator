@@ -44,9 +44,10 @@ module ddr4_fast_mock #(
     output logic                      app_rd_data_end
     );
 
-    // 128-bit word memory; app_addr[3:0] is byte offset.
+    // Native app_addr is in x16 interface words. One 128-bit beat spans eight
+    // x16 words, so app_addr[2:0] is the offset inside a mock memory word.
     localparam int MEM_ADDR_BITS = $clog2(MEM_WORDS);
-    localparam int MEM_WORD_MSB  = 4 + MEM_ADDR_BITS - 1;
+    localparam int MEM_WORD_MSB  = 3 + MEM_ADDR_BITS - 1;
     localparam logic [2:0] APP_CMD_WRITE = 3'b000;
     localparam logic [2:0] APP_CMD_READ  = 3'b001;
 
@@ -133,7 +134,7 @@ module ddr4_fast_mock #(
                         (~read_pipe_stall);
     assign app_wdf_rdy = init_calib_complete && (~cmd_block_active);
     assign cmd_block_active = global_stall_active || cmd_stall_active;
-    assign write_mem_index = write_addr_q[MEM_WORD_MSB:4];
+    assign write_mem_index = write_addr_q[MEM_WORD_MSB:3];
     assign app_rd_data = mem[read_mem_index];
     assign app_rd_data_valid = read_return_fire;
     assign app_rd_data_end = app_rd_data_valid;
@@ -169,7 +170,7 @@ module ddr4_fast_mock #(
                 logic [MEM_ADDR_BITS-1:0] direct_write_index;
 
                 // Same-cycle write.
-                direct_write_index = app_addr[MEM_WORD_MSB:4];
+                direct_write_index = app_addr[MEM_WORD_MSB:3];
                 next_word = mem[direct_write_index];
                 for (byte_idx = 0; byte_idx < 16; byte_idx++) begin
                     if (~app_wdf_mask[byte_idx]) begin

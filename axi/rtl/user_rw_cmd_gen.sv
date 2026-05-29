@@ -283,6 +283,8 @@ module user_rw_cmd_gen #(
     logic [8:0] rd_available_limit;
     logic [8:0] rd_free_limit;
     logic [8:0] rd_burst_limit;
+    logic [8:0] wr_4kb_limit;
+    logic [8:0] rd_4kb_limit;
     logic [ADDR_WIDTH:0] ddr_rd_avail_count;
     logic       block_for_replay;
     logic       rd_fifo_has_grant_space;
@@ -529,6 +531,8 @@ module user_rw_cmd_gen #(
     assign user_ad_rd         = user_ad_rd_i[ADDR_WIDTH-1:0];
     assign ddr_rd_empty       = (user_ad_wr_i == user_ad_rd_i);
     assign ddr_rd_avail_count = user_ad_wr_i - user_ad_rd_i;
+    assign wr_4kb_limit       = beats_to_4kb_boundary(user_ad_wr);
+    assign rd_4kb_limit       = beats_to_4kb_boundary(user_ad_rd);
 
     // Write/read data fire
     logic write_data_fire;
@@ -566,12 +570,13 @@ module user_rw_cmd_gen #(
             write_burst_len <= '0;
         end
         else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
-            // Write bursts are based on FIFO level and clamped to the AXI maximum of 256 beats.
+            // Write bursts are based on FIFO level and clamped to AXI burst / 4KB limits.
             if (wr_fifo_rd_data_count >= 14'd256) begin
-                write_burst_len <= 9'd256;
+                write_burst_len <= wr_4kb_limit;
             end
             else if (wr_fifo_rd_data_count != 0) begin
-                write_burst_len <= {1'b0, wr_fifo_rd_data_count[7:0]};
+                write_burst_len <= ({1'b0, wr_fifo_rd_data_count[7:0]} < wr_4kb_limit) ?
+                                   {1'b0, wr_fifo_rd_data_count[7:0]} : wr_4kb_limit;
             end
             else if (wr_fifo_valid) begin
                 write_burst_len <= 9'd1;
@@ -587,9 +592,16 @@ module user_rw_cmd_gen #(
             read_burst_len <= '0;
         end
         else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
-            // Read bursts are limited by grant policy, DDR data available, and cache free space.
-            read_burst_len <= (rd_burst_limit < rd_free_limit) ?
-                            rd_burst_limit : rd_free_limit;
+            // Read bursts are limited by grant policy, available data, cache space, and 4KB boundary.
+            if ((rd_burst_limit < rd_free_limit) && (rd_burst_limit < rd_4kb_limit)) begin
+                read_burst_len <= rd_burst_limit;
+            end
+            else if (rd_free_limit < rd_4kb_limit) begin
+                read_burst_len <= rd_free_limit;
+            end
+            else begin
+                read_burst_len <= rd_4kb_limit;
+            end
         end
     end
 
@@ -727,6 +739,13 @@ module user_rw_cmd_gen #(
     );
         // Internal addresses count 128-bit beats; AXI addresses count bytes.
         beat_to_axi_addr = ({ {(AXI_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 4);
+    endfunction
+
+    function automatic logic [8:0] beats_to_4kb_boundary(
+        input logic [ADDR_WIDTH-1:0] beat_addr
+    );
+        // 128-bit AXI beats are 16 bytes, so each 4KB window contains 256 beats.
+        beats_to_4kb_boundary = 9'd256 - {1'b0, beat_addr[7:0]};
     endfunction
 
 endmodule

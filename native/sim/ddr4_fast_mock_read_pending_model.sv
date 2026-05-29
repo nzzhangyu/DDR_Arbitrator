@@ -22,7 +22,7 @@ module ddr4_fast_mock_read_pending_model #(
 );
 
     localparam int MEM_ADDR_BITS = $clog2(MEM_WORDS);
-    localparam int MEM_WORD_MSB  = 4 + MEM_ADDR_BITS - 1;
+    localparam int MEM_WORD_MSB  = 3 + MEM_ADDR_BITS - 1;
     localparam int READ_PENDING_PTR_BITS =
         (READ_PENDING_DEPTH <= 1) ? 1 : $clog2(READ_PENDING_DEPTH);
 
@@ -61,7 +61,7 @@ module ddr4_fast_mock_read_pending_model #(
     end
 
     assign read_mem_index =
-        read_pending_addr_q[read_pending_head_q][MEM_WORD_MSB:4];
+        read_pending_addr_q[read_pending_head_q][MEM_WORD_MSB:3];
     assign read_return_ready = (read_pending_count_q != 0) &&
                                (read_pending_latency_q[read_pending_head_q] <= 1);
     assign read_return_fire = read_return_ready && (~data_stall_active);

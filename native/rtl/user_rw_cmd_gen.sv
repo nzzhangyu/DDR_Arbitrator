@@ -1,8 +1,8 @@
 `timescale 1ns/1ps
 
 module user_rw_cmd_gen #(
-    parameter int ADDR_WIDTH     = 24,
-    parameter int APP_ADDR_WIDTH = ADDR_WIDTH + 4
+   parameter int ADDR_WIDTH     = 24,
+   parameter int APP_ADDR_WIDTH = ADDR_WIDTH + 3
 ) (
     // Native app interface.
     output logic [APP_ADDR_WIDTH-1:0] app_addr,
@@ -614,11 +614,12 @@ module user_rw_cmd_gen #(
     end
 
     // Helper functions.
-    function automatic logic [APP_ADDR_WIDTH-1:0] beat_to_app_addr(
-        input logic [ADDR_WIDTH-1:0] beat_addr
-    );
-        // Beat address to byte address.
-        beat_to_app_addr = ({ {(APP_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 4);
-    endfunction
+   function automatic logic [APP_ADDR_WIDTH-1:0] beat_to_app_addr(
+       input logic [ADDR_WIDTH-1:0] beat_addr
+   );
+        // Native MIG app_addr is in x16 interface words. One 128-bit beat spans
+        // eight x16 words, so convert the internal beat address by shifting 3.
+        beat_to_app_addr = ({ {(APP_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 3);
+   endfunction
 
 endmodule

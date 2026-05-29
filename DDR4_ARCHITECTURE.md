@@ -95,12 +95,15 @@ Native 版本仍按内部 `write_burst_len` / `read_burst_len` 做成组服务�
 
 ## 5. 地址模型
 
-内部地址按 128-bit beat 计数。两套实现默认都在接口边界转换成 byte address：
+内部地址按 128-bit beat 计数。两套实现默认都在接口边界转换成对应 MIG 端口地址：
 
 - AXI helper：`beat_addr << 4`
-- native helper：`beat_addr << 4`
+- native helper：`beat_addr << 3`
 
-如果重新生成的 native MIG IP 端口使用不同地址位宽或低位规则，只需要调整 `native/rtl/user_rw_cmd_gen.sv` 里的地址 helper 和 `APP_ADDR_WIDTH` 参数。
+AXI 地址是 byte address，因此一个 128-bit beat 需要左移 4 位。Native MIG `app_addr`
+按 x16 memory interface word 计数；一个 128-bit beat 覆盖 8 个 x16 word，因此左移 3 位。
+如果重新生成的 native MIG IP 端口使用不同地址位宽或低位规则，只需要调整
+`native/rtl/user_rw_cmd_gen.sv` 里的地址 helper 和 `APP_ADDR_WIDTH` 参数。
 
 ## 6. 验证模式
 

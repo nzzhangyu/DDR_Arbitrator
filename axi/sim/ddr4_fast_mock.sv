@@ -81,6 +81,7 @@ module ddr4_fast_mock #(
    localparam int MEM_ADDR_BITS   = $clog2(MEM_WORDS);
    localparam int MEM_WORD_MSB    = 4 + MEM_ADDR_BITS - 1;
    localparam logic [AXI_ADDR_WIDTH-1:0] AXI_WORD_BYTES = AXI_ADDR_WIDTH'(16);
+   localparam int AXI_4KB_BYTES   = 4096;
    localparam logic [1:0] OKAY      = 2'b00;
    localparam logic [1:0] MEM_BRESP = OKAY;
    localparam logic [1:0] MEM_RRESP = OKAY;
@@ -267,6 +268,23 @@ module ddr4_fast_mock #(
                turnaround_cnt_q <= 16'(turnaround_cycles_cfg);
             end
             last_cmd_was_read_q <= 1'b1;
+         end
+      end
+   end
+
+   // AXI4 INCR bursts must stay within one 4KB address window.
+   always_ff @(posedge clk_in) begin
+      if (axi_awvalid && axi_awready) begin
+         if ((int'(axi_awaddr[11:0]) + ((int'(axi_awlen) + 1) << 4)) > AXI_4KB_BYTES) begin
+            $fatal(1, "AXI write burst crosses 4KB boundary: awaddr=0x%0h awlen=%0d",
+                   axi_awaddr, axi_awlen);
+         end
+      end
+
+      if (axi_arvalid && axi_arready) begin
+         if ((int'(axi_araddr[11:0]) + ((int'(axi_arlen) + 1) << 4)) > AXI_4KB_BYTES) begin
+            $fatal(1, "AXI read burst crosses 4KB boundary: araddr=0x%0h arlen=%0d",
+                   axi_araddr, axi_arlen);
          end
       end
    end
