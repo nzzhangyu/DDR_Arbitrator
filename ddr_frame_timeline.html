@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DDR 写入帧结构时间轴</title>
+  <style>
+    :root {
+      --bg: #f7f9fc;
+      --ink: #182338;
+      --muted: #62728a;
+      --line: #b9c5d8;
+      --header: #e8e2ff;
+      --slice-head: #dcecff;
+      --payload: #dcf6ea;
+      --footer: #ffe4d8;
+      --idle: #eef2f7;
+      --crc: #fff1bf;
+      --warn: #ffd6d6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+    }
+
+    main {
+      width: min(1280px, calc(100vw - 40px));
+      margin: 28px auto 44px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+
+    .sub {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .panel {
+      background: white;
+      border: 1px solid #dce3ee;
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: 0 12px 28px rgba(20, 35, 60, .08);
+      overflow-x: auto;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 9px;
+      border: 1px solid #cbd5e4;
+      border-radius: 6px;
+      color: #35445d;
+      font-size: 12px;
+    }
+
+    .sw {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid rgba(0, 0, 0, .08);
+    }
+
+    .timeline {
+      min-width: 1120px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 88px repeat(15, minmax(64px, 1fr));
+      gap: 6px;
+      align-items: stretch;
+      margin-bottom: 8px;
+    }
+
+    .label {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .beat {
+      min-height: 72px;
+      border: 1px solid #cbd5e4;
+      border-radius: 7px;
+      padding: 8px;
+      background: #fff;
+      position: relative;
+    }
+
+    .beat strong {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .beat span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .small {
+      min-height: 38px;
+      text-align: center;
+      padding: 7px 4px;
+      color: #34445d;
+      font-size: 11px;
+    }
+
+    .header { background: var(--header); }
+    .slice-head { background: var(--slice-head); }
+    .payload { background: var(--payload); }
+    .footer { background: var(--footer); }
+    .idle { background: var(--idle); border-style: dashed; }
+    .crc { background: var(--crc); }
+    .gap { background: var(--warn); border-style: dashed; }
+
+    .wide-2 { grid-column: span 2; }
+    .wide-4 { grid-column: span 4; }
+
+    .note {
+      min-width: 1120px;
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .card {
+      border: 1px solid #d3dbe8;
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcff;
+    }
+
+    .card h2 {
+      margin: 0 0 7px;
+      font-size: 15px;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>最终写入 DDR 的帧结构</h1>
+    <p class="sub">每一格表示一个 <code>header_data_out[127:0]</code> beat。彩色格表示 <code>header_data_out_en=1</code>，灰/红虚线格表示该拍不写入 DDR。</p>
+
+    <section class="panel">
+      <div class="legend">
+        <span class="tag"><span class="sw" style="background: var(--header)"></span>Header 帧</span>
+        <span class="tag"><span class="sw" style="background: var(--slice-head)"></span>Slice 帧头</span>
+        <span class="tag"><span class="sw" style="background: var(--payload)"></span>Slice 数据</span>
+        <span class="tag"><span class="sw" style="background: var(--footer)"></span>Slice footer</span>
+        <span class="tag"><span class="sw" style="background: var(--crc)"></span>CRC</span>
+        <span class="tag"><span class="sw" style="background: var(--warn)"></span>slice 间隔空拍</span>
+      </div>
+
+      <div class="timeline">
+        <div class="row">
+          <div class="label">DDR beat</div>
+          <div class="small">0</div>
+          <div class="small">1</div>
+          <div class="small">2 ... 16</div>
+          <div class="small">17</div>
+          <div class="small">18</div>
+          <div class="small">19</div>
+          <div class="small">20</div>
+          <div class="small">21 ... N</div>
+          <div class="small">N+1</div>
+          <div class="small">N+2</div>
+          <div class="small">N+3</div>
+          <div class="small">N+4</div>
+          <div class="small">N+5</div>
+          <div class="small">N+6 ...</div>
+          <div class="small">...</div>
+        </div>
+
+        <div class="row">
+          <div class="label">内容</div>
+          <div class="beat header">
+            <strong>Header Frame Header</strong>
+            <span>{043310..., 5A5A...A5A5}</span>
+          </div>
+          <div class="beat header wide-2">
+            <strong>Header Payload</strong>
+            <span>HEADER_000 ~ HEADER_127<br>每拍 8 个 16bit word</span>
+          </div>
+          <div class="beat crc">
+            <strong>Header CRC</strong>
+            <span>{crc_out, last_header}</span>
+          </div>
+          <div class="beat slice-head">
+            <strong>Slice 0 Frame Header</strong>
+            <span>{s_frame_header, 5A5A...A5A5}</span>
+          </div>
+          <div class="beat idle">
+            <strong>FIFO 读延迟</strong>
+            <span>header_data_out_en=0</span>
+          </div>
+          <div class="beat payload wide-2">
+            <strong>Slice 0 Payload</strong>
+            <span>来自 s_frame_data[127:0]</span>
+          </div>
+          <div class="beat footer">
+            <strong>Slice 0 Footer</strong>
+            <span>包含 64'hFACEEACECACEBACE</span>
+          </div>
+          <div class="beat crc">
+            <strong>Slice 0 CRC</strong>
+            <span>slice_frame_gen 已插入</span>
+          </div>
+          <div class="beat gap">
+            <strong>间隔 1</strong>
+            <span>S_SYNC_HEADER<br>不写 DDR</span>
+          </div>
+          <div class="beat slice-head">
+            <strong>Slice 1 Frame Header</strong>
+            <span>{s_frame_header, 5A5A...A5A5}</span>
+          </div>
+          <div class="beat gap">
+            <strong>间隔 2</strong>
+            <span>S_DATA 首拍<br>FIFO 读延迟</span>
+          </div>
+          <div class="beat payload">
+            <strong>Slice 1 Payload</strong>
+            <span>下一拍开始有效</span>
+          </div>
+          <div class="beat payload">
+            <strong>Slice 1 ...</strong>
+            <span>继续输出</span>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="label">en</div>
+          <div class="small header">1</div>
+          <div class="small header wide-2">1</div>
+          <div class="small crc">1</div>
+          <div class="small slice-head">1</div>
+          <div class="small idle">0</div>
+          <div class="small payload wide-2">1</div>
+          <div class="small footer">1</div>
+          <div class="small crc">1</div>
+          <div class="small gap">0</div>
+          <div class="small slice-head">1</div>
+          <div class="small gap">0</div>
+          <div class="small payload">1</div>
+          <div class="small payload">1</div>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="card">
+          <h2>slice 之间的空拍</h2>
+          <p>上一 slice 最后一个有效 beat 后，先进入 <code>S_SYNC_HEADER</code>，这一拍 <code>header_data_out_en=0</code>，所以有 1 个纯空拍。</p>
+        </div>
+        <div class="card">
+          <h2>下一 slice 帧头</h2>
+          <p>空拍之后进入 <code>S_FRAME_HEADER</code>，该拍写入下一 slice 的 128bit frame header，不是 payload。</p>
+        </div>
+        <div class="card">
+          <h2>payload 开始位置</h2>
+          <p>帧头之后的第一拍 <code>S_DATA</code> 用来读 FIFO，<code>rx_fifo_rd_en_d</code> 尚未有效，所以再空 1 拍；下一拍才写入下一 slice payload。</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
