@@ -100,6 +100,7 @@ module user_rw_cmd_gen #(
 
     localparam logic [2:0]  AXI_SIZE_16B     = 3'd4;
     localparam logic [1:0]  AXI_BURST_INCR   = 2'b01;
+    localparam int          DBG_CNT_WIDTH     = 32;
 
     typedef enum logic [3:0] {
         RW_IDLE,      // Wait for calibration and replay/backtracking blocks to clr.
@@ -541,6 +542,159 @@ module user_rw_cmd_gen #(
     assign write_data_fire = m_axi_wvalid && m_axi_wready;
     assign read_data_fire  = m_axi_rvalid && m_axi_rready;
 
+    // Debug counters for ILA: consecutive service stalls and historical maxima.
+    logic dbg_cnt_reset;
+    logic dbg_wr_no_service;
+    logic dbg_rd_no_service;
+    logic dbg_replay_block;
+    logic dbg_aw_wait;
+    logic dbg_w_wait;
+    logic dbg_b_wait;
+    logic dbg_ar_wait;
+    logic dbg_r_data_wait;
+
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_no_service_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_no_service_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_replay_block_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_replay_block_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_aw_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_aw_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_w_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_w_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_b_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_b_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_ar_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_ar_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_r_data_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_r_data_wait_max;
+
+    assign dbg_cnt_reset      = ui_clk_sync_rst || rst_local_t_ddr_clk ||
+                                make_data_on_edge || (~init_calib_complete);
+    assign dbg_wr_no_service  = ddr_wr_req && (~write_data_fire);
+    assign dbg_rd_no_service  = ddr_rd_req_qual && (~read_data_fire);
+    assign dbg_replay_block   = block_for_replay;
+    assign dbg_aw_wait        = m_axi_awvalid && (~m_axi_awready);
+    assign dbg_w_wait         = m_axi_wvalid && (~m_axi_wready);
+    assign dbg_b_wait         = m_axi_bready && (~m_axi_bvalid);
+    assign dbg_ar_wait        = m_axi_arvalid && (~m_axi_arready);
+    assign dbg_r_data_wait    = (rw_state == RW_READ_R) && (~m_axi_rvalid) && (~rd_fifo_full);
+
+    always_ff @(posedge ui_clk) begin
+        if (dbg_cnt_reset) begin
+            dbg_wr_no_service_cur <= '0;
+            dbg_wr_no_service_max <= '0;
+        end
+        else if (dbg_wr_no_service) begin
+            dbg_wr_no_service_cur <= dbg_sat_inc(dbg_wr_no_service_cur);
+            if (dbg_sat_inc(dbg_wr_no_service_cur) > dbg_wr_no_service_max) begin
+                dbg_wr_no_service_max <= dbg_sat_inc(dbg_wr_no_service_cur);
+            end
+        end
+        else begin
+            dbg_wr_no_service_cur <= '0;
+        end
+    end
+
+    always_ff @(posedge ui_clk) begin
+        if (dbg_cnt_reset) begin
+            dbg_rd_no_service_cur <= '0;
+            dbg_rd_no_service_max <= '0;
+        end
+        else if (dbg_rd_no_service) begin
+            dbg_rd_no_service_cur <= dbg_sat_inc(dbg_rd_no_service_cur);
+            if (dbg_sat_inc(dbg_rd_no_service_cur) > dbg_rd_no_service_max) begin
+                dbg_rd_no_service_max <= dbg_sat_inc(dbg_rd_no_service_cur);
+            end
+        end
+        else begin
+            dbg_rd_no_service_cur <= '0;
+        end
+    end
+
+    always_ff @(posedge ui_clk) begin
+        if (dbg_cnt_reset) begin
+            dbg_replay_block_cur <= '0;
+            dbg_replay_block_max <= '0;
+        end
+        else if (dbg_replay_block) begin
+            dbg_replay_block_cur <= dbg_sat_inc(dbg_replay_block_cur);
+            if (dbg_sat_inc(dbg_replay_block_cur) > dbg_replay_block_max) begin
+                dbg_replay_block_max <= dbg_sat_inc(dbg_replay_block_cur);
+            end
+        end
+        else begin
+            dbg_replay_block_cur <= '0;
+        end
+    end
+
+    always_ff @(posedge ui_clk) begin
+        if (dbg_cnt_reset) begin
+            dbg_aw_wait_cur <= '0;
+            dbg_aw_wait_max <= '0;
+            dbg_w_wait_cur  <= '0;
+            dbg_w_wait_max  <= '0;
+            dbg_b_wait_cur  <= '0;
+            dbg_b_wait_max  <= '0;
+            dbg_ar_wait_cur <= '0;
+            dbg_ar_wait_max <= '0;
+            dbg_r_data_wait_cur <= '0;
+            dbg_r_data_wait_max <= '0;
+        end
+        else begin
+            if (dbg_aw_wait) begin
+                dbg_aw_wait_cur <= dbg_sat_inc(dbg_aw_wait_cur);
+                if (dbg_sat_inc(dbg_aw_wait_cur) > dbg_aw_wait_max) begin
+                    dbg_aw_wait_max <= dbg_sat_inc(dbg_aw_wait_cur);
+                end
+            end
+            else begin
+                dbg_aw_wait_cur <= '0;
+            end
+
+            if (dbg_w_wait) begin
+                dbg_w_wait_cur <= dbg_sat_inc(dbg_w_wait_cur);
+                if (dbg_sat_inc(dbg_w_wait_cur) > dbg_w_wait_max) begin
+                    dbg_w_wait_max <= dbg_sat_inc(dbg_w_wait_cur);
+                end
+            end
+            else begin
+                dbg_w_wait_cur <= '0;
+            end
+
+            if (dbg_b_wait) begin
+                dbg_b_wait_cur <= dbg_sat_inc(dbg_b_wait_cur);
+                if (dbg_sat_inc(dbg_b_wait_cur) > dbg_b_wait_max) begin
+                    dbg_b_wait_max <= dbg_sat_inc(dbg_b_wait_cur);
+                end
+            end
+            else begin
+                dbg_b_wait_cur <= '0;
+            end
+
+            if (dbg_ar_wait) begin
+                dbg_ar_wait_cur <= dbg_sat_inc(dbg_ar_wait_cur);
+                if (dbg_sat_inc(dbg_ar_wait_cur) > dbg_ar_wait_max) begin
+                    dbg_ar_wait_max <= dbg_sat_inc(dbg_ar_wait_cur);
+                end
+            end
+            else begin
+                dbg_ar_wait_cur <= '0;
+            end
+
+            if (dbg_r_data_wait) begin
+                dbg_r_data_wait_cur <= dbg_sat_inc(dbg_r_data_wait_cur);
+                if (dbg_sat_inc(dbg_r_data_wait_cur) > dbg_r_data_wait_max) begin
+                    dbg_r_data_wait_max <= dbg_sat_inc(dbg_r_data_wait_cur);
+                end
+            end
+            else begin
+                dbg_r_data_wait_cur <= '0;
+            end
+        end
+    end
+
     // Advance the write pointer on write data fire.
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
@@ -746,6 +900,12 @@ module user_rw_cmd_gen #(
     );
         // 128-bit AXI beats are 16 bytes, so each 4KB window contains 256 beats.
         beats_to_4kb_boundary = 9'd256 - {1'b0, beat_addr[7:0]};
+    endfunction
+
+    function automatic logic [DBG_CNT_WIDTH-1:0] dbg_sat_inc(
+        input logic [DBG_CNT_WIDTH-1:0] value
+    );
+        dbg_sat_inc = (&value) ? value : (value + {{(DBG_CNT_WIDTH-1){1'b0}}, 1'b1});
     endfunction
 
 endmodule

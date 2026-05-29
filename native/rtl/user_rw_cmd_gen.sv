@@ -64,6 +64,7 @@ module user_rw_cmd_gen #(
 
     localparam logic [2:0]  APP_CMD_WRITE     = 3'b000;
     localparam logic [2:0]  APP_CMD_READ      = 3'b001;
+    localparam int          DBG_CNT_WIDTH     = 32;
 
     typedef enum logic [3:0] {
         RW_IDLE,      // Wait/blocked.
@@ -451,6 +452,156 @@ module user_rw_cmd_gen #(
                                 app_wdf_rdy;
     assign read_data_fire  = app_rd_data_valid && (~rd_fifo_full);
 
+    // Debug counters for ILA: consecutive service stalls and historical maxima.
+    logic dbg_cnt_reset;
+    logic dbg_wr_no_service;
+    logic dbg_rd_no_service;
+    logic dbg_replay_block;
+    logic dbg_wr_app_rdy_wait;
+    logic dbg_wr_wdf_rdy_wait;
+    logic dbg_rd_cmd_wait;
+    logic dbg_rd_data_wait;
+
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_no_service_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_no_service_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_replay_block_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_replay_block_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_app_rdy_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_app_rdy_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_wdf_rdy_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_wdf_rdy_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_cmd_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_cmd_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_data_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_data_wait_max;
+
+    assign dbg_cnt_reset         = ui_clk_sync_rst || rst_local_t_ddr_clk ||
+                                   make_data_on_edge || (~init_calib_complete);
+    assign dbg_wr_no_service     = ddr_wr_req && (~write_data_fire);
+    assign dbg_rd_no_service     = ddr_rd_req_qual && (~read_data_fire);
+    assign dbg_replay_block      = block_for_replay;
+    assign dbg_wr_app_rdy_wait   = (rw_state == RW_WRITE_REQ) &&
+                                   wr_fifo_valid &&
+                                   (write_burst_len != 0) &&
+                                   app_wdf_rdy &&
+                                   (~app_rdy);
+    assign dbg_wr_wdf_rdy_wait   = (rw_state == RW_WRITE_REQ) &&
+                                   wr_fifo_valid &&
+                                   (write_burst_len != 0) &&
+                                   (~app_wdf_rdy);
+    assign dbg_rd_cmd_wait       = (rw_state == RW_READ_CMD) &&
+                                   (read_burst_len != 0) &&
+                                   rd_fifo_has_grant_space &&
+                                   (~wr_level_urgent) &&
+                                   (~app_rdy);
+    assign dbg_rd_data_wait      = (rw_state == RW_READ_DATA) &&
+                                   (~app_rd_data_valid) &&
+                                   (~rd_fifo_full);
+
+    always_ff @(posedge ui_clk) begin
+        if (dbg_cnt_reset) begin
+            dbg_wr_no_service_cur <= '0;
+            dbg_wr_no_service_max <= '0;
+        end
+        else if (dbg_wr_no_service) begin
+            dbg_wr_no_service_cur <= dbg_sat_inc(dbg_wr_no_service_cur);
+            if (dbg_sat_inc(dbg_wr_no_service_cur) > dbg_wr_no_service_max) begin
+                dbg_wr_no_service_max <= dbg_sat_inc(dbg_wr_no_service_cur);
+            end
+        end
+        else begin
+            dbg_wr_no_service_cur <= '0;
+        end
+    end
+
+    always_ff @(posedge ui_clk) begin
+        if (dbg_cnt_reset) begin
+            dbg_rd_no_service_cur <= '0;
+            dbg_rd_no_service_max <= '0;
+        end
+        else if (dbg_rd_no_service) begin
+            dbg_rd_no_service_cur <= dbg_sat_inc(dbg_rd_no_service_cur);
+            if (dbg_sat_inc(dbg_rd_no_service_cur) > dbg_rd_no_service_max) begin
+                dbg_rd_no_service_max <= dbg_sat_inc(dbg_rd_no_service_cur);
+            end
+        end
+        else begin
+            dbg_rd_no_service_cur <= '0;
+        end
+    end
+
+    always_ff @(posedge ui_clk) begin
+        if (dbg_cnt_reset) begin
+            dbg_replay_block_cur <= '0;
+            dbg_replay_block_max <= '0;
+        end
+        else if (dbg_replay_block) begin
+            dbg_replay_block_cur <= dbg_sat_inc(dbg_replay_block_cur);
+            if (dbg_sat_inc(dbg_replay_block_cur) > dbg_replay_block_max) begin
+                dbg_replay_block_max <= dbg_sat_inc(dbg_replay_block_cur);
+            end
+        end
+        else begin
+            dbg_replay_block_cur <= '0;
+        end
+    end
+
+    always_ff @(posedge ui_clk) begin
+        if (dbg_cnt_reset) begin
+            dbg_wr_app_rdy_wait_cur <= '0;
+            dbg_wr_app_rdy_wait_max <= '0;
+            dbg_wr_wdf_rdy_wait_cur <= '0;
+            dbg_wr_wdf_rdy_wait_max <= '0;
+            dbg_rd_cmd_wait_cur     <= '0;
+            dbg_rd_cmd_wait_max     <= '0;
+            dbg_rd_data_wait_cur    <= '0;
+            dbg_rd_data_wait_max    <= '0;
+        end
+        else begin
+            if (dbg_wr_app_rdy_wait) begin
+                dbg_wr_app_rdy_wait_cur <= dbg_sat_inc(dbg_wr_app_rdy_wait_cur);
+                if (dbg_sat_inc(dbg_wr_app_rdy_wait_cur) > dbg_wr_app_rdy_wait_max) begin
+                    dbg_wr_app_rdy_wait_max <= dbg_sat_inc(dbg_wr_app_rdy_wait_cur);
+                end
+            end
+            else begin
+                dbg_wr_app_rdy_wait_cur <= '0;
+            end
+
+            if (dbg_wr_wdf_rdy_wait) begin
+                dbg_wr_wdf_rdy_wait_cur <= dbg_sat_inc(dbg_wr_wdf_rdy_wait_cur);
+                if (dbg_sat_inc(dbg_wr_wdf_rdy_wait_cur) > dbg_wr_wdf_rdy_wait_max) begin
+                    dbg_wr_wdf_rdy_wait_max <= dbg_sat_inc(dbg_wr_wdf_rdy_wait_cur);
+                end
+            end
+            else begin
+                dbg_wr_wdf_rdy_wait_cur <= '0;
+            end
+
+            if (dbg_rd_cmd_wait) begin
+                dbg_rd_cmd_wait_cur <= dbg_sat_inc(dbg_rd_cmd_wait_cur);
+                if (dbg_sat_inc(dbg_rd_cmd_wait_cur) > dbg_rd_cmd_wait_max) begin
+                    dbg_rd_cmd_wait_max <= dbg_sat_inc(dbg_rd_cmd_wait_cur);
+                end
+            end
+            else begin
+                dbg_rd_cmd_wait_cur <= '0;
+            end
+
+            if (dbg_rd_data_wait) begin
+                dbg_rd_data_wait_cur <= dbg_sat_inc(dbg_rd_data_wait_cur);
+                if (dbg_sat_inc(dbg_rd_data_wait_cur) > dbg_rd_data_wait_max) begin
+                    dbg_rd_data_wait_max <= dbg_sat_inc(dbg_rd_data_wait_cur);
+                end
+            end
+            else begin
+                dbg_rd_data_wait_cur <= '0;
+            end
+        end
+    end
+
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
             user_ad_wr_i <= '0;
@@ -620,6 +771,12 @@ module user_rw_cmd_gen #(
         // Native MIG app_addr is in x16 interface words. One 128-bit beat spans
         // eight x16 words, so convert the internal beat address by shifting 3.
         beat_to_app_addr = ({ {(APP_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 3);
+   endfunction
+
+   function automatic logic [DBG_CNT_WIDTH-1:0] dbg_sat_inc(
+       input logic [DBG_CNT_WIDTH-1:0] value
+   );
+        dbg_sat_inc = (&value) ? value : (value + {{(DBG_CNT_WIDTH-1){1'b0}}, 1'b1});
    endfunction
 
 endmodule
