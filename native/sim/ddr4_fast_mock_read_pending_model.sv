@@ -28,8 +28,9 @@ module ddr4_fast_mock_read_pending_model #(
     // MIG native addresses are byte addresses; the mock memory is 128-bit
     // wide, so app_addr[3:0] is the byte offset inside one memory word.
     localparam int MEM_ADDR_BITS = $clog2(MEM_WORDS);
-    localparam int MEM_WORD_MSB  = 4 + MEM_ADDR_BITS - 1;
-    localparam int READ_PENDING_PTR_BITS = (READ_PENDING_DEPTH <= 1) ? 1 : $clog2(READ_PENDING_DEPTH);
+    localparam int MEM_WORD_MSB  = 3 + MEM_ADDR_BITS - 1;
+    localparam int READ_PENDING_PTR_BITS =
+        (READ_PENDING_DEPTH <= 1) ? 1 : $clog2(READ_PENDING_DEPTH);
 
     // Circular FIFO of outstanding read commands. Each entry keeps the source
     // address and a countdown before that read may return data.
@@ -66,9 +67,13 @@ module ddr4_fast_mock_read_pending_model #(
         end
     end
 
-    // The read data mux always points at the head entry; valid data is marked
-    // separately by read_return_fire.
-    assign read_mem_index = read_pending_addr_q[read_pending_head_q][MEM_WORD_MSB:4];
+    assign read_mem_index =
+        read_pending_addr_q[read_pending_head_q][MEM_WORD_MSB:3];
+    assign read_return_ready = (read_pending_count_q != 0) &&
+                               (read_pending_latency_q[read_pending_head_q] <= 1);
+    assign read_return_fire = read_return_ready && (~data_stall_active);
+    assign read_pending_full_active =
+        init_calib_complete && (read_pending_count_q >= read_pending_depth_cfg);
 
     // A queued read becomes ready when its countdown reaches the final cycle.
     // A data stall holds both the countdowns and the visible return beat.

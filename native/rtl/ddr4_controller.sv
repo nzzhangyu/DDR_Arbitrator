@@ -3,7 +3,7 @@
 
 module ddr4_controller #(
    parameter int ADDR_WIDTH     = 28,
-   parameter int APP_ADDR_WIDTH = ADDR_WIDTH + 4
+   parameter int APP_ADDR_WIDTH = ADDR_WIDTH + 3
 ) (
    output logic                  c0_ddr4_act_n,
    output logic [16:0]           c0_ddr4_adr,

@@ -2,7 +2,7 @@
 
 module user_app_top #(
    parameter int ADDR_WIDTH     = 24,
-   parameter int APP_ADDR_WIDTH = ADDR_WIDTH + 4
+   parameter int APP_ADDR_WIDTH = ADDR_WIDTH + 3
 ) (
    // MIG native application interface
    output logic [APP_ADDR_WIDTH-1:0] app_addr,
