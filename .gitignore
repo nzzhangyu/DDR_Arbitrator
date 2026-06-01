@@ -5,5 +5,17 @@ xelab.log
 xelab.pb
 xsim.log
 xsim.pb
+xsim.jou
+xsim_*.backup.jou
+xsim_*.backup.log
 webtalk.log
 webtalk.jou
+webtalk_*.backup.jou
+webtalk_*.backup.log
+*.wdb
+tb_*.log
+
+artifacts/resume/*.docx
+artifacts/resume/*.pdf
+artifacts/resume/original_pages/
+artifacts/resume/pdf_pages/
