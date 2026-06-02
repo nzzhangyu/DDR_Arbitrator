@@ -119,6 +119,14 @@ module user_rw_cmd_gen #(
         GRANT_READ
     } grant_t;
 
+    typedef struct packed {
+        logic       valid;
+        logic       urgent;
+        logic       high;
+        logic       low_or_urgent;
+        logic [8:0] len;
+    } rw_req_t;
+
     // Start pulse sync.
     // Synchronize the start pulse into ui_clk and extract a clean rising edge.
     (* ASYNC_REG = "true" *) logic make_data_on_rcom_cdc_to_d;
@@ -303,85 +311,32 @@ module user_rw_cmd_gen #(
     assign block_for_replay = rp_back_en || (|rp_back_en_dly_cnt);
 
     // **********************************************************************************
-    // Classify read/write requests by urgency, FIFO space, and fair-arbitration history.
+    // Request descriptors and grant selection.
     // **********************************************************************************
-    logic wr_urgent_req;
-    logic wr_high_req;
-    logic wr_fair_req;
-
-    logic rd_req_with_space;
-    logic rd_req_allowed;
-    logic rd_urgent_req;
-    logic rd_low_or_urgent_req;
-    logic rd_fair_req;
-
+    rw_req_t wr_req;
+    rw_req_t rd_req;
     logic both_rw_req;
 
-    assign wr_urgent_req        = wr_level_urgent && ddr_wr_req;
-    assign wr_high_req          = wr_level_high && ddr_wr_req;
-    assign wr_fair_req          = ddr_wr_req && (~last_was_wr);
-
-    assign rd_req_with_space    = ddr_rd_req_qual && rd_fifo_has_grant_space;
-    assign rd_req_allowed       = rd_req_with_space && (~wr_level_urgent);
-    assign rd_urgent_req        = rd_level_urgent && rd_req_allowed;
-    assign rd_low_or_urgent_req = (rd_level_low || rd_level_urgent) && rd_req_allowed;
-    assign rd_fair_req          = rd_req_allowed && (~last_was_rd);
-
-    assign both_rw_req          = ddr_wr_req && ddr_rd_req_qual;
-
-    // **************************************************************************
-    // Grant selection.
-    // This layer decides only the next service direction; AXI execution,
-    // address update, and FIFO pop still happen in the state machine below.
-    // **************************************************************************
     grant_t arb_pre_grant;    // for pre-arbitration
     grant_t arb_fair_grant;   // for fair arbitration
 
-    always_comb begin
-        arb_pre_grant = GRANT_NONE;
-
-        if (wr_urgent_req) begin
-            arb_pre_grant = GRANT_WRITE;
-        end
-        else if (rd_urgent_req) begin
-            arb_pre_grant = GRANT_READ;
-        end
-        else if (both_rw_req) begin
-            arb_pre_grant = GRANT_NONE;
-        end
-        else if (rd_req_allowed) begin
-            arb_pre_grant = GRANT_READ;
-        end
-        else if (ddr_wr_req) begin
-            arb_pre_grant = GRANT_WRITE;
-        end
-    end
-
-    always_comb begin
-        arb_fair_grant = GRANT_NONE;
-
-        if (wr_urgent_req) begin
-            arb_fair_grant = GRANT_WRITE;
-        end
-        else if (rd_low_or_urgent_req) begin
-            arb_fair_grant = GRANT_READ;
-        end
-        else if (wr_high_req && (~last_was_wr)) begin
-            arb_fair_grant = GRANT_WRITE;
-        end
-        else if (wr_fair_req) begin
-            arb_fair_grant = GRANT_WRITE;
-        end
-        else if (rd_fair_req) begin
-            arb_fair_grant = GRANT_READ;
-        end
-        else if (ddr_wr_req) begin
-            arb_fair_grant = GRANT_WRITE;
-        end
-        else if (rd_req_allowed) begin
-            arb_fair_grant = GRANT_READ;
-        end
-    end
+    assign wr_req = build_write_req(ddr_wr_req,
+                                    wr_level_urgent,
+                                    wr_level_high,
+                                    calc_write_burst_len(wr_fifo_rd_data_count,
+                                                         wr_fifo_valid,
+                                                         wr_4kb_limit));
+    assign rd_req = build_read_req(ddr_rd_req_qual,
+                                   rd_fifo_has_grant_space,
+                                   wr_level_urgent,
+                                   rd_level_urgent,
+                                   rd_level_low,
+                                   calc_read_burst_len(rd_burst_limit,
+                                                       rd_free_limit,
+                                                       rd_4kb_limit));
+    assign both_rw_req    = wr_req.valid && ddr_rd_req_qual;
+    assign arb_pre_grant  = choose_pre_grant(wr_req, rd_req, both_rw_req);
+    assign arb_fair_grant = choose_fair_grant(wr_req, rd_req, last_was_wr, last_was_rd);
 
     // ***************************************************************************
     // RW Arbitration FSM
@@ -542,159 +497,6 @@ module user_rw_cmd_gen #(
     assign write_data_fire = m_axi_wvalid && m_axi_wready;
     assign read_data_fire  = m_axi_rvalid && m_axi_rready;
 
-    // Debug counters for ILA: consecutive service stalls and historical maxima.
-    logic dbg_cnt_reset;
-    logic dbg_wr_no_service;
-    logic dbg_rd_no_service;
-    logic dbg_replay_block;
-    logic dbg_aw_wait;
-    logic dbg_w_wait;
-    logic dbg_b_wait;
-    logic dbg_ar_wait;
-    logic dbg_r_data_wait;
-
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_cur;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_max;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_no_service_cur;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_no_service_max;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_replay_block_cur;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_replay_block_max;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_aw_wait_cur;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_aw_wait_max;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_w_wait_cur;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_w_wait_max;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_b_wait_cur;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_b_wait_max;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_ar_wait_cur;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_ar_wait_max;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_r_data_wait_cur;
-    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_r_data_wait_max;
-
-    assign dbg_cnt_reset      = ui_clk_sync_rst || rst_local_t_ddr_clk ||
-                                make_data_on_edge || (~init_calib_complete);
-    assign dbg_wr_no_service  = ddr_wr_req && (~write_data_fire);
-    assign dbg_rd_no_service  = ddr_rd_req_qual && (~read_data_fire);
-    assign dbg_replay_block   = block_for_replay;
-    assign dbg_aw_wait        = m_axi_awvalid && (~m_axi_awready);
-    assign dbg_w_wait         = m_axi_wvalid && (~m_axi_wready);
-    assign dbg_b_wait         = m_axi_bready && (~m_axi_bvalid);
-    assign dbg_ar_wait        = m_axi_arvalid && (~m_axi_arready);
-    assign dbg_r_data_wait    = (rw_state == RW_READ_R) && (~m_axi_rvalid) && (~rd_fifo_full);
-
-    always_ff @(posedge ui_clk) begin
-        if (dbg_cnt_reset) begin
-            dbg_wr_no_service_cur <= '0;
-            dbg_wr_no_service_max <= '0;
-        end
-        else if (dbg_wr_no_service) begin
-            dbg_wr_no_service_cur <= dbg_sat_inc(dbg_wr_no_service_cur);
-            if (dbg_sat_inc(dbg_wr_no_service_cur) > dbg_wr_no_service_max) begin
-                dbg_wr_no_service_max <= dbg_sat_inc(dbg_wr_no_service_cur);
-            end
-        end
-        else begin
-            dbg_wr_no_service_cur <= '0;
-        end
-    end
-
-    always_ff @(posedge ui_clk) begin
-        if (dbg_cnt_reset) begin
-            dbg_rd_no_service_cur <= '0;
-            dbg_rd_no_service_max <= '0;
-        end
-        else if (dbg_rd_no_service) begin
-            dbg_rd_no_service_cur <= dbg_sat_inc(dbg_rd_no_service_cur);
-            if (dbg_sat_inc(dbg_rd_no_service_cur) > dbg_rd_no_service_max) begin
-                dbg_rd_no_service_max <= dbg_sat_inc(dbg_rd_no_service_cur);
-            end
-        end
-        else begin
-            dbg_rd_no_service_cur <= '0;
-        end
-    end
-
-    always_ff @(posedge ui_clk) begin
-        if (dbg_cnt_reset) begin
-            dbg_replay_block_cur <= '0;
-            dbg_replay_block_max <= '0;
-        end
-        else if (dbg_replay_block) begin
-            dbg_replay_block_cur <= dbg_sat_inc(dbg_replay_block_cur);
-            if (dbg_sat_inc(dbg_replay_block_cur) > dbg_replay_block_max) begin
-                dbg_replay_block_max <= dbg_sat_inc(dbg_replay_block_cur);
-            end
-        end
-        else begin
-            dbg_replay_block_cur <= '0;
-        end
-    end
-
-    always_ff @(posedge ui_clk) begin
-        if (dbg_cnt_reset) begin
-            dbg_aw_wait_cur <= '0;
-            dbg_aw_wait_max <= '0;
-            dbg_w_wait_cur  <= '0;
-            dbg_w_wait_max  <= '0;
-            dbg_b_wait_cur  <= '0;
-            dbg_b_wait_max  <= '0;
-            dbg_ar_wait_cur <= '0;
-            dbg_ar_wait_max <= '0;
-            dbg_r_data_wait_cur <= '0;
-            dbg_r_data_wait_max <= '0;
-        end
-        else begin
-            if (dbg_aw_wait) begin
-                dbg_aw_wait_cur <= dbg_sat_inc(dbg_aw_wait_cur);
-                if (dbg_sat_inc(dbg_aw_wait_cur) > dbg_aw_wait_max) begin
-                    dbg_aw_wait_max <= dbg_sat_inc(dbg_aw_wait_cur);
-                end
-            end
-            else begin
-                dbg_aw_wait_cur <= '0;
-            end
-
-            if (dbg_w_wait) begin
-                dbg_w_wait_cur <= dbg_sat_inc(dbg_w_wait_cur);
-                if (dbg_sat_inc(dbg_w_wait_cur) > dbg_w_wait_max) begin
-                    dbg_w_wait_max <= dbg_sat_inc(dbg_w_wait_cur);
-                end
-            end
-            else begin
-                dbg_w_wait_cur <= '0;
-            end
-
-            if (dbg_b_wait) begin
-                dbg_b_wait_cur <= dbg_sat_inc(dbg_b_wait_cur);
-                if (dbg_sat_inc(dbg_b_wait_cur) > dbg_b_wait_max) begin
-                    dbg_b_wait_max <= dbg_sat_inc(dbg_b_wait_cur);
-                end
-            end
-            else begin
-                dbg_b_wait_cur <= '0;
-            end
-
-            if (dbg_ar_wait) begin
-                dbg_ar_wait_cur <= dbg_sat_inc(dbg_ar_wait_cur);
-                if (dbg_sat_inc(dbg_ar_wait_cur) > dbg_ar_wait_max) begin
-                    dbg_ar_wait_max <= dbg_sat_inc(dbg_ar_wait_cur);
-                end
-            end
-            else begin
-                dbg_ar_wait_cur <= '0;
-            end
-
-            if (dbg_r_data_wait) begin
-                dbg_r_data_wait_cur <= dbg_sat_inc(dbg_r_data_wait_cur);
-                if (dbg_sat_inc(dbg_r_data_wait_cur) > dbg_r_data_wait_max) begin
-                    dbg_r_data_wait_max <= dbg_sat_inc(dbg_r_data_wait_cur);
-                end
-            end
-            else begin
-                dbg_r_data_wait_cur <= '0;
-            end
-        end
-    end
-
     // Advance the write pointer on write data fire.
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
@@ -724,20 +526,7 @@ module user_rw_cmd_gen #(
             write_burst_len <= '0;
         end
         else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
-            // Write bursts are based on FIFO level and clamped to AXI burst / 4KB limits.
-            if (wr_fifo_rd_data_count >= 14'd256) begin
-                write_burst_len <= wr_4kb_limit;
-            end
-            else if (wr_fifo_rd_data_count != 0) begin
-                write_burst_len <= ({1'b0, wr_fifo_rd_data_count[7:0]} < wr_4kb_limit) ?
-                                   {1'b0, wr_fifo_rd_data_count[7:0]} : wr_4kb_limit;
-            end
-            else if (wr_fifo_valid) begin
-                write_burst_len <= 9'd1;
-            end
-            else begin
-                write_burst_len <= '0;
-            end
+            write_burst_len <= wr_req.len;
         end
     end
 
@@ -746,16 +535,7 @@ module user_rw_cmd_gen #(
             read_burst_len <= '0;
         end
         else if (rw_state == RW_ARB_PRE || rw_state == RW_ARB) begin
-            // Read bursts are limited by grant policy, available data, cache space, and 4KB boundary.
-            if ((rd_burst_limit < rd_free_limit) && (rd_burst_limit < rd_4kb_limit)) begin
-                read_burst_len <= rd_burst_limit;
-            end
-            else if (rd_free_limit < rd_4kb_limit) begin
-                read_burst_len <= rd_free_limit;
-            end
-            else begin
-                read_burst_len <= rd_4kb_limit;
-            end
+            read_burst_len <= rd_req.len;
         end
     end
 
@@ -902,10 +682,276 @@ module user_rw_cmd_gen #(
         beats_to_4kb_boundary = 9'd256 - {1'b0, beat_addr[7:0]};
     endfunction
 
-    function automatic logic [DBG_CNT_WIDTH-1:0] dbg_sat_inc(
-        input logic [DBG_CNT_WIDTH-1:0] value
+    function automatic logic [8:0] min2_9(
+        input logic [8:0] lhs,
+        input logic [8:0] rhs
     );
-        dbg_sat_inc = (&value) ? value : (value + {{(DBG_CNT_WIDTH-1){1'b0}}, 1'b1});
+        min2_9 = (lhs < rhs) ? lhs : rhs;
     endfunction
+
+    function automatic logic [8:0] min3_9(
+        input logic [8:0] value_a,
+        input logic [8:0] value_b,
+        input logic [8:0] value_c
+    );
+        min3_9 = min2_9(min2_9(value_a, value_b), value_c);
+    endfunction
+
+    function automatic logic [8:0] fifo_count_to_burst_len(
+        input logic [13:0] fifo_count,
+        input logic        fifo_valid
+    );
+        if (fifo_count >= 14'd256) begin
+            fifo_count_to_burst_len = 9'd256;
+        end
+        else if (fifo_count != 0) begin
+            fifo_count_to_burst_len = {1'b0, fifo_count[7:0]};
+        end
+        else if (fifo_valid) begin
+            fifo_count_to_burst_len = 9'd1;
+        end
+        else begin
+            fifo_count_to_burst_len = '0;
+        end
+    endfunction
+
+    function automatic logic [8:0] calc_write_burst_len(
+        input logic [13:0] fifo_count,
+        input logic        fifo_valid,
+        input logic [8:0]  boundary_limit
+    );
+        calc_write_burst_len = min2_9(fifo_count_to_burst_len(fifo_count, fifo_valid),
+                                      boundary_limit);
+    endfunction
+
+    function automatic logic [8:0] calc_read_burst_len(
+        input logic [8:0] service_limit,
+        input logic [8:0] fifo_free_limit,
+        input logic [8:0] boundary_limit
+    );
+        calc_read_burst_len = min3_9(service_limit, fifo_free_limit, boundary_limit);
+    endfunction
+
+    function automatic rw_req_t build_write_req(
+        input logic       raw_valid,
+        input logic       level_urgent,
+        input logic       level_high,
+        input logic [8:0] burst_len
+    );
+        build_write_req.valid         = raw_valid;
+        build_write_req.urgent        = raw_valid && level_urgent;
+        build_write_req.high          = raw_valid && level_high;
+        build_write_req.low_or_urgent = 1'b0;
+        build_write_req.len           = burst_len;
+    endfunction
+
+    function automatic rw_req_t build_read_req(
+        input logic       raw_valid,
+        input logic       has_grant_space,
+        input logic       write_urgent,
+        input logic       level_urgent,
+        input logic       level_low,
+        input logic [8:0] burst_len
+    );
+        logic allowed;
+
+        allowed = raw_valid && has_grant_space && (~write_urgent);
+        build_read_req.valid         = allowed;
+        build_read_req.urgent        = allowed && level_urgent;
+        build_read_req.high          = 1'b0;
+        build_read_req.low_or_urgent = allowed && (level_low || level_urgent);
+        build_read_req.len           = burst_len;
+    endfunction
+
+    function automatic grant_t choose_pre_grant(
+        input rw_req_t wr,
+        input rw_req_t rd,
+        input logic    both_active
+    );
+        choose_pre_grant = GRANT_NONE;
+
+        if (wr.urgent) begin
+            choose_pre_grant = GRANT_WRITE;
+        end
+        else if (rd.urgent) begin
+            choose_pre_grant = GRANT_READ;
+        end
+        else if (both_active) begin
+            choose_pre_grant = GRANT_NONE;
+        end
+        else if (rd.valid) begin
+            choose_pre_grant = GRANT_READ;
+        end
+        else if (wr.valid) begin
+            choose_pre_grant = GRANT_WRITE;
+        end
+    endfunction
+
+    function automatic grant_t choose_fair_grant(
+        input rw_req_t wr,
+        input rw_req_t rd,
+        input logic    last_wr,
+        input logic    last_rd
+    );
+        choose_fair_grant = GRANT_NONE;
+
+        if (wr.urgent) begin
+            choose_fair_grant = GRANT_WRITE;
+        end
+        else if (rd.low_or_urgent) begin
+            choose_fair_grant = GRANT_READ;
+        end
+        else if (wr.high && (~last_wr)) begin
+            choose_fair_grant = GRANT_WRITE;
+        end
+        else if (wr.valid && (~last_wr)) begin
+            choose_fair_grant = GRANT_WRITE;
+        end
+        else if (rd.valid && (~last_rd)) begin
+            choose_fair_grant = GRANT_READ;
+        end
+        else if (wr.valid) begin
+            choose_fair_grant = GRANT_WRITE;
+        end
+        else if (rd.valid) begin
+            choose_fair_grant = GRANT_READ;
+        end
+    endfunction
+
+    // Debug-only ILA counters.
+    // Keep this section at the end so release builds can remove/comment it as one block.
+    logic dbg_cnt_reset;
+    logic dbg_wr_no_service;
+    logic dbg_rd_no_service;
+    logic dbg_replay_block;
+    logic dbg_aw_wait;
+    logic dbg_w_wait;
+    logic dbg_b_wait;
+    logic dbg_ar_wait;
+    logic dbg_r_data_wait;
+
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_no_service_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_rd_no_service_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_replay_block_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_replay_block_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_aw_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_aw_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_w_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_w_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_b_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_b_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_ar_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_ar_wait_max;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_r_data_wait_cur;
+    (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_r_data_wait_max;
+
+    assign dbg_cnt_reset      = ui_clk_sync_rst || rst_local_t_ddr_clk ||
+                                make_data_on_edge || (~init_calib_complete);
+    assign dbg_wr_no_service  = ddr_wr_req && (~write_data_fire);
+    assign dbg_rd_no_service  = ddr_rd_req_qual && (~read_data_fire);
+    assign dbg_replay_block   = block_for_replay;
+    assign dbg_aw_wait        = m_axi_awvalid && (~m_axi_awready);
+    assign dbg_w_wait         = m_axi_wvalid && (~m_axi_wready);
+    assign dbg_b_wait         = m_axi_bready && (~m_axi_bvalid);
+    assign dbg_ar_wait        = m_axi_arvalid && (~m_axi_arready);
+    assign dbg_r_data_wait    = (rw_state == RW_READ_R) && (~m_axi_rvalid) && (~rd_fifo_full);
+
+    axi_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_wr_no_service (
+        .clk    (ui_clk),
+        .rst    (dbg_cnt_reset),
+        .active (dbg_wr_no_service),
+        .cur    (dbg_wr_no_service_cur),
+        .max    (dbg_wr_no_service_max)
+    );
+
+    axi_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_rd_no_service (
+        .clk    (ui_clk),
+        .rst    (dbg_cnt_reset),
+        .active (dbg_rd_no_service),
+        .cur    (dbg_rd_no_service_cur),
+        .max    (dbg_rd_no_service_max)
+    );
+
+    axi_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_replay_block (
+        .clk    (ui_clk),
+        .rst    (dbg_cnt_reset),
+        .active (dbg_replay_block),
+        .cur    (dbg_replay_block_cur),
+        .max    (dbg_replay_block_max)
+    );
+
+    axi_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_aw_wait (
+        .clk    (ui_clk),
+        .rst    (dbg_cnt_reset),
+        .active (dbg_aw_wait),
+        .cur    (dbg_aw_wait_cur),
+        .max    (dbg_aw_wait_max)
+    );
+
+    axi_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_w_wait (
+        .clk    (ui_clk),
+        .rst    (dbg_cnt_reset),
+        .active (dbg_w_wait),
+        .cur    (dbg_w_wait_cur),
+        .max    (dbg_w_wait_max)
+    );
+
+    axi_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_b_wait (
+        .clk    (ui_clk),
+        .rst    (dbg_cnt_reset),
+        .active (dbg_b_wait),
+        .cur    (dbg_b_wait_cur),
+        .max    (dbg_b_wait_max)
+    );
+
+    axi_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_ar_wait (
+        .clk    (ui_clk),
+        .rst    (dbg_cnt_reset),
+        .active (dbg_ar_wait),
+        .cur    (dbg_ar_wait_cur),
+        .max    (dbg_ar_wait_max)
+    );
+
+    axi_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_r_data_wait (
+        .clk    (ui_clk),
+        .rst    (dbg_cnt_reset),
+        .active (dbg_r_data_wait),
+        .cur    (dbg_r_data_wait_cur),
+        .max    (dbg_r_data_wait_max)
+    );
+
+endmodule
+
+module axi_dbg_streak_counter #(
+    parameter int CNT_WIDTH = 32
+) (
+    input  logic                 clk,
+    input  logic                 rst,
+    input  logic                 active,
+    output logic [CNT_WIDTH-1:0] cur,
+    output logic [CNT_WIDTH-1:0] max
+);
+
+    logic [CNT_WIDTH-1:0] next_cur;
+
+    assign next_cur = (&cur) ? cur : (cur + {{(CNT_WIDTH-1){1'b0}}, 1'b1});
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            cur <= '0;
+            max <= '0;
+        end
+        else if (active) begin
+            cur <= next_cur;
+            if (next_cur > max) begin
+                max <= next_cur;
+            end
+        end
+        else begin
+            cur <= '0;
+        end
+    end
 
 endmodule
