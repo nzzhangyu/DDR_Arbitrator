@@ -160,13 +160,10 @@ module user_rw_cmd_gen #(
     assign wr_level_urgent       = wr_fifo_rd_data_count >= WR_LEVEL_URGENT;
     assign wr_has_full_burst     = ~wr_fifo_prog_empty;
     
-    assign rd_level_urgent       = rd_fifo_almost_empty |
-                                    (rd_fifo_data_count <= RD_LEVEL_URGENT);
+    assign rd_level_urgent       = rd_fifo_almost_empty | (rd_fifo_data_count <= RD_LEVEL_URGENT);
     assign rd_level_low          = rd_fifo_data_count <= RD_LEVEL_LOW;
     assign rd_fifo_free_count    = {1'b0, RD_FIFO_DEPTH} - {1'b0, rd_fifo_data_count};
-    assign rd_fifo_can_prefetch  = (~rd_fifo_prog_full) &
-                                    (~rd_fifo_full) &
-                                    (rd_fifo_data_count < RD_LEVEL_HIGH);
+    assign rd_fifo_can_prefetch  = (~rd_fifo_prog_full) & (~rd_fifo_full) & (rd_fifo_data_count < RD_LEVEL_HIGH);
 
     // Request gating.
     logic ddr_wr_req;
@@ -175,8 +172,7 @@ module user_rw_cmd_gen #(
     logic ddr_rd_req_qual;
 
     // Full group or aged tail.
-    assign ddr_wr_req = wr_fifo_valid &
-                        (wr_has_full_burst | wr_tail_age_reached);
+    assign ddr_wr_req = wr_fifo_valid & (wr_has_full_burst | wr_tail_age_reached);
 
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk) begin
@@ -242,8 +238,7 @@ module user_rw_cmd_gen #(
 
     // Read service budget.
     assign rd_service_limit = wr_level_high ? RD_SERVICE_WR_HIGH : RD_SERVICE_MAX;
-    assign rd_available_len = (|ddr_rd_avail_count[ADDR_WIDTH:9]) ?
-                                RD_SERVICE_MAX : ddr_rd_avail_count[9:0];
+    assign rd_available_len = (|ddr_rd_avail_count[ADDR_WIDTH:9]) ? RD_SERVICE_MAX : ddr_rd_avail_count[9:0];
     assign rd_fifo_has_grant_space = (~rd_fifo_full) && (rd_fifo_free_count != 0);
     // Replay blocks arbitration.
     assign block_for_replay = rp_back_en || (|rp_back_en_dly_cnt);
@@ -325,7 +320,7 @@ module user_rw_cmd_gen #(
                             default: begin
                                 // Use fair grant.
                                 if (both_rw_req) begin
-                                rw_next_state = RW_ARB;
+                                    rw_next_state = RW_ARB;
                                 end
                             end
                         endcase
@@ -800,37 +795,5 @@ module user_rw_cmd_gen #(
         .cur    (dbg_rd_data_wait_cur),
         .max    (dbg_rd_data_wait_max)
     );
-
-endmodule
-
-module native_dbg_streak_counter #(
-    parameter int CNT_WIDTH = 32
-) (
-    input  logic                 clk,
-    input  logic                 rst,
-    input  logic                 active,
-    output logic [CNT_WIDTH-1:0] cur,
-    output logic [CNT_WIDTH-1:0] max
-);
-
-    logic [CNT_WIDTH-1:0] next_cur;
-
-    assign next_cur = (&cur) ? cur : (cur + {{(CNT_WIDTH-1){1'b0}}, 1'b1});
-
-    always_ff @(posedge clk) begin
-        if (rst) begin
-            cur <= '0;
-            max <= '0;
-        end
-        else if (active) begin
-            cur <= next_cur;
-            if (next_cur > max) begin
-                max <= next_cur;
-            end
-        end
-        else begin
-            cur <= '0;
-        end
-    end
 
 endmodule
