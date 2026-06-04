@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="900" viewBox="0 0 1180 900">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 24px Arial, "Microsoft YaHei", sans-serif; fill: #0f172a; }
+      .head { font: 700 18px Arial, "Microsoft YaHei", sans-serif; fill: #334155; }
+      .node { font: 700 15px Consolas, "Microsoft YaHei", monospace; fill: #0f172a; }
+      .small { font: 13px Arial, "Microsoft YaHei", sans-serif; fill: #334155; }
+      .line { stroke: #334155; stroke-width: 1.8; fill: none; marker-end: url(#arrow); }
+      .soft { stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; marker-end: url(#arrow); }
+      .arb { fill: #e7f0ff; stroke: #2563eb; stroke-width: 2; }
+      .gate { fill: #f8fafc; stroke: #64748b; stroke-width: 1.8; stroke-dasharray: 5 4; }
+      .write { fill: #fff1e6; stroke: #f97316; stroke-width: 2; }
+      .read { fill: #e8f8ef; stroke: #16a34a; stroke-width: 2; }
+      .preempt { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <text x="590" y="36" text-anchor="middle" class="title">Native user_rw_cmd_gen 调度状态图</text>
+  <text x="180" y="82" text-anchor="middle" class="head">写事务</text>
+  <text x="590" y="82" text-anchor="middle" class="head">仲裁主干（自上而下为优先级）</text>
+  <text x="1000" y="82" text-anchor="middle" class="head">读事务</text>
+
+  <!-- middle arbitration spine -->
+  <rect x="500" y="110" width="180" height="46" rx="8" class="arb"/>
+  <text x="590" y="139" text-anchor="middle" class="node">RW_IDLE</text>
+
+  <polygon points="590,185 700,225 590,265 480,225" class="gate"/>
+  <text x="590" y="218" text-anchor="middle" class="small">1. calibration</text>
+  <text x="590" y="236" text-anchor="middle" class="small">ready?</text>
+
+  <polygon points="590,292 700,332 590,372 480,332" class="gate"/>
+  <text x="590" y="325" text-anchor="middle" class="small">2. replay</text>
+  <text x="590" y="343" text-anchor="middle" class="small">block?</text>
+
+  <rect x="500" y="400" width="180" height="46" rx="8" class="arb"/>
+  <text x="590" y="429" text-anchor="middle" class="node">RW_ARB_PRE</text>
+
+  <polygon points="590,475 700,515 590,555 480,515" class="gate"/>
+  <text x="590" y="509" text-anchor="middle" class="small">3. wr urgent?</text>
+
+  <polygon points="590,580 700,620 590,660 480,620" class="gate"/>
+  <text x="590" y="614" text-anchor="middle" class="small">4. rd urgent?</text>
+
+  <polygon points="590,685 700,725 590,765 480,725" class="gate"/>
+  <text x="590" y="718" text-anchor="middle" class="small">5. both</text>
+  <text x="590" y="736" text-anchor="middle" class="small">rw req?</text>
+
+  <rect x="500" y="795" width="180" height="46" rx="8" class="arb"/>
+  <text x="590" y="824" text-anchor="middle" class="node">RW_ARB</text>
+
+  <!-- write column -->
+  <rect x="80" y="590" width="200" height="46" rx="8" class="write"/>
+  <text x="180" y="619" text-anchor="middle" class="node">RW_WRITE_REQ</text>
+
+  <!-- read column -->
+  <rect x="900" y="485" width="200" height="46" rx="8" class="read"/>
+  <text x="1000" y="514" text-anchor="middle" class="node">RW_READ_CMD</text>
+  <polygon points="1000,560 1120,600 1000,640 880,600" class="preempt"/>
+  <text x="1000" y="594" text-anchor="middle" class="small">wr urgent</text>
+  <text x="1000" y="612" text-anchor="middle" class="small">before app_rdy?</text>
+  <rect x="900" y="675" width="200" height="46" rx="8" class="read"/>
+  <text x="1000" y="704" text-anchor="middle" class="node">RW_READ_DATA</text>
+  <polygon points="1000,750 1120,790 1000,830 880,790" class="preempt"/>
+  <text x="1000" y="784" text-anchor="middle" class="small">service</text>
+  <text x="1000" y="802" text-anchor="middle" class="small">continues?</text>
+
+  <!-- spine arrows -->
+  <path d="M590 156 L590 184" class="line"/>
+  <path d="M590 265 L590 292" class="line"/>
+  <path d="M590 372 L590 400" class="line"/>
+  <path d="M590 446 L590 475" class="line"/>
+  <path d="M590 555 L590 580" class="line"/>
+  <path d="M590 660 L590 685" class="line"/>
+  <path d="M590 765 L590 795" class="line"/>
+
+  <!-- no/block loops -->
+  <path d="M480 225 C410 225 410 132 500 132" class="soft"/>
+  <text x="418" y="210" class="small">no</text>
+  <path d="M480 332 C390 332 390 132 500 132" class="soft"/>
+  <text x="408" y="316" class="small">yes</text>
+
+  <!-- grants -->
+  <path d="M480 515 C350 515 280 560 210 590" class="line"/>
+  <text x="336" y="508" class="small">yes</text>
+  <path d="M700 620 C815 620 900 540 968 531" class="line"/>
+  <text x="795" y="604" class="small">yes</text>
+  <path d="M500 818 C375 818 275 680 200 636" class="line"/>
+  <text x="330" y="802" class="small">fair write</text>
+  <path d="M680 818 C815 818 890 600 960 531" class="line"/>
+  <text x="812" y="802" class="small">fair read</text>
+  <path d="M480 725 C370 725 280 670 220 636" class="line"/>
+  <text x="320" y="710" class="small">single write</text>
+  <path d="M700 725 C790 725 890 590 960 531" class="line"/>
+  <text x="806" y="706" class="small">single read</text>
+
+  <!-- write return -->
+  <path d="M280 613 C380 613 445 435 500 423" class="line"/>
+  <text x="322" y="604" class="small">write done</text>
+
+  <!-- read path -->
+  <path d="M1000 531 L1000 559" class="line"/>
+  <path d="M880 600 C790 600 710 438 680 423" class="line"/>
+  <text x="806" y="590" class="small">yes</text>
+  <path d="M1000 640 L1000 675" class="line"/>
+  <text x="1014" y="662" class="small">cmd accepted</text>
+  <path d="M1000 721 L1000 750" class="line"/>
+  <path d="M880 790 C800 790 730 438 680 423" class="line"/>
+  <text x="806" y="780" class="small">done / wr urgent</text>
+  <path d="M1120 790 C1148 790 1148 510 1100 510" class="line"/>
+  <text x="1135" y="660" class="small">yes</text>
+
+  <text x="34" y="868" class="small">颜色：蓝色=仲裁状态，灰色虚线=优先级判断，橙色=写事务，绿色=读事务，黄色=读侧可被写 urgent 抢回/继续判断。</text>
+</svg>

@@ -169,40 +169,7 @@ RW_READ_R
 
 AXI 状态转移图：
 
-```mermaid
-stateDiagram-v2
-    [*] --> RW_IDLE
-
-    RW_IDLE --> RW_IDLE: block_for_replay / ~init_calib_complete
-    RW_IDLE --> RW_ARB_PRE: calibration done && !block_for_replay
-
-    RW_ARB_PRE --> RW_IDLE: block_for_replay
-    RW_ARB_PRE --> RW_WRITE_AW: wr_req.urgent or write-only grant
-    RW_ARB_PRE --> RW_READ_AR: rd_req.urgent or read-only grant
-    RW_ARB_PRE --> RW_ARB: both_rw_req without urgent grant
-    RW_ARB_PRE --> RW_ARB_PRE: no valid request
-
-    RW_ARB --> RW_WRITE_AW: fair grant write
-    RW_ARB --> RW_READ_AR: fair grant read
-    RW_ARB --> RW_ARB_PRE: no fair grant
-
-    RW_WRITE_AW --> RW_ARB_PRE: write_burst_len == 0
-    RW_WRITE_AW --> RW_WRITE_W: AW valid && AW ready
-    RW_WRITE_AW --> RW_WRITE_AW: wait AW ready
-
-    RW_WRITE_W --> RW_WRITE_B: last W beat fires
-    RW_WRITE_W --> RW_WRITE_W: stream W beats / wait W ready
-
-    RW_WRITE_B --> RW_ARB_PRE: B valid
-    RW_WRITE_B --> RW_WRITE_B: wait B response
-
-    RW_READ_AR --> RW_ARB_PRE: read_burst_len == 0 or no read FIFO grant space
-    RW_READ_AR --> RW_READ_R: AR valid && AR ready
-    RW_READ_AR --> RW_READ_AR: wait AR ready
-
-    RW_READ_R --> RW_ARB_PRE: R beat fires with RLAST
-    RW_READ_R --> RW_READ_R: accept R beats / wait R valid
-```
+![AXI user_rw_cmd_gen 调度状态图](docs/images/user_rw_cmd_gen_axi_schedule.svg)
 
 AXI 版事务边界的优先级特点：
 
@@ -274,37 +241,7 @@ RW_READ_DATA
 
 Native 状态转移图：
 
-```mermaid
-stateDiagram-v2
-    [*] --> RW_IDLE
-
-    RW_IDLE --> RW_IDLE: block_for_replay / ~init_calib_complete
-    RW_IDLE --> RW_ARB_PRE: calibration done && !block_for_replay
-
-    RW_ARB_PRE --> RW_IDLE: block_for_replay
-    RW_ARB_PRE --> RW_WRITE_REQ: wr_req.urgent or write-only grant
-    RW_ARB_PRE --> RW_READ_CMD: rd_req.urgent or read-only grant
-    RW_ARB_PRE --> RW_ARB: both_rw_req without urgent grant
-    RW_ARB_PRE --> RW_ARB_PRE: no valid request
-
-    RW_ARB --> RW_WRITE_REQ: fair grant write
-    RW_ARB --> RW_READ_CMD: fair grant read
-    RW_ARB --> RW_ARB_PRE: no fair grant
-
-    RW_WRITE_REQ --> RW_ARB_PRE: write_burst_len == 0 or !wr_fifo_valid
-    RW_WRITE_REQ --> RW_ARB_PRE: last native write beat fires
-    RW_WRITE_REQ --> RW_WRITE_REQ: wait app_rdy/app_wdf_rdy or continue write beats
-
-    RW_READ_CMD --> RW_ARB_PRE: read_burst_len == 0 or no read FIFO space
-    RW_READ_CMD --> RW_ARB_PRE: wr_level_urgent before command accepted
-    RW_READ_CMD --> RW_READ_DATA: app_en && app_rdy
-    RW_READ_CMD --> RW_READ_CMD: wait app_rdy
-
-    RW_READ_DATA --> RW_ARB_PRE: read data fires and service done
-    RW_READ_DATA --> RW_ARB_PRE: read data fires and wr_level_urgent
-    RW_READ_DATA --> RW_READ_CMD: read data fires and service continues
-    RW_READ_DATA --> RW_READ_DATA: wait app_rd_data_valid
-```
+![Native user_rw_cmd_gen 调度状态图](docs/images/user_rw_cmd_gen_native_schedule.svg)
 
 Native 版事务边界的优先级特点：
 

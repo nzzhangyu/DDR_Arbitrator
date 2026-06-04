@@ -60,7 +60,7 @@ module user_rw_cmd_gen #(
     localparam logic [13:0] RD_FIFO_DEPTH     = 14'd16383;
 
     localparam logic [9:0]  RD_SERVICE_MAX     = 10'd512;
-    localparam logic [9:0]  RD_SERVICE_WR_HIGH = 10'd128;
+    localparam logic [11:0] RD_WAIT_AGE_LIMIT  = 12'd2048;
 
     localparam logic [2:0]  APP_CMD_WRITE     = 3'b000;
     localparam logic [2:0]  APP_CMD_READ      = 3'b001;
@@ -129,6 +129,7 @@ module user_rw_cmd_gen #(
     logic [10:0] wr_tail_age_cnt;
     logic        wr_tail_age_reached;
     logic        clr_wr_wait_age;
+    logic        clr_rd_wait_age;
 
     // Partial-write aging.
     localparam logic [10:0] WR_TAIL_AGE_LIMIT = 11'd1024;
@@ -236,10 +237,10 @@ module user_rw_cmd_gen #(
     logic       block_for_replay;
     logic       rd_fifo_has_grant_space;
 
-    // Read service budget.
-    assign rd_service_limit = wr_level_high ? RD_SERVICE_WR_HIGH : RD_SERVICE_MAX;
+    // Keep the read service window fixed; FIFO space is only a hard gate.
+    assign rd_service_limit = RD_SERVICE_MAX;
     assign rd_available_len = (|ddr_rd_avail_count[ADDR_WIDTH:9]) ? RD_SERVICE_MAX : ddr_rd_avail_count[9:0];
-    assign rd_fifo_has_grant_space = (~rd_fifo_full) && (rd_fifo_free_count != 0);
+    assign rd_fifo_has_grant_space = rd_fifo_free_count >= {5'd0, RD_SERVICE_MAX};
     // Replay blocks arbitration.
     assign block_for_replay = rp_back_en || (|rp_back_en_dly_cnt);
 
@@ -250,6 +251,22 @@ module user_rw_cmd_gen #(
 
     grant_t arb_pre_grant;      // Pre-arbitration grant.
     grant_t arb_fair_grant;     // Fair grant.
+    logic [11:0] rd_wait_age_cnt;
+    logic        rd_wait_age_reached;
+
+    assign rd_wait_age_reached = (rd_wait_age_cnt >= RD_WAIT_AGE_LIMIT);
+
+    always_ff @(posedge ui_clk) begin
+        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
+            rd_wait_age_cnt <= '0;
+        end
+        else if (clr_rd_wait_age || read_data_fire || (~ddr_rd_req_qual)) begin
+            rd_wait_age_cnt <= '0;
+        end
+        else if (rd_wait_age_cnt < RD_WAIT_AGE_LIMIT) begin
+            rd_wait_age_cnt <= rd_wait_age_cnt + 12'd1;
+        end
+    end
 
     assign wr_req = build_write_req(ddr_wr_req,
                                     wr_level_urgent,
@@ -265,7 +282,8 @@ module user_rw_cmd_gen #(
                                                        rd_service_limit));
     assign both_rw_req    = wr_req.valid && ddr_rd_req_qual;
     assign arb_pre_grant  = choose_pre_grant(wr_req, rd_req, both_rw_req);
-    assign arb_fair_grant = choose_fair_grant(wr_req, rd_req, last_was_wr, last_was_rd);
+    assign arb_fair_grant = choose_fair_grant(wr_req, rd_req, rd_wait_age_reached,
+                                              last_was_wr, last_was_rd);
 
     // RW arbitration FSM.
     rw_state_t rw_state;
@@ -287,6 +305,7 @@ module user_rw_cmd_gen #(
         set_last_rd        = 1'b0;
         clr_last_grant     = 1'b0;
         clr_wr_wait_age    = 1'b0;
+        clr_rd_wait_age    = 1'b0;
 
         if (~init_calib_complete) begin
             rw_next_state   = RW_IDLE;
@@ -315,6 +334,7 @@ module user_rw_cmd_gen #(
                             GRANT_READ: begin
                                 rw_next_state  = RW_READ_CMD;
                                 clr_last_grant = 1'b1;
+                                clr_rd_wait_age = 1'b1;
                             end
 
                             default: begin
@@ -337,6 +357,7 @@ module user_rw_cmd_gen #(
                         GRANT_READ: begin
                             rw_next_state = RW_READ_CMD;
                             set_last_rd   = 1'b1;
+                            clr_rd_wait_age = 1'b1;
                         end
 
                         default: begin
@@ -663,6 +684,7 @@ module user_rw_cmd_gen #(
     function automatic grant_t choose_fair_grant(
         input rw_req_t wr,
         input rw_req_t rd,
+        input logic    rd_wait_aged,
         input logic    last_wr,
         input logic    last_rd
     );
@@ -671,16 +693,16 @@ module user_rw_cmd_gen #(
         if (wr.urgent) begin
             choose_fair_grant = GRANT_WRITE;
         end
+        else if (rd.urgent) begin
+            choose_fair_grant = GRANT_READ;
+        end
+        else if (wr.high) begin
+            choose_fair_grant = GRANT_WRITE;
+        end
         else if (rd.low_or_urgent) begin
             choose_fair_grant = GRANT_READ;
         end
-        else if (wr.high && (~last_wr)) begin
-            choose_fair_grant = GRANT_WRITE;
-        end
-        else if (wr.valid && (~last_wr)) begin
-            choose_fair_grant = GRANT_WRITE;
-        end
-        else if (rd.valid && (~last_rd)) begin
+        else if (rd.valid && rd_wait_aged) begin
             choose_fair_grant = GRANT_READ;
         end
         else if (wr.valid) begin
