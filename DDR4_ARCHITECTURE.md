@@ -63,15 +63,15 @@
 
 主要水位阈值保持一致：
 
-- `WR_LEVEL_HIGH = 8192`
 - `WR_LEVEL_URGENT = 12288`
 - `RD_LEVEL_URGENT = 4096`
-- `RD_LEVEL_LOW = 8192`
 - `RD_LEVEL_HIGH = 12288`
 
-`WR_LEVEL_HIGH` 在写 FIFO 压力高时缩短读服务，让写侧更快回到仲裁；
-`WR_LEVEL_URGENT` 在写 FIFO 紧急时禁止普通读并强制优先写。读侧水位
-继续用于低水位及时预取和高水位停止预取。
+`WR_LEVEL_URGENT` 在写 FIFO 紧急时禁止普通读并强制优先写。普通写需要
+写 FIFO 有完整 `WR_BURST_NUM` 或尾部 aging 到期后参与仲裁。读侧水位用于紧急补读和高水位停止预取。
+当前 RTL 的读服务窗口固定：
+AXI 版本为 256 beat，native 版本为 512 beat。
+调度器采用单一 Grant 判断，普通场景写优先；读侧只有 urgent 或等待老化到期时才高于普通写。
 
 ## 4. AXI 与 Native 边界
 

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="900" viewBox="0 0 1180 900">
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1020" viewBox="0 0 1180 1020">
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
       <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
@@ -19,91 +19,91 @@
 
   <text x="590" y="36" text-anchor="middle" class="title">AXI user_rw_cmd_gen 调度状态图</text>
   <text x="180" y="82" text-anchor="middle" class="head">写事务</text>
-  <text x="590" y="82" text-anchor="middle" class="head">仲裁主干（自上而下为优先级）</text>
+  <text x="590" y="82" text-anchor="middle" class="head">仲裁主干：自上而下为优先级</text>
   <text x="1000" y="82" text-anchor="middle" class="head">读事务</text>
 
-  <!-- middle arbitration spine -->
+  <!-- arbitration spine -->
   <rect x="500" y="110" width="180" height="46" rx="8" class="arb"/>
   <text x="590" y="139" text-anchor="middle" class="node">RW_IDLE</text>
 
-  <polygon points="590,185 700,225 590,265 480,225" class="gate"/>
-  <text x="590" y="218" text-anchor="middle" class="small">1. calibration</text>
-  <text x="590" y="236" text-anchor="middle" class="small">ready?</text>
+  <polygon points="590,182 710,222 590,262 470,222" class="gate"/>
+  <text x="590" y="216" text-anchor="middle" class="small">1. calib / reset</text>
+  <text x="590" y="234" text-anchor="middle" class="small">blocked?</text>
 
-  <polygon points="590,292 700,332 590,372 480,332" class="gate"/>
-  <text x="590" y="325" text-anchor="middle" class="small">2. replay</text>
-  <text x="590" y="343" text-anchor="middle" class="small">block?</text>
+  <polygon points="590,292 710,332 590,372 470,332" class="gate"/>
+  <text x="590" y="326" text-anchor="middle" class="small">2. replay</text>
+  <text x="590" y="344" text-anchor="middle" class="small">blocked?</text>
 
-  <rect x="500" y="400" width="180" height="46" rx="8" class="arb"/>
-  <text x="590" y="429" text-anchor="middle" class="node">RW_ARB_PRE</text>
+  <rect x="500" y="402" width="180" height="46" rx="8" class="arb"/>
+  <text x="590" y="431" text-anchor="middle" class="node">RW_ARB</text>
 
-  <polygon points="590,475 700,515 590,555 480,515" class="gate"/>
-  <text x="590" y="509" text-anchor="middle" class="small">3. wr urgent?</text>
+  <polygon points="590,476 710,516 590,556 470,516" class="gate"/>
+  <text x="590" y="510" text-anchor="middle" class="small">3. wr urgent?</text>
+  <text x="590" y="528" text-anchor="middle" class="small">GRANT_WRITE</text>
 
-  <polygon points="590,580 700,620 590,660 480,620" class="gate"/>
-  <text x="590" y="614" text-anchor="middle" class="small">4. rd urgent?</text>
+  <polygon points="590,586 710,626 590,666 470,626" class="gate"/>
+  <text x="590" y="620" text-anchor="middle" class="small">4. rd urgent?</text>
+  <text x="590" y="638" text-anchor="middle" class="small">GRANT_READ</text>
 
-  <polygon points="590,685 700,725 590,765 480,725" class="gate"/>
-  <text x="590" y="718" text-anchor="middle" class="small">5. both</text>
-  <text x="590" y="736" text-anchor="middle" class="small">rw req?</text>
+  <polygon points="590,696 710,736 590,776 470,736" class="gate"/>
+  <text x="590" y="730" text-anchor="middle" class="small">5. rd aged?</text>
+  <text x="590" y="748" text-anchor="middle" class="small">GRANT_READ</text>
 
-  <rect x="500" y="795" width="180" height="46" rx="8" class="arb"/>
-  <text x="590" y="824" text-anchor="middle" class="node">RW_ARB</text>
+  <polygon points="590,806 710,846 590,886 470,846" class="gate"/>
+  <text x="590" y="840" text-anchor="middle" class="small">6. wr valid?</text>
+  <text x="590" y="858" text-anchor="middle" class="small">GRANT_WRITE</text>
+
+  <polygon points="590,906 710,946 590,986 470,946" class="gate"/>
+  <text x="590" y="940" text-anchor="middle" class="small">7. rd valid?</text>
+  <text x="590" y="958" text-anchor="middle" class="small">GRANT_READ</text>
 
   <!-- write column -->
-  <rect x="80" y="485" width="200" height="46" rx="8" class="write"/>
-  <text x="180" y="514" text-anchor="middle" class="node">RW_WRITE_AW</text>
-  <rect x="80" y="590" width="200" height="46" rx="8" class="write"/>
-  <text x="180" y="619" text-anchor="middle" class="node">RW_WRITE_W</text>
-  <rect x="80" y="695" width="200" height="46" rx="8" class="write"/>
-  <text x="180" y="724" text-anchor="middle" class="node">RW_WRITE_B</text>
+  <rect x="80" y="500" width="200" height="46" rx="8" class="write"/>
+  <text x="180" y="529" text-anchor="middle" class="node">RW_WRITE_AW</text>
+  <rect x="80" y="610" width="200" height="46" rx="8" class="write"/>
+  <text x="180" y="639" text-anchor="middle" class="node">RW_WRITE_W</text>
+  <rect x="80" y="720" width="200" height="46" rx="8" class="write"/>
+  <text x="180" y="749" text-anchor="middle" class="node">RW_WRITE_B</text>
 
   <!-- read column -->
-  <rect x="900" y="590" width="200" height="46" rx="8" class="read"/>
-  <text x="1000" y="619" text-anchor="middle" class="node">RW_READ_AR</text>
-  <rect x="900" y="695" width="200" height="46" rx="8" class="read"/>
-  <text x="1000" y="724" text-anchor="middle" class="node">RW_READ_R</text>
+  <rect x="900" y="610" width="200" height="46" rx="8" class="read"/>
+  <text x="1000" y="639" text-anchor="middle" class="node">RW_READ_AR</text>
+  <rect x="900" y="720" width="200" height="46" rx="8" class="read"/>
+  <text x="1000" y="749" text-anchor="middle" class="node">RW_READ_R</text>
 
   <!-- spine arrows -->
-  <path d="M590 156 L590 184" class="line"/>
-  <path d="M590 265 L590 292" class="line"/>
-  <path d="M590 372 L590 400" class="line"/>
-  <path d="M590 446 L590 475" class="line"/>
-  <path d="M590 555 L590 580" class="line"/>
-  <path d="M590 660 L590 685" class="line"/>
-  <path d="M590 765 L590 795" class="line"/>
+  <path d="M590 156 L590 182" class="line"/>
+  <path d="M590 262 L590 292" class="line"/>
+  <path d="M590 372 L590 402" class="line"/>
+  <path d="M590 448 L590 476" class="line"/>
+  <path d="M590 556 L590 586" class="line"/>
+  <path d="M590 666 L590 696" class="line"/>
+  <path d="M590 776 L590 806" class="line"/>
+  <path d="M590 886 L590 906" class="line"/>
 
-  <!-- no/block loops -->
-  <path d="M480 225 C410 225 410 132 500 132" class="soft"/>
-  <text x="418" y="210" class="small">no</text>
-  <path d="M480 332 C390 332 390 132 500 132" class="soft"/>
-  <text x="408" y="316" class="small">yes</text>
+  <!-- blocked/no-request loops -->
+  <path d="M470 222 C400 222 400 133 500 133" class="soft"/>
+  <text x="407" y="208" class="small">yes</text>
+  <path d="M470 332 C385 332 385 133 500 133" class="soft"/>
+  <text x="398" y="318" class="small">yes</text>
+  <path d="M710 946 C770 946 770 425 680 425" class="soft"/>
+  <text x="733" y="930" class="small">no request</text>
 
-  <!-- grants -->
-  <path d="M480 515 L280 508" class="line"/>
-  <text x="350" y="494" class="small">yes</text>
-  <path d="M700 620 L900 613" class="line"/>
-  <text x="790" y="602" class="small">yes</text>
-  <path d="M500 818 C365 818 250 760 200 741" class="line"/>
-  <text x="332" y="802" class="small">fair write</text>
-  <path d="M680 818 C815 818 920 760 982 741" class="line"/>
-  <text x="812" y="802" class="small">fair read</text>
-  <path d="M480 725 C380 725 280 620 230 531" class="line"/>
-  <text x="322" y="664" class="small">single write</text>
-  <path d="M700 725 C790 725 900 665 960 636" class="line"/>
-  <text x="806" y="706" class="small">single read</text>
+  <!-- grants to write/read columns -->
+  <path d="M470 516 C380 516 360 523 280 523" class="line"/>
+  <path d="M470 846 C380 846 350 523 280 523" class="line"/>
+  <path d="M710 626 C790 626 820 633 900 633" class="line"/>
+  <path d="M710 736 C790 736 820 633 900 633" class="line"/>
+  <path d="M710 946 C820 946 840 633 900 633" class="line"/>
 
-  <!-- transaction arrows -->
-  <path d="M180 531 L180 590" class="line"/>
-  <text x="194" y="566" class="small">AW accepted</text>
-  <path d="M180 636 L180 695" class="line"/>
-  <text x="194" y="671" class="small">last W</text>
-  <path d="M280 718 C380 718 445 435 500 423" class="line"/>
-  <text x="324" y="711" class="small">B valid</text>
-  <path d="M1000 636 L1000 695" class="line"/>
-  <text x="1014" y="671" class="small">AR accepted</text>
-  <path d="M900 718 C800 718 716 435 680 423" class="line"/>
-  <text x="824" y="711" class="small">RLAST</text>
+  <!-- write transaction -->
+  <path d="M180 546 L180 610" class="line"/>
+  <path d="M180 656 L180 720" class="line"/>
+  <path d="M280 743 C405 743 430 425 500 425" class="line"/>
+  <text x="286" y="706" class="small">B done</text>
 
-  <text x="34" y="868" class="small">颜色：蓝色=仲裁状态，灰色虚线=优先级判断，橙色=写事务，绿色=读事务。</text>
+  <!-- read transaction -->
+  <path d="M1000 656 L1000 720" class="line"/>
+  <path d="M900 743 C780 743 740 425 680 425" class="line"/>
+  <text x="812" y="706" class="small">RLAST</text>
 </svg>
