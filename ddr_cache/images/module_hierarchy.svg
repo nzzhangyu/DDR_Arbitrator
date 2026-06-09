@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #0f172a; }
+      .title { font-size: 24px; font-weight: 700; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 1.5; rx: 10; }
+      .top { fill: #e0f2fe; stroke: #0369a1; }
+      .sub { fill: #ecfdf5; stroke: #047857; }
+      .note { font-size: 13px; fill: #475569; }
+      .name { font-size: 16px; font-weight: 700; }
+      .line { stroke: #334155; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <text x="40" y="42" class="title">ddr_cache 代码层级</text>
+
+  <rect x="340" y="75" width="420" height="72" class="box top"/>
+  <text x="550" y="105" text-anchor="middle" class="name">ddr_cache_and_frame_gen</text>
+  <text x="550" y="128" text-anchor="middle" class="note">目录级顶层：连接 DDR 读控制、Aurora 发送和回退重传</text>
+
+  <rect x="70" y="220" width="240" height="68" class="box"/>
+  <text x="190" y="248" text-anchor="middle" class="name">rd_cache_ctrl</text>
+  <text x="190" y="270" text-anchor="middle" class="note">DDR 读请求与 view 进度</text>
+
+  <rect x="380" y="205" width="340" height="88" class="box sub"/>
+  <text x="550" y="240" text-anchor="middle" class="name">aurora_tx_top</text>
+  <text x="550" y="264" text-anchor="middle" class="note">Aurora 发送侧顶层</text>
+
+  <rect x="790" y="220" width="250" height="68" class="box"/>
+  <text x="915" y="248" text-anchor="middle" class="name">commok_check</text>
+  <text x="915" y="270" text-anchor="middle" class="note">通信确认 / refresh / 回退</text>
+
+  <rect x="380" y="330" width="250" height="58" class="box"/>
+  <text x="505" y="354" text-anchor="middle" class="name">aurora_frame_fifo</text>
+  <text x="505" y="374" text-anchor="middle" class="note">DDR 数据异步 FIFO</text>
+
+  <rect x="670" y="330" width="250" height="58" class="box"/>
+  <text x="795" y="354" text-anchor="middle" class="name">trans_frame_type_ctrl</text>
+  <text x="795" y="374" text-anchor="middle" class="note">normal / idle 模式选择</text>
+
+  <rect x="90" y="440" width="250" height="58" class="box"/>
+  <text x="215" y="464" text-anchor="middle" class="name">aurora_tx_frame</text>
+  <text x="215" y="484" text-anchor="middle" class="note">帧状态机与 TX 控制</text>
+
+  <rect x="380" y="440" width="250" height="58" class="box"/>
+  <text x="505" y="464" text-anchor="middle" class="name">idle_frame_gen</text>
+  <text x="505" y="484" text-anchor="middle" class="note">idle payload 与 CRC 生成</text>
+
+  <rect x="670" y="440" width="250" height="58" class="box"/>
+  <text x="795" y="464" text-anchor="middle" class="name">crc_chk</text>
+  <text x="795" y="484" text-anchor="middle" class="note">发送侧 CRC 检查</text>
+
+  <rect x="70" y="330" width="240" height="58" class="box"/>
+  <text x="190" y="354" text-anchor="middle" class="name">cross_clk_pulse</text>
+  <text x="190" y="374" text-anchor="middle" class="note">跨时钟域脉冲同步</text>
+
+  <path d="M470 147 C420 175, 310 180, 230 220" class="line"/>
+  <path d="M550 147 C550 170, 550 182, 550 205" class="line"/>
+  <path d="M690 147 C750 175, 840 182, 900 220" class="line"/>
+  <path d="M340 112 C175 112, 38 178, 38 360 C38 360, 54 360, 70 360" class="line"/>
+
+  <path d="M485 293 C470 312, 462 320, 462 330" class="line"/>
+  <path d="M610 293 C650 314, 690 322, 710 330" class="line"/>
+  <path d="M430 293 C365 360, 285 392, 245 440" class="line"/>
+  <path d="M550 293 C550 345, 530 390, 520 440" class="line"/>
+  <path d="M685 293 C735 350, 760 392, 795 440" class="line"/>
+</svg>

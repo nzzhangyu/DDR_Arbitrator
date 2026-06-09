@@ -17,32 +17,7 @@
 
 当前 `ddr_cache` 目录的主要层级如下：
 
-```mermaid
-flowchart TB
-    top["ddr_cache_and_frame_gen<br/>ddr_cache 目录级顶层"]
-
-    rd["rd_cache_ctrl<br/>DDR 读请求与 view 进度控制"]
-    aurora_top["aurora_tx_top<br/>Aurora 发送侧顶层"]
-    comm["commok_check<br/>通信确认、refresh、回退控制"]
-    cdc["cross_clk_pulse<br/>跨时钟域脉冲同步"]
-
-    fifo["aurora_frame_fifo / aurora_frame_fifo_32<br/>DDR 数据异步 FIFO"]
-    type_ctrl["trans_frame_type_ctrl<br/>normal / idle 模式选择"]
-    frame["aurora_tx_frame<br/>Aurora 帧状态机与 TX 控制"]
-    idle["idle_frame_gen / idle_frame_gen_32<br/>idle frame payload 生成"]
-    crc["crc_chk / crc_chk_32<br/>发送侧 CRC 检查"]
-
-    top --> rd
-    top --> aurora_top
-    top --> comm
-    top --> cdc
-
-    aurora_top --> fifo
-    aurora_top --> type_ctrl
-    aurora_top --> frame
-    aurora_top --> idle
-    aurora_top --> crc
-```
+![ddr_cache 代码层级](images/module_hierarchy.svg)
 
 其中 `ddr_cache_and_frame_gen.sv` 是目录级顶层，连接 DDR UI 时钟域、GTX/Aurora 时钟域、系统控制时钟域，以及外部 DDR 调度器和 Aurora TX 接口。
 
@@ -187,19 +162,7 @@ flowchart TB
 
 ### 5.1 normal view 发送
 
-```mermaid
-flowchart LR
-    ddr["DDR read data<br/>user_r_data / user_r_valid"]
-    top["aurora_tx_top<br/>数据重排与 FIFO 写入"]
-    fifo["aurora_frame_fifo<br/>ui_clk -> gtx_user_clk_in"]
-    frame["aurora_tx_frame<br/>header + slice frame 控制"]
-    tx["Aurora TX<br/>tx_sof_n / tx_eof_n / tx_src_rdy_n / tx_d"]
-
-    ddr --> top --> fifo --> frame --> tx
-
-    rd["rd_cache_ctrl<br/>ddr_rd_req"]
-    rd -.控制 DDR 读请求.-> ddr
-```
+![normal view 发送数据流](images/normal_view_flow.svg)
 
 流程说明：
 
@@ -212,16 +175,7 @@ flowchart LR
 
 ### 5.2 idle frame 发送
 
-```mermaid
-flowchart LR
-    mode["trans_frame_type_ctrl<br/>idle_process_en"]
-    idle_gen["idle_frame_gen<br/>生成 idle_data_out"]
-    frame["aurora_tx_frame<br/>选择 idle_data_out"]
-    tx["Aurora TX"]
-
-    mode --> idle_gen --> frame --> tx
-    mode --> frame
-```
+![idle frame 发送数据流](images/idle_frame_flow.svg)
 
 流程说明：
 
@@ -231,21 +185,7 @@ flowchart LR
 
 ### 5.3 refresh 和回退重传
 
-```mermaid
-flowchart TB
-    comm["commok_check<br/>等待 comm_ok / 检测超时"]
-
-    refresh["refresh_process_en"]
-    frame["aurora_tx_frame<br/>发送 refresh frame"]
-    tx["Aurora TX"]
-
-    back["rp_back_en / rp_back_en_i / rp_back_en_rst"]
-    rd["rd_cache_ctrl<br/>计算 rp_back_view_addr"]
-    ddr_sched["DDR scheduler<br/>read address rollback"]
-
-    comm --> refresh --> frame --> tx
-    comm --> back --> rd --> ddr_sched
-```
+![refresh 与回退重传控制流](images/refresh_replay_flow.svg)
 
 流程说明：
 
@@ -268,17 +208,7 @@ flowchart TB
 
 一次 normal view 的发送由 `aurora_tx_frame` 组织为：
 
-```mermaid
-flowchart LR
-    view["one view"]
-    header["header frame"]
-    s0["slice frame 0"]
-    s1["slice frame 1"]
-    sn["slice frame slice_sel-1"]
-    done["view_tx_done"]
-
-    view --> header --> s0 --> s1 --> sn --> done
-```
+![view 级输出帧顺序](images/view_frame_sequence.svg)
 
 每个 view 先发送 1 个 header frame，再发送 `slice_sel` 个 slice frame。`slice_cnt` 统计当前 slice 编号，`view_tx_done` 在最后一个 slice frame 发送完成后产生。
 
@@ -286,17 +216,7 @@ flowchart LR
 
 header frame 用于发送一个 view 的头部信息，数据来自 DDR FIFO 或 idle frame 生成器。
 
-```mermaid
-flowchart LR
-    sof["SOF preamble"]
-    cmd["header command<br/>header_cmd_1_en / header_cmd_2_en"]
-    payload["header payload<br/>header_en / header_cnt"]
-    footer["footer<br/>footer_en / footer_1_en"]
-    crc["CRC<br/>crc_tx_1_en / crc_tx_2_en"]
-    eof["EOF"]
-
-    sof --> cmd --> payload --> footer --> crc --> eof
-```
+![header frame 结构](images/header_frame_structure.svg)
 
 控制信号含义：
 
@@ -313,17 +233,7 @@ flowchart LR
 
 slice frame 用于发送一段 slice 数据。一个 view 中包含多个 slice frame。
 
-```mermaid
-flowchart LR
-    sof["SOF preamble"]
-    cmd["slice command<br/>slice_cmd_1_en / slice_cmd_2_en"]
-    payload["slice payload<br/>slice_data_cnt"]
-    footer["footer<br/>footer_en / footer_1_en"]
-    crc["CRC<br/>crc_tx_1_en / crc_tx_2_en"]
-    eof["EOF"]
-
-    sof --> cmd --> payload --> footer --> crc --> eof
-```
+![slice frame 结构](images/slice_frame_structure.svg)
 
 控制信号含义：
 
@@ -339,19 +249,7 @@ slice payload 长度由 `slice_length_odd` 和 `slice_length_even` 控制，`aur
 
 `tx_d_out` 的来源由当前工作模式决定：
 
-```mermaid
-flowchart TB
-    normal["normal frame<br/>aurora_frame_fifo_dout"]
-    idle["idle frame<br/>idle_data_out"]
-    refresh["refresh frame<br/>固定 refresh 控制字"]
-    mux["aurora_tx_frame<br/>tx_d_out 选择"]
-    tx["Aurora TX"]
-
-    normal --> mux
-    idle --> mux
-    refresh --> mux
-    mux --> tx
-```
+![tx_d_out 数据来源选择](images/tx_output_mux.svg)
 
 | 模式 | 触发条件 | `tx_d_out` 数据来源 | 说明 |
 | --- | --- | --- | --- |
@@ -380,18 +278,7 @@ refresh frame 不从 DDR FIFO 或 idle 生成器取数，而是在 `aurora_tx_fr
 
 关键跨域路径：
 
-```mermaid
-flowchart LR
-    sys["clk_sysclk_in<br/>系统控制域"]
-    ui["ui_clk<br/>DDR UI 域"]
-    gtx["gtx_user_clk_in<br/>Aurora TX 域"]
-
-    sys -- view_Reading_Done<br/>last_view_wr_done --> ui
-    ui -- DDR data via FIFO --> gtx
-    gtx -- view_tx_done --> ui
-    ui -- last_view_trans_ok --> gtx
-    ui -- rp_back_cnt_add_en --> sys
-```
+![ddr_cache 时钟域关系](images/clock_domains.svg)
 
 | 信号/数据 | 源时钟域 | 目标时钟域 | 用途 |
 | --- | --- | --- | --- |

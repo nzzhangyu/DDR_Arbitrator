@@ -146,10 +146,10 @@ module aurora_tx_frame (
     logic        fault_gen_pulse;    // fault window active
     logic        fault_gen_inject_ind; // corrupt one beat
 
-    logic [2:0]  view_start_dly_cnt;       // startup guard counter
-    logic        view_start_dly_cnt_rch;   // startup guard done
-    logic [9:0]  view_start_to_start_cnt;  // view spacing counter
-    logic        view_start_to_start_cnt_rch; // view spacing done
+    logic [2:0]  tail_gap_cnt;       // frame tail to next frame head counter
+    logic        tail_gap_done;      // tail-to-head gap reached
+    logic [9:0]  head_gap_cnt;       // frame head to next frame head counter
+    logic        head_gap_done;      // head-to-head gap reached
     logic        trans_idle_frame_trig;    // idle frame request
     logic        trans_normal_frame_trig;  // normal frame request
     logic        trans_frame_trig;         // any frame request
@@ -368,9 +368,9 @@ module aurora_tx_frame (
     assign slice_length_tx   = idle_process_en ? idle_slice_length : slice_length;
 
     // gate view start cadence
-    assign view_start_cnt_half       = (view_start_dly_cnt == 'h3) & (auro_frame_state == IDLE);
-    assign view_start_dly_cnt_rch    = &view_start_dly_cnt;
-    assign view_start_to_start_cnt_rch = (view_start_to_start_cnt == 'h50); // 80us
+    assign view_start_cnt_half = (tail_gap_cnt == 'h3) & (auro_frame_state == IDLE);
+    assign tail_gap_done       = &tail_gap_cnt;
+    assign head_gap_done       = (head_gap_cnt == 'h50); // 80us
 
     // build frame request
     assign console_reset_enable = (auro_frame_state == IDLE) |
@@ -378,34 +378,34 @@ module aurora_tx_frame (
     assign trans_idle_frame_trig  = idle_process_en & idle_trig;
     assign trans_normal_frame_trig = (~idle_process_en) &
                                      (~aurora_frame_fifo_prog_empty) &
-                                     view_start_to_start_cnt_rch &
-                                     view_start_dly_cnt_rch;
+                                     head_gap_done &
+                                     tail_gap_done;
     assign trans_frame_trig = trans_idle_frame_trig | trans_normal_frame_trig;
     assign view_tx_done     = (auro_frame_state == SLICE_DONE_STA) && (~rst_local);
 
     // delay after view completion
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst) begin
-            view_start_dly_cnt <= 'h0;
+            tail_gap_cnt <= 'h0;
         end
         else if (gtx_refresh_process_en || view_tx_done /*|| rst_local*/) begin
-            view_start_dly_cnt <= 'h0;
+            tail_gap_cnt <= 'h0;
         end
-        else if (~view_start_dly_cnt_rch) begin
-            view_start_dly_cnt <= view_start_dly_cnt + 1'h1;
+        else if (~tail_gap_done) begin
+            tail_gap_cnt <= tail_gap_cnt + 1'h1;
         end
     end
 
     // enforce view-to-view spacing
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst) begin
-            view_start_to_start_cnt <= 'h0;
+            head_gap_cnt <= 'h0;
         end
         else if (gtx_refresh_process_en || (auro_frame_state == HEAD_SOF_PRE_STA)) begin
-            view_start_to_start_cnt <= 'h0;
+            head_gap_cnt <= 'h0;
         end
-        else if (~view_start_to_start_cnt_rch && pulse_1us_edge) begin
-            view_start_to_start_cnt <= view_start_to_start_cnt + 1'h1;
+        else if (~head_gap_done && pulse_1us_edge) begin
+            head_gap_cnt <= head_gap_cnt + 1'h1;
         end
     end
 

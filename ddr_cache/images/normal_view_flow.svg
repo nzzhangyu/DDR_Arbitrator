@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="330" viewBox="0 0 1100 330">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #0f172a; }
+      .title { font-size: 22px; font-weight: 700; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 1.5; rx: 10; }
+      .ctrl { fill: #fef3c7; stroke: #b45309; }
+      .name { font-size: 15px; font-weight: 700; }
+      .note { font-size: 12px; fill: #475569; }
+      .line { stroke: #334155; stroke-width: 1.8; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 6 5; }
+    </style>
+  </defs>
+  <text x="40" y="42" class="title">normal view 发送数据流</text>
+  <rect x="65" y="120" width="190" height="70" class="box"/>
+  <text x="160" y="148" text-anchor="middle" class="name">DDR read data</text>
+  <text x="160" y="170" text-anchor="middle" class="note">user_r_data / user_r_valid</text>
+  <rect x="315" y="120" width="190" height="70" class="box"/>
+  <text x="410" y="148" text-anchor="middle" class="name">aurora_tx_top</text>
+  <text x="410" y="170" text-anchor="middle" class="note">数据重排与 FIFO 写入</text>
+  <rect x="565" y="120" width="190" height="70" class="box"/>
+  <text x="660" y="148" text-anchor="middle" class="name">aurora_frame_fifo</text>
+  <text x="660" y="170" text-anchor="middle" class="note">ui_clk -> gtx_user_clk_in</text>
+  <rect x="815" y="120" width="190" height="70" class="box"/>
+  <text x="910" y="148" text-anchor="middle" class="name">aurora_tx_frame</text>
+  <text x="910" y="170" text-anchor="middle" class="note">header + slice frame</text>
+  <rect x="815" y="245" width="190" height="52" class="box"/>
+  <text x="910" y="276" text-anchor="middle" class="name">Aurora TX tx_*</text>
+
+  <rect x="315" y="35" width="190" height="58" class="box ctrl"/>
+  <text x="410" y="59" text-anchor="middle" class="name">rd_cache_ctrl</text>
+  <text x="410" y="78" text-anchor="middle" class="note">ddr_rd_req 控制 DDR 读</text>
+
+  <path d="M255 155 L315 155" class="line"/>
+  <path d="M505 155 L565 155" class="line"/>
+  <path d="M755 155 L815 155" class="line"/>
+  <path d="M910 190 L910 245" class="line"/>
+  <path d="M410 93 L180 120" class="line dash"/>
+</svg>

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="360" viewBox="0 0 1100 360">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #0f172a; }
+      .title { font-size: 22px; font-weight: 700; }
+      .domain { fill: #f8fafc; stroke: #334155; stroke-width: 1.5; rx: 14; }
+      .sys { fill: #fef3c7; stroke: #b45309; }
+      .ui { fill: #e0f2fe; stroke: #0369a1; }
+      .gtx { fill: #ecfdf5; stroke: #047857; }
+      .name { font-size: 16px; font-weight: 700; }
+      .note { font-size: 12px; fill: #475569; }
+      .line { stroke: #334155; stroke-width: 1.8; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 6 5; }
+    </style>
+  </defs>
+  <text x="40" y="42" class="title">ddr_cache 时钟域关系</text>
+  <rect x="65" y="105" width="245" height="130" class="domain sys"/>
+  <text x="188" y="143" text-anchor="middle" class="name">clk_sysclk_in</text>
+  <text x="188" y="168" text-anchor="middle" class="note">系统控制域</text>
+  <text x="188" y="192" text-anchor="middle" class="note">view 写完成 / 最后 view 标记</text>
+
+  <rect x="390" y="105" width="245" height="130" class="domain ui"/>
+  <text x="513" y="143" text-anchor="middle" class="name">ui_clk</text>
+  <text x="513" y="168" text-anchor="middle" class="note">DDR UI 域</text>
+  <text x="513" y="192" text-anchor="middle" class="note">读请求 / view 计数 / 回退地址</text>
+
+  <rect x="715" y="105" width="245" height="130" class="domain gtx"/>
+  <text x="838" y="143" text-anchor="middle" class="name">gtx_user_clk_in</text>
+  <text x="838" y="168" text-anchor="middle" class="note">Aurora TX 域</text>
+  <text x="838" y="192" text-anchor="middle" class="note">FIFO 读出 / 帧状态机 / tx_*</text>
+
+  <path d="M310 145 L390 145" class="line"/>
+  <text x="350" y="130" text-anchor="middle" class="note">view_Reading_Done</text>
+  <path d="M310 198 L390 198" class="line"/>
+  <text x="350" y="222" text-anchor="middle" class="note">last_view_wr_done</text>
+
+  <path d="M635 145 L715 145" class="line"/>
+  <text x="675" y="130" text-anchor="middle" class="note">DDR data via FIFO</text>
+  <path d="M715 198 L635 198" class="line"/>
+  <text x="675" y="222" text-anchor="middle" class="note">view_tx_done</text>
+
+  <path d="M560 235 C600 305,790 305,830 235" class="line dash"/>
+  <text x="695" y="315" text-anchor="middle" class="note">last_view_trans_ok</text>
+  <path d="M430 235 C365 305,230 305,190 235" class="line dash"/>
+  <text x="305" y="315" text-anchor="middle" class="note">rp_back_cnt_add_en</text>
+</svg>
