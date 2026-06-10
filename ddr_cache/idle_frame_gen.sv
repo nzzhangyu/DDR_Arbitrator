@@ -85,19 +85,23 @@ module idle_frame_gen (
     logic [63:0] crc_out;
     logic        crc_clear;
 
+    // Idle timing
     assign idle_header_ctl_word_en_out = idle_trig;
     assign idle_process_en_i           = idle_process_en;
     assign idle_counter_lim            = idle_counter[11];
     assign idle_trig_t                 = idle_counter == 12'h258;
 
+    // Frame words
     assign all_slice_number            = slice_cnt;
     assign s_frame_header_data         = {20'h04330, all_slice_number, 32'h0000db00};
     assign idle_data_out_t             = {data_lfsr_r, data_lfsr_r, data_lfsr_r, data_lfsr_r};
 
+    // LFSR step
     assign idle_data_gen_en            = idle_slice_data_en;
     assign data_lfst_fb                = (~(data_lfsr_r[12] ^ data_lfsr_r[3] ^ data_lfsr_r[1])) ^ data_lfsr_r[0];
     assign data_lfsr_r_t               = {data_lfst_fb, data_lfsr_r[15:1]};
 
+    // CRC lanes
     assign crc_0_in                    = idle_data_out[15:0];
     assign crc_1_in                    = idle_data_out[31:16];
     assign crc_2_in                    = idle_data_out[47:32];
@@ -105,6 +109,7 @@ module idle_frame_gen (
     assign crc_out                     = {crc_3_out, crc_2_out, crc_1_out, crc_0_out};
     assign crc_clear                   = clear_crc;
 
+    // Header word map
     function automatic logic [15:0] idle_header_word(input logic [7:0] word_idx);
         case (word_idx)
             8'd0:    idle_header_word = {DMS_Type, 8'h01};
@@ -239,6 +244,7 @@ module idle_frame_gen (
         endcase
     endfunction
 
+    // Conv edge sync
     always_ff @(posedge gtx_user_clk_in) begin
         conv_d   <= conv;
         conv_dd  <= conv_d;
@@ -247,6 +253,7 @@ module idle_frame_gen (
 
     assign conv_edge_pulse = conv_dd ^ conv_ddd;
 
+    // Dynamic header fields
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst || rst_local) begin
             idle_head_005_r <= 16'h0000;
@@ -258,6 +265,7 @@ module idle_frame_gen (
         end
     end
 
+    // Idle active latch
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst) begin
             idle_process_active <= 1'b0;
@@ -273,6 +281,7 @@ module idle_frame_gen (
         end
     end
 
+    // Refresh holdoff
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst) begin
             gtx_refresh_process_en_active <= 1'b0;
@@ -287,6 +296,7 @@ module idle_frame_gen (
 
     assign refresh_process_en = gtx_refresh_process_en | gtx_refresh_process_en_active;
 
+    // Active output
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst) begin
             idle_process_active_out <= 1'b0;
@@ -296,6 +306,7 @@ module idle_frame_gen (
         end
     end
 
+    // Debug delay
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst) begin
             idle_process_active_debug_i   <= 1'b0;
@@ -307,6 +318,7 @@ module idle_frame_gen (
         end
     end
 
+    // Idle cadence
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst || rst_local) begin
             idle_counter <= 12'h000;
@@ -322,6 +334,7 @@ module idle_frame_gen (
         end
     end
 
+    // Idle trigger
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst || rst_local) begin
             idle_trig <= 1'b0;
@@ -331,6 +344,7 @@ module idle_frame_gen (
         end
     end
 
+    // Slice early mark
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst || rst_local) begin
             idle_slice_trans_start <= 1'b0;
@@ -343,6 +357,7 @@ module idle_frame_gen (
         end
     end
 
+    // Header packing
     always_comb begin
         if (header_cnt <= 8'd30) begin
             header_data = {
@@ -357,6 +372,7 @@ module idle_frame_gen (
         end
     end
 
+    // Output mux
     always_comb begin
         if (crc_tx_2_en) begin
             idle_data_out = crc_out;
@@ -378,6 +394,7 @@ module idle_frame_gen (
         end
     end
 
+    // Payload LFSR
     always_ff @(posedge gtx_user_clk_in) begin
         if (aurora_sw_rst || rst_local) begin
             data_lfsr_r <= 16'hABCD;
@@ -390,6 +407,7 @@ module idle_frame_gen (
         end
     end
 
+    // CRC lane 0
     CRC_16_header_data CRC_0_uut (
         .Clk       (gtx_user_clk_in),
         .Reset     (aurora_sw_rst),
@@ -399,6 +417,7 @@ module idle_frame_gen (
         .CRC_CODE  (crc_0_out[15:0])
     );
 
+    // CRC lane 1
     CRC_16_header_data CRC_1_uut (
         .Clk       (gtx_user_clk_in),
         .Reset     (aurora_sw_rst),
@@ -408,6 +427,7 @@ module idle_frame_gen (
         .CRC_CODE  (crc_1_out[15:0])
     );
 
+    // CRC lane 2
     CRC_16_header_data CRC_2_uut (
         .Clk       (gtx_user_clk_in),
         .Reset     (aurora_sw_rst),
@@ -417,6 +437,7 @@ module idle_frame_gen (
         .CRC_CODE  (crc_2_out[15:0])
     );
 
+    // CRC lane 3
     CRC_16_header_data CRC_3_uut (
         .Clk       (gtx_user_clk_in),
         .Reset     (aurora_sw_rst),

@@ -120,7 +120,58 @@
 - 根据 `aurora_tx_frame` 的 `clear_crc/crc_en/crc_tx_*` 控制生成 idle frame CRC。
 - 输出 `idle_data_out`，供 `aurora_tx_frame` 在 idle 模式下选择发送。
 
-### 4.4 `trans_frame_type_ctrl.sv`
+### 4.4 `idle_frame_gen` 帧结构
+
+`idle_frame_gen` 只生成 idle 模式下的 `idle_data_out` 数据内容；SOF、EOF、`tx_src_rdy_n_out` 和帧状态跳转仍由 `aurora_tx_frame` 负责。`aurora_tx_frame` 在 `idle_frame_ind` 有效时，从 `idle_data_out` 取数发送。
+
+idle 发送由 `idle_trig` 触发，一次 idle 发送过程沿用 normal view 的组织方式，包含 1 个 idle header frame 和若干 idle slice frame。区别在于 payload 不来自 DDR FIFO，而是由 `idle_frame_gen` 根据帧内控制信号实时生成。
+
+idle frame 的发送节奏为：`idle_process_en` 有效后等待 `conv` 边沿，`idle_process_active` 置位，`idle_counter` 开始计数；当计数到 `12'h258` 时产生 `idle_trig`，`aurora_tx_frame` 进入 idle 发送流程，并在 `idle_frame_ind` 有效时选择 `idle_data_out` 作为 `tx_d_out`。
+
+#### 4.4.1 idle frame 结构
+
+idle header frame 的结构与普通 header frame 一致，但 header payload 由 `idle_header_word()` 查表生成。64-bit 模式下，每个 `header_cnt` 对应 4 个 16-bit header word：
+
+```systemverilog
+{
+    idle_header_word({header_cnt, 2'b11}),
+    idle_header_word({header_cnt, 2'b10}),
+    idle_header_word({header_cnt, 2'b01}),
+    idle_header_word({header_cnt, 2'b00})
+}
+```
+
+主要字段如下：
+
+| 位置 | 数据来源 | 说明 |
+| --- | --- | --- |
+| header command | `64'h04331000_00002100` | `header_cmd_2_en` 有效时输出 |
+| header word 0 | `{DMS_Type, 8'h01}` | idle header 的类型/标识字段 |
+| header word 5 | `L_FTP_temp` | 左侧温度或状态字段 |
+| header word 6 | `R_FTP_temp` | 右侧温度或状态字段 |
+| 其他 header word | 固定 pattern，如 `16'hFACE`、`16'h1001` 等 | 用于构造协议规定的 idle header 内容 |
+| footer | `64'hFACEEACE_CACEBACE` | `footer_en` 有效时输出 |
+| CRC | `crc_out` | `crc_tx_2_en` 有效时输出 |
+
+idle slice frame 的结构与普通 slice frame 一致，但 slice payload 由内部 16-bit LFSR 生成。每个 64-bit beat 将当前 LFSR 值复制到 4 个 16-bit lane：
+
+```systemverilog
+idle_data_out_t = {data_lfsr_r, data_lfsr_r, data_lfsr_r, data_lfsr_r};
+```
+
+当 `idle_slice_data_en` 有效时，LFSR 每拍更新一次；当新的 `idle_trig` 到来时，LFSR 重新装载为 `16'hABCD`，保证每次 idle frame 的填充数据从固定初值开始。
+
+idle header frame 和 idle slice frame 如下图所示。每个相邻块表示发送顺序，SOF/EOF 由 `aurora_tx_frame` 产生，中间数据由 `idle_frame_gen` 输出到 `idle_data_out`。
+
+![idle frame 结构](images/idle_frame_structure.svg)
+
+#### 4.4.2 `idle_data_out` 选择关系
+
+`idle_data_out` 根据帧内控制信号，填充对应的 command、payload、footer 和 CRC 块。SOF/EOF 不经过 `idle_data_out`，由 `aurora_tx_frame` 直接产生。
+
+![idle_data_out 选择关系](images/idle_data_out_select.svg)
+
+### 4.5 `trans_frame_type_ctrl.sv`
 
 `trans_frame_type_ctrl` 用于决定 Aurora 当前处于 busy/normal 发送阶段还是 idle 发送阶段。
 
@@ -130,7 +181,7 @@
 - 在最后一个 view 发送完成并通过 `gtx_clk_last_view_trans_fsh` 同步到 GTX 时钟域后，退出 busy 状态。
 - 输出 `idle_process_en = ~busy_process_en`，供 `aurora_tx_frame` 和 `idle_frame_gen` 决定是否发送 idle frame。
 
-### 4.5 `comm_ok.sv`
+### 4.6 `comm_ok.sv`
 
 文件内模块名为 `commok_check`，用于检测每个 view 发送后的通信确认，并产生 refresh 和 read backtracking 控制。
 
@@ -146,7 +197,7 @@
 - 输出 `view_trans_ok`，表示当前 view 发送确认通过。
 - 当 `comm_ok_disable` 有效时，使用内部 1 us 计数产生替代确认节奏，便于屏蔽外部确认信号。
 
-### 4.6 `crc_chk.sv`
+### 4.7 `crc_chk.sv`
 
 `crc_chk` 对 Aurora TX 输出数据做发送侧 CRC 校验。
 
