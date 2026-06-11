@@ -22,6 +22,8 @@ Required first-pass order:
 5. Frame structure or signal-level details
 6. Timing, counters, CDC, and edge cases
 
+When writing a full module Markdown document, make the module function chapter follow the same code hierarchy order and numbering as the hierarchy diagram. Do not split the function chapter into separate "top module" and "submodule" sections if that breaks code hierarchy order.
+
 ### Code Hierarchy
 
 - Identify the top module, direct child modules, major always blocks, functions, FIFOs, CRC units, CDC paths, and external interfaces.
@@ -45,24 +47,30 @@ top_module
 
 - Create or update an SVG hierarchy diagram under the document's existing `images/` directory.
 - Use SVG, not Mermaid.
-- Use aligned boxes and direct containment/connection lines.
+- Prefer a vertical tree expansion layout for code/module hierarchy diagrams, like a source tree or outline.
+- Place the top module at the top-left, then expand children downward with indentation.
+- Use elbow connectors, vertical guide lines, or tree branches to show parent-child ownership.
+- Do not draw hierarchy as a freeform node graph with curved links or widely spread boxes.
+- Do not rely on left-to-right reading for hierarchy; the main reading direction should be top-to-bottom.
+- Keep all nodes in a readable single-column or lightly indented multi-column tree, with consistent indentation per level.
 - Keep labels short.
 - Use dark text.
 - Avoid decorative icons.
+- Avoid overview diagrams where boxes float across the canvas and relationships are shown mostly by long diagonal or curved arrows.
 - Show the top module, main internal logic blocks, important child module instances, and main data/control direction where useful.
 - If a module has no child instances, show logical blocks such as counters, muxes, FSMs, lookup tables, CRC lanes, and output registers.
 
 Suggested shape:
 
 ```text
-inputs/control
-      |
 top module
- ├── timing/control block
- ├── header/payload generator
- ├── data mux
- ├── CRC lanes
- └── outputs
+├── major child module A
+│   ├── submodule / logic block
+│   └── FIFO / CDC block
+├── major child module B
+│   ├── FSM
+│   └── mux / output block
+└── major child module C
 ```
 
 ## Overall Logic Description
@@ -77,6 +85,37 @@ After the hierarchy, add a concise overall description:
 - What it deliberately does not do.
 
 Keep this to one paragraph unless the module is large.
+
+## Module Function Chapter Numbering
+
+For repository module documentation, use a dedicated module function chapter after the code hierarchy chapter.
+
+Preferred chapter shape:
+
+```text
+## 1. Overall function
+## 2. Code hierarchy
+## 3. Module function introduction
+### 3.1 top_module
+### 3.2 first direct child in code hierarchy
+### 3.3 second direct child in code hierarchy
+#### 3.3.1 child instance under 3.3
+#### 3.3.2 next child instance under 3.3
+### 3.4 next direct child
+## 4. Data flow
+## 5. Frame/output structure
+## 6. Clock domains
+```
+
+Rules:
+
+- The function chapter must be ordered by the actual code hierarchy and instance order.
+- Number child instances under their parent module, not as unrelated top-level sections.
+- If a module has generated variants such as `_32`, document them in the same section as the base module.
+- If an important instantiated module was missing from previous docs, add it to the hierarchy diagram, hierarchy table, and function chapter.
+- Keep frame-structure details under the module that generates or owns that frame data.
+- In the top-level document order, place code frame-structure chapters after the main data-flow chapter so readers understand the path before the packet/frame layout.
+- If later chapters are renumbered by inserting or merging sections, update all subsequent chapter numbers consistently.
 
 ## Short Submodule Descriptions
 

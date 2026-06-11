@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="920" viewBox="0 0 1060 920">
+  <defs>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #0f172a; }
+      .title { font-size: 24px; font-weight: 700; }
+      .hint { font-size: 12px; font-weight: 600; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 1.4; rx: 8; }
+      .top { fill: #e0f2fe; stroke: #0369a1; }
+      .control { fill: #ecfdf5; stroke: #047857; }
+      .data { fill: #fef9c3; stroke: #a16207; }
+      .diag { fill: #fae8ff; stroke: #86198f; }
+      .name { font-size: 15px; font-weight: 700; }
+      .note { font-size: 12px; font-weight: 600; }
+      .tree { stroke: #334155; stroke-width: 1.5; fill: none; }
+    </style>
+  </defs>
+
+  <text x="40" y="42" class="title">aurora_tx_frame 代码层级</text>
+  <text x="40" y="68" class="hint">树状竖向展开：按代码中的功能块顺序组织，区分控制路径、数据路径和诊断路径。</text>
+
+  <rect x="70" y="95" width="420" height="68" class="box top"/>
+  <text x="280" y="123" text-anchor="middle" class="name">aurora_tx_frame</text>
+  <text x="280" y="146" text-anchor="middle" class="note">Aurora TX 帧状态机、数据选择和控制信号生成</text>
+
+  <path d="M100 163 L100 850" class="tree"/>
+
+  <path d="M100 215 L145 215" class="tree"/>
+  <rect x="145" y="187" width="360" height="56" class="box control"/>
+  <text x="325" y="210" text-anchor="middle" class="name">width-dependent limits</text>
+  <text x="325" y="230" text-anchor="middle" class="note">32/64-bit SOF、EOF、header、slice 计数上限</text>
+
+  <path d="M100 287 L145 287" class="tree"/>
+  <rect x="145" y="259" width="360" height="56" class="box control"/>
+  <text x="325" y="282" text-anchor="middle" class="name">CDC / reset / channel ready</text>
+  <text x="325" y="302" text-anchor="middle" class="note">复位同步、TX_CHANNEL_UP、tx_dst_rdy 派生</text>
+
+  <path d="M100 359 L145 359" class="tree"/>
+  <rect x="145" y="331" width="360" height="56" class="box control"/>
+  <text x="325" y="354" text-anchor="middle" class="name">refresh sync and 1us timing</text>
+  <text x="325" y="374" text-anchor="middle" class="note">refresh_process_en 同步与 refresh_trigger_pulse</text>
+
+  <path d="M100 431 L145 431" class="tree"/>
+  <rect x="145" y="403" width="360" height="56" class="box diag"/>
+  <text x="325" y="426" text-anchor="middle" class="name">fault injection</text>
+  <text x="325" y="446" text-anchor="middle" class="note">按计数窗口将指定 beat 改写为错误标记</text>
+
+  <path d="M100 503 L145 503" class="tree"/>
+  <rect x="145" y="475" width="360" height="56" class="box control"/>
+  <text x="325" y="498" text-anchor="middle" class="name">frame trigger control</text>
+  <text x="325" y="518" text-anchor="middle" class="note">normal / idle / refresh 触发与 gap 门控</text>
+
+  <path d="M100 575 L145 575" class="tree"/>
+  <rect x="145" y="547" width="360" height="56" class="box control"/>
+  <text x="325" y="570" text-anchor="middle" class="name">counters</text>
+  <text x="325" y="590" text-anchor="middle" class="note">SOF、EOF、header、slice、refresh 计数</text>
+
+  <path d="M100 647 L145 647" class="tree"/>
+  <rect x="145" y="619" width="360" height="56" class="box control"/>
+  <text x="325" y="642" text-anchor="middle" class="name">main FSM</text>
+  <text x="325" y="662" text-anchor="middle" class="note">header/slice 发送路径与 refresh 路径</text>
+
+  <path d="M100 719 L145 719" class="tree"/>
+  <rect x="145" y="691" width="360" height="56" class="box data"/>
+  <text x="325" y="714" text-anchor="middle" class="name">FIFO read and TX valid</text>
+  <text x="325" y="734" text-anchor="middle" class="note">预读 FIFO、对齐 tx_src_rdy_out</text>
+
+  <path d="M100 791 L145 791" class="tree"/>
+  <rect x="145" y="763" width="360" height="56" class="box data"/>
+  <text x="325" y="786" text-anchor="middle" class="name">frame field controls</text>
+  <text x="325" y="806" text-anchor="middle" class="note">header/slice/footer/CRC/idle_slice_data_en</text>
+
+  <path d="M100 850 L145 850" class="tree"/>
+  <rect x="145" y="835" width="360" height="56" class="box data"/>
+  <text x="325" y="858" text-anchor="middle" class="name">TX output select</text>
+  <text x="325" y="878" text-anchor="middle" class="note">refresh、idle_data_out、FIFO 数据和 fault 注入</text>
+
+  <path d="M520 647 L590 647" class="tree"/>
+  <path d="M590 575 L590 790" class="tree"/>
+
+  <path d="M590 575 L635 575" class="tree"/>
+  <rect x="635" y="549" width="360" height="52" class="box"/>
+  <text x="815" y="571" text-anchor="middle" class="name">normal / idle path</text>
+  <text x="815" y="590" text-anchor="middle" class="note">IDLE -> HEAD_* -> WAIT_SLICE -> SLICE_* -> DONE</text>
+
+  <path d="M590 647 L635 647" class="tree"/>
+  <rect x="635" y="621" width="360" height="52" class="box"/>
+  <text x="815" y="643" text-anchor="middle" class="name">refresh path</text>
+  <text x="815" y="662" text-anchor="middle" class="note">IDLE -> REFRESH_WAIT -> REFRESH_DATA</text>
+
+  <path d="M590 719 L635 719" class="tree"/>
+  <rect x="635" y="693" width="360" height="52" class="box"/>
+  <text x="815" y="715" text-anchor="middle" class="name">data source mux</text>
+  <text x="815" y="734" text-anchor="middle" class="note">refresh > idle_data_out > aurora_frame_fifo_dout</text>
+
+  <path d="M590 791 L635 791" class="tree"/>
+  <rect x="635" y="765" width="360" height="52" class="box diag"/>
+  <text x="815" y="787" text-anchor="middle" class="name">diagnostic outputs</text>
+  <text x="815" y="806" text-anchor="middle" class="note">frame tag 检查、first view、no-EOF watchdog</text>
+</svg>

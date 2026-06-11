@@ -75,21 +75,21 @@ module aurora_tx_frame (
     // State, Constants, and Width-Dependent Limits
     // -------------------------------------------------------------------------
     typedef enum logic [3:0] {
-        IDLE               = 4'h0, // wait frame trigger
-        HEAD_SOF_PRE_STA   = 4'h1, // pre-read header data
-        HEAD_SOF_PRE_STA2  = 4'h2, // align header SOF
-        HEAD_SOF_STA       = 4'h3, // send header SOF
-        HEAD_DATA_STA      = 4'h4, // send header payload
-        HEAD_EOF_STA       = 4'h5, // send header EOF
-        WAIT_SLICE_STA     = 4'h6, // wait slice ready
-        SLICE_SOF_PRE_STA  = 4'h7, // pre-read slice data
-        SLICE_SOF_PRE_STA2 = 4'h8, // align slice SOF
-        SLICE_SOF_STA      = 4'h9, // send slice SOF
-        SLICE_DATA_STA     = 4'ha, // send slice payload
-        SLICE_EOF_STA      = 4'hb, // send slice EOF
-        SLICE_DONE_STA     = 4'hc, // finish view
-        REFRESH_WAIT       = 4'hd, // wait refresh tick
-        REFRESH_DATA       = 4'he  // send refresh frame
+        IDLE               = 4'h0,      // wait frame trigger
+        HEAD_SOF_PRE_STA   = 4'h1,      // pre-read header data
+        HEAD_SOF_PRE_STA2  = 4'h2,      // align header SOF
+        HEAD_SOF_STA       = 4'h3,      // send header SOF
+        HEAD_DATA_STA      = 4'h4,      // send header payload
+        HEAD_EOF_STA       = 4'h5,      // send header EOF
+        WAIT_SLICE_STA     = 4'h6,      // wait slice ready
+        SLICE_SOF_PRE_STA  = 4'h7,      // pre-read slice data
+        SLICE_SOF_PRE_STA2 = 4'h8,      // align slice SOF
+        SLICE_SOF_STA      = 4'h9,      // send slice SOF
+        SLICE_DATA_STA     = 4'ha,      // send slice payload
+        SLICE_EOF_STA      = 4'hb,      // send slice EOF
+        SLICE_DONE_STA     = 4'hc,      // finish view
+        REFRESH_WAIT       = 4'hd,      // wait refresh tick
+        REFRESH_DATA       = 4'he       // send refresh frame
     } auro_frame_state_t;
 
     logic [2:0]  sof_pre_cnt_lim;       // SOF preamble beats
@@ -135,25 +135,25 @@ module aurora_tx_frame (
     logic pulse_1us_gtx_d1;
     logic pulse_1us_gtx_d2;
     logic pulse_1us_gtx_d3;
-    logic pulse_1us_edge;            // 1us rising edge
-    logic refresh_trigger_pulse;     // refresh frame trigger
+    logic pulse_1us_edge;               // 1us rising edge
+    logic refresh_trigger_pulse;        // refresh frame trigger
 
-    logic [15:0] fault_50ms_cnt;     // fault interval counter
-    logic        fault_50ms_cnt_rch; // fault interval reached
-    logic        fault_gen_r;        // fault armed
-    logic        fault_gen_set;      // start fault window
-    logic        fault_gen_clr;      // end fault window
-    logic        fault_gen_pulse;    // fault window active
-    logic        fault_gen_inject_ind; // corrupt one beat
+    logic [15:0] fault_50ms_cnt;        // fault interval counter
+    logic        fault_50ms_cnt_rch;    // fault interval reached
+    logic        fault_gen_r;           // fault armed
+    logic        fault_gen_set;         // start fault window
+    logic        fault_gen_clr;         // end fault window
+    logic        fault_gen_pulse;       // fault window active
+    logic        fault_gen_inject_ind;  // corrupt one beat
 
-    logic [2:0]  tail_gap_cnt;       // frame tail to next frame head counter
-    logic        tail_gap_done;      // tail-to-head gap reached
-    logic [9:0]  head_gap_cnt;       // frame head to next frame head counter
-    logic        head_gap_done;      // head-to-head gap reached
-    logic        trans_idle_frame_trig;    // idle frame request
-    logic        trans_normal_frame_trig;  // normal frame request
-    logic        trans_frame_trig;         // any frame request
-    logic        console_reset_enable;     // console reset window
+    logic [2:0]  tail_gap_cnt;              // frame tail to next frame head counter
+    logic        tail_gap_done;             // tail-to-head gap reached
+    logic [9:0]  head_gap_cnt;              // frame head to next frame head counter
+    logic        head_gap_done;             // head-to-head gap reached
+    logic        trans_idle_frame_trig;     // idle frame request
+    logic        trans_normal_frame_trig;   // normal frame request
+    logic        trans_frame_trig;          // any frame request
+    logic        console_reset_enable;      // console reset window
 
     logic [2:0] sof_pre_cnt;         // SOF preamble counter
     logic       sof_pre_cnt_rch;     // SOF preamble done
@@ -176,32 +176,32 @@ module aurora_tx_frame (
     logic [3:0]  slice_interview_cnt;      // inter-slice gap counter
     logic        slice_interview_cnt_rch;  // inter-slice gap done
 
-    logic tx_sof_out;                // normal SOF pulse
-    logic tx_eof_out;                // normal EOF pulse
-    logic tx_src_rdy_out;            // normal data valid
-    logic tx_sof_refresh;            // refresh SOF pulse
-    logic tx_eof_refresh;            // refresh EOF pulse
-    logic tx_src_rdy_refresh;        // refresh data valid
+    logic tx_sof_out;                       // normal SOF pulse
+    logic tx_eof_out;                       // normal EOF pulse
+    logic tx_src_rdy_out;                   // normal data valid
+    logic tx_sof_refresh;                   // refresh SOF pulse
+    logic tx_eof_refresh;                   // refresh EOF pulse
+    logic tx_src_rdy_refresh;               // refresh data valid
 
-    logic fifo_rd_en_t;              // raw FIFO read enable
-    logic data_valid_rd_en;          // delayed-data valid seed
-    logic fifo_rd_en_dly;            // aligned TX valid
+    logic fifo_rd_en_t;                     // raw FIFO read enable
+    logic data_valid_rd_en;                 // delayed-data valid seed
+    logic fifo_rd_en_dly;                   // aligned TX valid
 
-    logic crc_en_t;                  // raw CRC enable
-    logic clear_crc_t;               // raw CRC clear
-    logic idle_slice_data_en_t;      // idle payload valid
+    logic crc_en_t;                         // raw CRC enable
+    logic clear_crc_t;                      // raw CRC clear
+    logic idle_slice_data_en_t;             // idle payload valid
 
-    logic aurora_frame_ok;           // frame completed
-    logic data_sof;                  // slice SOF check point
-    logic head_sof;                  // header SOF check point
-    logic set_Diag_aurora_data_err_out;   // data tag mismatch
-    logic set_Diag_aurora_header_err_out; // header tag mismatch
-    logic aurora_first_view_temp;    // first-view marker
-    logic [15:0] aurora_idle_cnt;    // no-EOF watchdog
-
-    logic aurora_data_heade_ok;      // legacy header/data flag
-    logic latch_frame_kind;          // frame-kind sample point
-    logic slice_data_en;             // legacy slice data flag
+    logic aurora_frame_ok;                  // frame completed
+    logic data_sof;                         // slice SOF check point
+    logic head_sof;                         // header SOF check point
+    logic set_Diag_aurora_data_err_out;     // data tag mismatch
+    logic set_Diag_aurora_header_err_out;   // header tag mismatch
+    logic aurora_first_view_temp;           // first-view marker
+    logic [15:0] aurora_idle_cnt;           // no-EOF watchdog
+        
+    logic aurora_data_heade_ok;             // legacy header/data flag
+    logic latch_frame_kind;                 // frame-kind sample point
+    logic slice_data_en;                    // legacy slice data flag
 
 `ifdef TX_DATA_WIDTH_32
     logic [31:0] tx_d_out_t;         // selected TX data

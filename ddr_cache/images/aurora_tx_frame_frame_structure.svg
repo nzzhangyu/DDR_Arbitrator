@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="390" viewBox="0 0 1260 390">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#0f172a"/>
+    </marker>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #0f172a; }
+      .title { font-size: 22px; font-weight: 700; }
+      .note { font-size: 12px; font-weight: 600; }
+      .row { font-size: 15px; font-weight: 700; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 1.4; }
+      .head { fill: #e0f2fe; }
+      .wait { fill: #f1f5f9; stroke-dasharray: 5 4; }
+      .slice { fill: #fef9c3; }
+      .done { fill: #ecfdf5; }
+      .refresh { fill: #fae8ff; }
+      .name { font-size: 14px; font-weight: 700; }
+      .state { font-family: Consolas, "Courier New", monospace; font-size: 12px; font-weight: 600; }
+      .cond { font-family: Consolas, "Courier New", monospace; font-size: 11px; font-weight: 700; }
+      .guide { stroke: #0f172a; stroke-width: 1.1; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <text x="40" y="42" class="title">aurora_tx_frame 形成的帧结构</text>
+  <text x="40" y="72" class="note">normal 和 idle 共用 header/slice 状态路径；区别只在数据源和 FIFO 读使能。refresh 使用独立的 REFRESH_WAIT/REFRESH_DATA 路径。</text>
+
+  <text x="40" y="135" class="row">normal view</text>
+  <text x="170" y="105" text-anchor="middle" class="cond">trans_normal_frame_trig</text>
+  <line x1="170" y1="109" x2="170" y2="120" class="guide"/>
+  <rect x="170" y="120" width="240" height="72" class="box head"/>
+  <text x="290" y="146" text-anchor="middle" class="name">header frame</text>
+  <text x="290" y="166" text-anchor="middle" class="state">HEAD_SOF_* / DATA / EOF</text>
+  <text x="290" y="184" text-anchor="middle" class="state">aurora_frame_fifo_dout</text>
+
+  <rect x="410" y="120" width="130" height="72" class="box wait"/>
+  <text x="475" y="146" text-anchor="middle" class="name">wait</text>
+  <text x="475" y="166" text-anchor="middle" class="state">WAIT_SLICE</text>
+  <text x="475" y="184" text-anchor="middle" class="state">FIFO ready</text>
+
+  <rect x="540" y="120" width="240" height="72" class="box slice"/>
+  <text x="660" y="146" text-anchor="middle" class="name">slice frame</text>
+  <text x="660" y="166" text-anchor="middle" class="state">SLICE_SOF_* / DATA / EOF</text>
+  <text x="660" y="184" text-anchor="middle" class="state">slice_cnt = 0</text>
+
+  <rect x="780" y="120" width="120" height="72" class="box wait"/>
+  <text x="840" y="146" text-anchor="middle" class="name">repeat</text>
+  <text x="840" y="166" text-anchor="middle" class="state">WAIT_SLICE</text>
+  <text x="840" y="184" text-anchor="middle" class="state">...</text>
+
+  <rect x="900" y="120" width="240" height="72" class="box slice"/>
+  <text x="1020" y="146" text-anchor="middle" class="name">last slice frame</text>
+  <text x="1020" y="166" text-anchor="middle" class="state">SLICE_SOF_* / DATA / EOF</text>
+  <text x="1020" y="184" text-anchor="middle" class="state">slice_cnt_rch</text>
+
+  <rect x="1140" y="120" width="80" height="72" class="box done"/>
+  <text x="1180" y="150" text-anchor="middle" class="name">done</text>
+  <text x="1180" y="170" text-anchor="middle" class="state">IDLE</text>
+
+  <text x="40" y="235" class="row">idle view</text>
+  <text x="170" y="205" text-anchor="middle" class="cond">trans_idle_frame_trig</text>
+  <line x1="170" y1="209" x2="170" y2="220" class="guide"/>
+  <rect x="170" y="220" width="240" height="72" class="box head"/>
+  <text x="290" y="246" text-anchor="middle" class="name">idle header frame</text>
+  <text x="290" y="266" text-anchor="middle" class="state">HEAD_SOF_* / DATA / EOF</text>
+  <text x="290" y="284" text-anchor="middle" class="state">idle_data_out</text>
+
+  <rect x="410" y="220" width="130" height="72" class="box wait"/>
+  <text x="475" y="246" text-anchor="middle" class="name">wait</text>
+  <text x="475" y="266" text-anchor="middle" class="state">WAIT_SLICE</text>
+  <text x="475" y="284" text-anchor="middle" class="state">idle_process_en</text>
+
+  <rect x="540" y="220" width="240" height="72" class="box slice"/>
+  <text x="660" y="246" text-anchor="middle" class="name">idle slice frame</text>
+  <text x="660" y="266" text-anchor="middle" class="state">SLICE_SOF_* / DATA / EOF</text>
+  <text x="660" y="284" text-anchor="middle" class="state">slice_cnt = 0</text>
+
+  <rect x="780" y="220" width="120" height="72" class="box wait"/>
+  <text x="840" y="246" text-anchor="middle" class="name">repeat</text>
+  <text x="840" y="266" text-anchor="middle" class="state">WAIT_SLICE</text>
+  <text x="840" y="284" text-anchor="middle" class="state">...</text>
+
+  <rect x="900" y="220" width="240" height="72" class="box slice"/>
+  <text x="1020" y="246" text-anchor="middle" class="name">last idle slice</text>
+  <text x="1020" y="266" text-anchor="middle" class="state">SLICE_SOF_* / DATA / EOF</text>
+  <text x="1020" y="284" text-anchor="middle" class="state">slice_sel_r = 8'h20</text>
+
+  <rect x="1140" y="220" width="80" height="72" class="box done"/>
+  <text x="1180" y="250" text-anchor="middle" class="name">done</text>
+  <text x="1180" y="270" text-anchor="middle" class="state">IDLE</text>
+
+  <text x="40" y="335" class="row">refresh</text>
+  <text x="170" y="305" text-anchor="middle" class="cond">gtx_refresh_process_en</text>
+  <line x1="170" y1="309" x2="170" y2="320" class="guide"/>
+  <rect x="170" y="320" width="240" height="52" class="box wait"/>
+  <text x="290" y="342" text-anchor="middle" class="name">refresh wait</text>
+  <text x="290" y="361" text-anchor="middle" class="state">REFRESH_WAIT</text>
+
+  <text x="410" y="305" text-anchor="middle" class="cond">refresh_trigger_pulse</text>
+  <line x1="410" y1="309" x2="410" y2="320" class="guide"/>
+  <rect x="410" y="320" width="260" height="52" class="box refresh"/>
+  <text x="540" y="342" text-anchor="middle" class="name">refresh frame</text>
+  <text x="540" y="361" text-anchor="middle" class="state">REFRESH_DATA / fixed word</text>
+
+  <rect x="670" y="320" width="180" height="52" class="box wait"/>
+  <text x="760" y="342" text-anchor="middle" class="name">wait or idle</text>
+  <text x="760" y="361" text-anchor="middle" class="state">REFRESH_WAIT / IDLE</text>
+</svg>

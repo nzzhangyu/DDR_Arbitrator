@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="620" viewBox="0 0 1280 620">
+  <defs>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #0f172a; }
+      .title { font-size: 22px; font-weight: 700; }
+      .note { font-size: 12px; font-weight: 600; }
+      .row { font-size: 15px; font-weight: 700; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 1.4; }
+      .statebox { fill: #ecfdf5; }
+      .pre { fill: #f1f5f9; stroke-dasharray: 5 4; }
+      .sof { fill: #e0f2fe; }
+      .payload { fill: #fef9c3; }
+      .eof { fill: #fae8ff; }
+      .wait { fill: #f8fafc; stroke-dasharray: 5 4; }
+      .refresh { fill: #fae8ff; }
+      .done { fill: #dcfce7; }
+      .name { font-size: 14px; font-weight: 700; }
+      .state { font-family: Consolas, "Courier New", monospace; font-size: 12px; font-weight: 700; }
+      .small { font-family: Consolas, "Courier New", monospace; font-size: 11px; font-weight: 600; }
+    </style>
+  </defs>
+
+  <text x="40" y="42" class="title">状态机与帧结构对应关系</text>
+  <text x="40" y="72" class="note">每组上排为 FSM 状态，下排为该状态对应的帧结构或输出动作；上下块水平对齐。</text>
+
+  <text x="40" y="125" class="row">header frame</text>
+  <rect x="180" y="100" width="260" height="48" class="box statebox"/>
+  <text x="310" y="121" text-anchor="middle" class="state">HEAD_SOF_PRE_STA</text>
+  <text x="310" y="139" text-anchor="middle" class="state">HEAD_SOF_PRE_STA2</text>
+  <rect x="440" y="100" width="240" height="48" class="box statebox"/>
+  <text x="560" y="130" text-anchor="middle" class="state">HEAD_SOF_STA</text>
+  <rect x="680" y="100" width="260" height="48" class="box statebox"/>
+  <text x="810" y="130" text-anchor="middle" class="state">HEAD_DATA_STA</text>
+  <rect x="940" y="100" width="240" height="48" class="box statebox"/>
+  <text x="1060" y="130" text-anchor="middle" class="state">HEAD_EOF_STA</text>
+
+  <rect x="180" y="148" width="260" height="68" class="box pre"/>
+  <text x="310" y="174" text-anchor="middle" class="name">pre-read / align</text>
+  <text x="310" y="196" text-anchor="middle" class="small">fifo_rd_en_t, valid align</text>
+  <rect x="440" y="148" width="240" height="68" class="box sof"/>
+  <text x="560" y="174" text-anchor="middle" class="name">SOF + header command</text>
+  <text x="560" y="196" text-anchor="middle" class="small">tx_sof_out, header_cmd_*</text>
+  <rect x="680" y="148" width="260" height="68" class="box payload"/>
+  <text x="810" y="174" text-anchor="middle" class="name">header payload</text>
+  <text x="810" y="196" text-anchor="middle" class="small">header_en, header_cnt</text>
+  <rect x="940" y="148" width="240" height="68" class="box eof"/>
+  <text x="1060" y="174" text-anchor="middle" class="name">CRC + EOF</text>
+  <text x="1060" y="196" text-anchor="middle" class="small">crc_tx_*, tx_eof_out</text>
+
+  <text x="40" y="290" class="row">slice frame</text>
+  <rect x="180" y="265" width="160" height="48" class="box statebox"/>
+  <text x="260" y="295" text-anchor="middle" class="state">WAIT_SLICE_STA</text>
+  <rect x="340" y="265" width="260" height="48" class="box statebox"/>
+  <text x="470" y="286" text-anchor="middle" class="state">SLICE_SOF_PRE_STA</text>
+  <text x="470" y="304" text-anchor="middle" class="state">SLICE_SOF_PRE_STA2</text>
+  <rect x="600" y="265" width="220" height="48" class="box statebox"/>
+  <text x="710" y="295" text-anchor="middle" class="state">SLICE_SOF_STA</text>
+  <rect x="820" y="265" width="220" height="48" class="box statebox"/>
+  <text x="930" y="295" text-anchor="middle" class="state">SLICE_DATA_STA</text>
+  <rect x="1040" y="265" width="180" height="48" class="box statebox"/>
+  <text x="1130" y="295" text-anchor="middle" class="state">SLICE_EOF_STA</text>
+
+  <rect x="180" y="313" width="160" height="68" class="box wait"/>
+  <text x="260" y="339" text-anchor="middle" class="name">slice wait</text>
+  <text x="260" y="361" text-anchor="middle" class="small">FIFO ready / idle</text>
+  <rect x="340" y="313" width="260" height="68" class="box pre"/>
+  <text x="470" y="339" text-anchor="middle" class="name">pre-read / align</text>
+  <text x="470" y="361" text-anchor="middle" class="small">fifo_rd_en_t, valid align</text>
+  <rect x="600" y="313" width="220" height="68" class="box sof"/>
+  <text x="710" y="339" text-anchor="middle" class="name">SOF + slice command</text>
+  <text x="710" y="361" text-anchor="middle" class="small">tx_sof_out, slice_cmd_*</text>
+  <rect x="820" y="313" width="220" height="68" class="box payload"/>
+  <text x="930" y="339" text-anchor="middle" class="name">slice payload</text>
+  <text x="930" y="361" text-anchor="middle" class="small">slice_data_cnt, footer_en</text>
+  <rect x="1040" y="313" width="180" height="68" class="box eof"/>
+  <text x="1130" y="339" text-anchor="middle" class="name">CRC + EOF</text>
+  <text x="1130" y="361" text-anchor="middle" class="small">crc_tx_*, tx_eof_out</text>
+
+  <text x="40" y="455" class="row">slice loop / done</text>
+  <rect x="180" y="430" width="250" height="48" class="box statebox"/>
+  <text x="305" y="460" text-anchor="middle" class="state">SLICE_EOF_STA</text>
+  <rect x="430" y="430" width="260" height="48" class="box wait"/>
+  <text x="560" y="460" text-anchor="middle" class="state">if !slice_cnt_rch</text>
+  <rect x="690" y="430" width="250" height="48" class="box wait"/>
+  <text x="815" y="460" text-anchor="middle" class="state">WAIT_SLICE_STA</text>
+  <rect x="430" y="498" width="260" height="48" class="box done"/>
+  <text x="560" y="528" text-anchor="middle" class="state">if slice_cnt_rch</text>
+  <rect x="690" y="498" width="250" height="48" class="box done"/>
+  <text x="815" y="528" text-anchor="middle" class="state">SLICE_DONE_STA -> IDLE</text>
+
+  <text x="40" y="590" class="row">refresh frame</text>
+  <rect x="180" y="565" width="260" height="48" class="box statebox"/>
+  <text x="310" y="595" text-anchor="middle" class="state">REFRESH_WAIT</text>
+  <rect x="440" y="565" width="260" height="48" class="box statebox"/>
+  <text x="570" y="595" text-anchor="middle" class="state">REFRESH_DATA</text>
+  <rect x="700" y="565" width="260" height="48" class="box statebox"/>
+  <text x="830" y="595" text-anchor="middle" class="state">REFRESH_WAIT / IDLE</text>
+
+  <rect x="180" y="613" width="260" height="58" class="box wait"/>
+  <text x="310" y="637" text-anchor="middle" class="name">wait 1us trigger</text>
+  <text x="310" y="657" text-anchor="middle" class="small">refresh_trigger_pulse</text>
+  <rect x="440" y="613" width="260" height="58" class="box refresh"/>
+  <text x="570" y="637" text-anchor="middle" class="name">fixed refresh word</text>
+  <text x="570" y="657" text-anchor="middle" class="small">tx_sof/eof_refresh</text>
+  <rect x="700" y="613" width="260" height="58" class="box wait"/>
+  <text x="830" y="637" text-anchor="middle" class="name">continue or exit</text>
+  <text x="830" y="657" text-anchor="middle" class="small">gtx_refresh_process_en</text>
+</svg>

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="330" viewBox="0 0 1260 330">
+  <defs>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #0f172a; }
+      .title { font-size: 22px; font-weight: 700; }
+      .note { font-size: 12px; font-weight: 600; }
+      .row { font-size: 15px; font-weight: 700; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 1.4; }
+      .pre { fill: #f1f5f9; stroke-dasharray: 5 4; }
+      .sof { fill: #e0f2fe; }
+      .payload { fill: #fef9c3; }
+      .eof { fill: #fae8ff; }
+      .name { font-size: 14px; font-weight: 700; }
+      .state { font-family: Consolas, "Courier New", monospace; font-size: 12px; font-weight: 600; }
+      .cond { font-family: Consolas, "Courier New", monospace; font-size: 11px; font-weight: 700; }
+    </style>
+  </defs>
+
+  <text x="40" y="42" class="title">header / slice frame 组成</text>
+  <text x="40" y="72" class="note">虚线块是发送前的 FIFO 预读/valid 对齐状态；实线块对应实际 SOF、DATA、EOF 发送阶段。</text>
+
+  <text x="40" y="135" class="row">header frame</text>
+  <rect x="180" y="105" width="260" height="72" class="box pre"/>
+  <text x="310" y="101" text-anchor="middle" class="cond">frame trigger</text>
+  <text x="310" y="131" text-anchor="middle" class="name">pre-read / align</text>
+  <text x="310" y="151" text-anchor="middle" class="state">HEAD_SOF_PRE_STA</text>
+  <text x="310" y="169" text-anchor="middle" class="state">HEAD_SOF_PRE_STA2</text>
+
+  <rect x="440" y="105" width="240" height="72" class="box sof"/>
+  <text x="560" y="101" text-anchor="middle" class="cond">HEAD_SOF_STA</text>
+  <text x="560" y="131" text-anchor="middle" class="name">SOF + header command</text>
+  <text x="560" y="151" text-anchor="middle" class="state">tx_sof_out</text>
+  <text x="560" y="169" text-anchor="middle" class="state">header_cmd_1/2_en</text>
+
+  <rect x="680" y="105" width="260" height="72" class="box payload"/>
+  <text x="810" y="101" text-anchor="middle" class="cond">HEAD_DATA_STA</text>
+  <text x="810" y="131" text-anchor="middle" class="name">header payload</text>
+  <text x="810" y="151" text-anchor="middle" class="state">header_en</text>
+  <text x="810" y="169" text-anchor="middle" class="state">header_cnt</text>
+
+  <rect x="940" y="105" width="240" height="72" class="box eof"/>
+  <text x="1060" y="101" text-anchor="middle" class="cond">HEAD_EOF_STA</text>
+  <text x="1060" y="131" text-anchor="middle" class="name">CRC + EOF</text>
+  <text x="1060" y="151" text-anchor="middle" class="state">crc_tx_1/2_en</text>
+  <text x="1060" y="169" text-anchor="middle" class="state">tx_eof_out</text>
+
+  <text x="40" y="245" class="row">slice frame</text>
+  <rect x="180" y="215" width="260" height="72" class="box pre"/>
+  <text x="310" y="211" text-anchor="middle" class="cond">WAIT_SLICE_STA</text>
+  <text x="310" y="241" text-anchor="middle" class="name">pre-read / align</text>
+  <text x="310" y="261" text-anchor="middle" class="state">SLICE_SOF_PRE_STA</text>
+  <text x="310" y="279" text-anchor="middle" class="state">SLICE_SOF_PRE_STA2</text>
+
+  <rect x="440" y="215" width="240" height="72" class="box sof"/>
+  <text x="560" y="211" text-anchor="middle" class="cond">SLICE_SOF_STA</text>
+  <text x="560" y="241" text-anchor="middle" class="name">SOF + slice command</text>
+  <text x="560" y="261" text-anchor="middle" class="state">tx_sof_out</text>
+  <text x="560" y="279" text-anchor="middle" class="state">slice_cmd_1/2_en</text>
+
+  <rect x="680" y="215" width="260" height="72" class="box payload"/>
+  <text x="810" y="211" text-anchor="middle" class="cond">SLICE_DATA_STA</text>
+  <text x="810" y="241" text-anchor="middle" class="name">slice payload + footer</text>
+  <text x="810" y="261" text-anchor="middle" class="state">slice_data_cnt</text>
+  <text x="810" y="279" text-anchor="middle" class="state">footer_1_en / footer_en</text>
+
+  <rect x="940" y="215" width="240" height="72" class="box eof"/>
+  <text x="1060" y="211" text-anchor="middle" class="cond">SLICE_EOF_STA</text>
+  <text x="1060" y="241" text-anchor="middle" class="name">CRC + EOF</text>
+  <text x="1060" y="261" text-anchor="middle" class="state">crc_tx_1/2_en</text>
+  <text x="1060" y="279" text-anchor="middle" class="state">tx_eof_out</text>
+</svg>
