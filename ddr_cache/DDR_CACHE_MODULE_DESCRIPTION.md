@@ -228,7 +228,127 @@
 - `rd_cache_ctrl` 根据最近读出的 view 数和 `view_size` 计算回退地址。
 - Aurora 侧通过 `refresh_process_en` 发送 refresh frame，通知链路进入刷新/恢复过程。
 
-## 5. 输出帧结构
+## 5. 边界识别机制
+
+`ddr_cache` 的边界识别不是靠在数据流中临时搜索 SOF/EOF 关键字完成的，而是依赖两级约定：
+
+- DDR 读取侧按 `view_size` 识别 view 边界。
+- Aurora 发送侧按状态机和计数器标记 header frame、slice frame、SOF、EOF 和 CRC 位置。
+
+![ddr_cache 边界识别机制](images/boundary_recognition_flow.svg)
+
+### 5.1 view 边界识别
+
+`rd_cache_ctrl` 只负责 view 级完整读取。它不识别 header、slice 或 EOF，也不解析帧内容。
+
+写入侧通过 `wr_view_pulse` 统计已经写入 DDR 的 view 数：
+
+```systemverilog
+else if (wr_view_pulse) begin
+    wr_view_num <= wr_view_num + 32'd1;
+end
+```
+
+读取侧通过 `rd_view_num` 统计已经从 DDR 读出的 view 数。当 `wr_view_num > rd_view_num` 时，说明 DDR 中至少有一个完整 view 可以读取：
+
+```systemverilog
+assign wr_gt_rd = (wr_view_num > rd_view_num);
+```
+
+真正读取时，`rd_cache_ctrl` 用 `user_r_valid` 作为有效数据计数脉冲。每收到一个 DDR 返回数据，`rd_data_cnt` 加 1；当计数到 `view_size - 1` 时，认为一个 view 完整读完：
+
+```systemverilog
+assign rd_data_cnt_lim      = (rd_data_cnt == (view_size - 16'd1));
+assign sample_frame_rd_done = user_r_valid & rd_data_cnt_lim;
+```
+
+`sample_frame_rd_done` 有效后，`rd_data_cnt` 清零，`rd_view_num` 加 1，`rd_latest_addr` 增加 `view_size`。因此 view 边界来自固定长度计数：
+
+```text
+view 起点 + view_size 个 user_r_valid = view 结束
+```
+
+### 5.2 normal frame 启动边界
+
+`trans_normal_frame_trig` 表示 normal view 可以启动发送，但它本身不检查 FIFO 当前读指针是否指向帧头：
+
+```systemverilog
+assign trans_normal_frame_trig = (~idle_process_en) &
+                                 (~aurora_frame_fifo_prog_empty) &
+                                 head_gap_done &
+                                 tail_gap_done;
+```
+
+这些条件只说明当前处于 normal 模式、FIFO 数据量足够、head gap 和 tail gap 已满足。它不是帧头搜索信号。
+
+normal frame 能从帧开头启动，依赖以下系统级约定：
+
+- DDR 读请求从 view 边界开始。
+- 一个 view 的读取长度由 `view_size` 固定约束。
+- `aurora_frame_fifo` 按 DDR 返回顺序缓存数据。
+- `aurora_tx_frame` 每次按固定 header + 多个 slice 的结构完整消耗一个 view。
+- FIFO 没有 overflow、underflow 或读写错位。
+
+因此，前一次 view 发送完整结束后，FIFO 读指针理论上停在下一组 view/frame 的起点。下一次 `trans_normal_frame_trig` 被状态机在 `IDLE` 状态采纳时，就从该位置开始读。
+
+代码中还有一致性诊断：状态机认为当前位置是 header SOF 或 slice SOF 时，会检查 `tx_d_out` 中的协议标识。例如 64-bit 模式下：
+
+```systemverilog
+assign set_Diag_aurora_header_err_out =
+    head_sof & sof_cnt_rch & (tx_d_out[63:44] != 'h4331);
+
+assign set_Diag_aurora_data_err_out =
+    data_sof & sof_cnt_rch & (tx_d_out[63:44] != 'h4330);
+```
+
+这说明状态机负责标记边界，数据字段只用于一致性检查，不用于搜索启动点。
+
+### 5.3 slice/header/EOF 边界识别
+
+slice 和 header 边界由 `aurora_tx_frame` 在发送侧识别。它根据当前状态 `auro_frame_state` 和状态内计数器决定当前 beat 属于哪一段：
+
+```text
+HEAD_SOF_STA  -> header command / SOF
+HEAD_DATA_STA -> header payload
+HEAD_EOF_STA  -> header CRC / EOF
+
+SLICE_SOF_STA -> slice command / SOF
+SLICE_DATA_STA -> slice payload / footer
+SLICE_EOF_STA -> slice CRC / EOF
+```
+
+SOF/EOF 不是从 `tx_d_out` 中解析出来的，而是由状态机直接生成 Aurora 侧边界信号：
+
+```systemverilog
+assign tx_sof_out = (sof_cnt == 'h0) &
+                    ((auro_frame_state == HEAD_SOF_STA) |
+                     (auro_frame_state == SLICE_SOF_STA));
+
+assign tx_eof_out = eof_cnt_rch &
+                    ((auro_frame_state == HEAD_EOF_STA) |
+                     (auro_frame_state == SLICE_EOF_STA));
+```
+
+header payload 通过 `header_cnt` 计数，slice payload 通过 `slice_data_cnt` 计数。slice 长度由 `slice_length_odd/slice_length_even` 决定，`aurora_tx_frame` 根据 `slice_cnt[0]` 选择当前 slice 的长度：
+
+```systemverilog
+assign slice_length = slice_cnt[0] ? slice_length_even : slice_length_odd;
+```
+
+所以该模块的边界识别可以概括为：
+
+```text
+rd_cache_ctrl:
+    用 view_size + user_r_valid 识别 view 边界。
+
+aurora_tx_frame:
+    用状态机 + header_cnt/slice_data_cnt/sof_cnt/eof_cnt 识别发送侧帧内边界。
+
+trans_normal_frame_trig:
+    只表示 normal frame 可以启动，不负责验证当前数据是不是帧头。
+```
+
+## 6. 输出帧结构
 
 `ddr_cache` 最终通过 Aurora TX 接口输出帧数据：
 
@@ -238,7 +358,7 @@
 - `tx_src_rdy_n_out`：低有效 source ready，表示 `tx_d_out` 当前有效。
 - `tx_rem_out`：帧尾剩余字节指示，本模块中固定输出 0。
 
-### 5.1 view 级组织
+### 6.1 view 级组织
 
 一次 normal view 的发送由 `aurora_tx_frame` 组织为：
 
@@ -246,7 +366,7 @@
 
 每个 view 先发送 1 个 header frame，再发送 `slice_sel` 个 slice frame。`slice_cnt` 统计当前 slice 编号，`view_tx_done` 在最后一个 slice frame 发送完成后产生。
 
-### 5.2 header frame 结构
+### 6.2 header frame 结构
 
 header frame 用于发送一个 view 的头部信息，数据来自 DDR FIFO 或 idle frame 生成器。
 
@@ -263,7 +383,7 @@ header frame 用于发送一个 view 的头部信息，数据来自 DDR FIFO 或
 
 在 normal 模式下，header frame 的实际数据从 `aurora_frame_fifo_dout` 发送；在 idle 模式下，header 内容由 `idle_frame_gen` 生成后通过 `idle_data_out` 发送。
 
-### 5.3 slice frame 结构
+### 6.3 slice frame 结构
 
 slice frame 用于发送一段 slice 数据。一个 view 中包含多个 slice frame。
 
@@ -279,7 +399,7 @@ slice frame 用于发送一段 slice 数据。一个 view 中包含多个 slice 
 
 slice payload 长度由 `slice_length_odd` 和 `slice_length_even` 控制，`aurora_tx_frame` 根据 `slice_cnt[0]` 在奇偶 slice 长度之间选择。
 
-### 5.4 idle frame 结构
+### 6.4 idle frame 结构
 
 `idle_frame_gen` 只生成 idle 模式下的 `idle_data_out` 数据内容；SOF、EOF、`tx_src_rdy_n_out` 和帧状态跳转仍由 `aurora_tx_frame` 负责。`aurora_tx_frame` 在 `idle_frame_ind` 有效时，从 `idle_data_out` 取数发送。
 
@@ -322,13 +442,13 @@ idle header frame 和 idle slice frame 如下图所示。每个相邻块表示�
 
 ![idle frame 结构](images/idle_frame_structure.svg)
 
-### 5.5 `idle_data_out` 选择关系
+### 6.5 `idle_data_out` 选择关系
 
 `idle_data_out` 根据帧内控制信号，填充对应的 command、payload、footer 和 CRC 块。SOF/EOF 不经过 `idle_data_out`，由 `aurora_tx_frame` 直接产生。
 
 ![idle_data_out 选择关系](images/idle_data_out_select.svg)
 
-### 5.6 normal、idle、refresh 三类输出
+### 6.6 normal、idle、refresh 三类输出
 
 `tx_d_out` 的来源由当前工作模式决定：
 
@@ -342,7 +462,7 @@ idle header frame 和 idle slice frame 如下图所示。每个相邻块表示�
 
 refresh frame 不从 DDR FIFO 或 idle 生成器取数，而是在 `aurora_tx_frame` 内部生成固定控制字。其 SOF/EOF 由 `tx_sof_refresh` 和 `tx_eof_refresh` 控制，`tx_src_rdy_refresh` 表示 refresh frame 数据有效。
 
-### 5.7 32-bit 与 64-bit 数据宽度差异
+### 6.7 32-bit 与 64-bit 数据宽度差异
 
 `TX_DATA_WIDTH_32` 控制输出数据宽度：
 
@@ -351,7 +471,7 @@ refresh frame 不从 DDR FIFO 或 idle 生成器取数，而是在 `aurora_tx_fr
 
 两种模式的帧语义一致，区别主要在每个 beat 承载的数据量、header 计数上限、slice 数据计数上限和 CRC 数据 lane 数。
 
-## 6. 时钟域关系
+## 7. 时钟域关系
 
 `ddr_cache` 涉及三个主要时钟域：
 
@@ -372,7 +492,7 @@ refresh frame 不从 DDR FIFO 或 idle 生成器取数，而是在 `aurora_tx_fr
 | `last_view_trans_ok` | `ui_clk` | `gtx_user_clk_in` | 最后 view 发送确认同步 |
 | `rp_back_cnt_add_en` | `ui_clk` | `clk_sysclk_in` | 回退计数同步 |
 
-## 7. 外部依赖和宏分支
+## 8. 外部依赖和宏分支
 
 该目录代码依赖以下外部或生成模块：
 
@@ -388,7 +508,7 @@ refresh frame 不从 DDR FIFO 或 idle 生成器取数，而是在 `aurora_tx_fr
 - 未定义时：默认 64-bit TX 数据路径。
 - 定义时：使用 32-bit TX 数据路径，并切换 FIFO、idle frame 和 CRC 相关实例。
 
-## 8. 关键状态和调试信号
+## 9. 关键状态和调试信号
 
 - `rd_cache_state`：DDR 读控制状态，来自 `rd_cache_ctrl`。
 - `rd_wr_num_equ`：读出 view 数与写入 view 数是否相等。
