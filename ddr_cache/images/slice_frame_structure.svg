@@ -15,7 +15,7 @@
   <text x="40" y="42" class="title">slice frame ç»“æž„</text>
   <rect x="35" y="100" width="145" height="70" class="box"/>
   <text x="108" y="128" text-anchor="middle" class="name">SOF preamble</text>
-  <text x="108" y="150" text-anchor="middle" class="note">å¸§å¼€å§‹</text>
+  <text x="108" y="150" text-anchor="middle" class="note">å¸§å¼€å§?/text>
   <rect x="230" y="100" width="170" height="70" class="box"/>
   <text x="315" y="128" text-anchor="middle" class="name">slice command</text>
   <text x="315" y="150" text-anchor="middle" class="note">slice_cmd_1/2_en</text>
@@ -27,7 +27,7 @@
   <text x="740" y="150" text-anchor="middle" class="note">footer_en</text>
   <rect x="860" y="100" width="120" height="70" class="box"/>
   <text x="920" y="128" text-anchor="middle" class="name">CRC</text>
-  <text x="920" y="150" text-anchor="middle" class="note">crc_tx_*</text>
+  <text x="920" y="150" text-anchor="middle" class="note">CRC Êä³ö½ÚÅÄ</text>
   <rect x="1020" y="100" width="60" height="70" class="box"/>
   <text x="1050" y="140" text-anchor="middle" class="name">EOF</text>
   <path d="M180 135 L230 135" class="line"/>

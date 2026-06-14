@@ -16,11 +16,11 @@
   </defs>
 
   <text x="40" y="42" class="title">aurora_tx_frame 代码层级</text>
-  <text x="40" y="68" class="hint">树状竖向展开：按代码中的功能块顺序组织，区分控制路径、数据路径和诊断路径。</text>
+  <text x="40" y="68" class="hint">树状竖向展开：按代码中的功能块顺序组织，区分控制路径、数据路径和诊断路径�?/text>
 
   <rect x="70" y="95" width="420" height="68" class="box top"/>
   <text x="280" y="123" text-anchor="middle" class="name">aurora_tx_frame</text>
-  <text x="280" y="146" text-anchor="middle" class="note">Aurora TX 帧状态机、数据选择和控制信号生成</text>
+  <text x="280" y="146" text-anchor="middle" class="note">Aurora TX 帧状态机、数据选择和控制信号生�?/text>
 
   <path d="M100 163 L100 850" class="tree"/>
 
@@ -32,22 +32,22 @@
   <path d="M100 287 L145 287" class="tree"/>
   <rect x="145" y="259" width="360" height="56" class="box control"/>
   <text x="325" y="282" text-anchor="middle" class="name">CDC / reset / channel ready</text>
-  <text x="325" y="302" text-anchor="middle" class="note">复位同步、TX_CHANNEL_UP、tx_dst_rdy 派生</text>
+  <text x="325" y="302" text-anchor="middle" class="note">复位同步、TX_CHANNEL_UP、axis_tx_fire 派生</text>
 
   <path d="M100 359 L145 359" class="tree"/>
   <rect x="145" y="331" width="360" height="56" class="box control"/>
   <text x="325" y="354" text-anchor="middle" class="name">refresh sync and 1us timing</text>
-  <text x="325" y="374" text-anchor="middle" class="note">refresh_process_en 同步与 refresh_trigger_pulse</text>
+  <text x="325" y="374" text-anchor="middle" class="note">refresh_process_en 同步�?refresh_trigger_pulse</text>
 
   <path d="M100 431 L145 431" class="tree"/>
   <rect x="145" y="403" width="360" height="56" class="box diag"/>
   <text x="325" y="426" text-anchor="middle" class="name">fault injection</text>
-  <text x="325" y="446" text-anchor="middle" class="note">按计数窗口将指定 beat 改写为错误标记</text>
+  <text x="325" y="446" text-anchor="middle" class="note">按计数窗口将指定 beat 改写为错误标�?/text>
 
   <path d="M100 503 L145 503" class="tree"/>
   <rect x="145" y="475" width="360" height="56" class="box control"/>
   <text x="325" y="498" text-anchor="middle" class="name">frame trigger control</text>
-  <text x="325" y="518" text-anchor="middle" class="note">normal / idle / refresh 触发与 gap 门控</text>
+  <text x="325" y="518" text-anchor="middle" class="note">normal / idle / refresh 触发�?gap 门控</text>
 
   <path d="M100 575 L145 575" class="tree"/>
   <rect x="145" y="547" width="360" height="56" class="box control"/>
@@ -62,7 +62,7 @@
   <path d="M100 719 L145 719" class="tree"/>
   <rect x="145" y="691" width="360" height="56" class="box data"/>
   <text x="325" y="714" text-anchor="middle" class="name">FIFO read and TX valid</text>
-  <text x="325" y="734" text-anchor="middle" class="note">预读 FIFO、对齐 tx_src_rdy_out</text>
+  <text x="325" y="734" text-anchor="middle" class="note">预读 FIFO、对�?axis_frame_valid</text>
 
   <path d="M100 791 L145 791" class="tree"/>
   <rect x="145" y="763" width="360" height="56" class="box data"/>
@@ -72,7 +72,7 @@
   <path d="M100 850 L145 850" class="tree"/>
   <rect x="145" y="835" width="360" height="56" class="box data"/>
   <text x="325" y="858" text-anchor="middle" class="name">TX output select</text>
-  <text x="325" y="878" text-anchor="middle" class="note">refresh、idle_data_out、FIFO 数据和 fault 注入</text>
+  <text x="325" y="878" text-anchor="middle" class="note">refresh、idle_data_out、FIFO 数据�?fault 注入</text>
 
   <path d="M520 647 L590 647" class="tree"/>
   <path d="M590 575 L590 790" class="tree"/>

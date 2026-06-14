@@ -24,7 +24,7 @@
   <text x="710" y="130" text-anchor="middle" class="name">...</text>
   <rect x="835" y="95" width="150" height="58" class="box done"/>
   <text x="910" y="120" text-anchor="middle" class="name">slice_sel - 1</text>
-  <text x="910" y="141" text-anchor="middle" class="note">完成后 view_tx_done</text>
+  <text x="910" y="141" text-anchor="middle" class="note">完成�?view_tx_done</text>
   <path d="M185 124 L240 124" class="line"/>
   <path d="M390 124 L445 124" class="line"/>
   <path d="M585 124 L640 124" class="line"/>

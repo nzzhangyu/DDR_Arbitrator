@@ -22,7 +22,7 @@
   </defs>
 
   <text x="40" y="42" class="title">aurora_tx_frame 形成的帧结构</text>
-  <text x="40" y="72" class="note">normal 和 idle 共用 header/slice 状态路径；区别只在数据源和 FIFO 读使能。refresh 使用独立的 REFRESH_WAIT/REFRESH_DATA 路径。</text>
+  <text x="40" y="72" class="note">normal �?idle 共用 header/slice 状态路径；区别只在数据源和 FIFO 读使能。refresh 使用独立�?REFRESH_WAIT/REFRESH_DATA 路径�?/text>
 
   <text x="40" y="135" class="row">normal view</text>
   <text x="170" y="105" text-anchor="middle" class="cond">trans_normal_frame_trig</text>

@@ -17,7 +17,7 @@
   </defs>
 
   <text x="40" y="42" class="title">header / slice frame 组成</text>
-  <text x="40" y="72" class="note">虚线块是发送前的 FIFO 预读/valid 对齐状态；实线块对应实际 SOF、DATA、EOF 发送阶段。</text>
+  <text x="40" y="72" class="note">虚线块是发送前�?FIFO 预读/valid 对齐状态；实线块对应实�?SOF、DATA、EOF 发送阶段�?/text>
 
   <text x="40" y="135" class="row">header frame</text>
   <rect x="180" y="105" width="260" height="72" class="box pre"/>
@@ -29,7 +29,7 @@
   <rect x="440" y="105" width="240" height="72" class="box sof"/>
   <text x="560" y="101" text-anchor="middle" class="cond">HEAD_SOF_STA</text>
   <text x="560" y="131" text-anchor="middle" class="name">SOF + header command</text>
-  <text x="560" y="151" text-anchor="middle" class="state">tx_sof_out</text>
+  <text x="560" y="151" text-anchor="middle" class="state">frame_sof</text>
   <text x="560" y="169" text-anchor="middle" class="state">header_cmd_1/2_en</text>
 
   <rect x="680" y="105" width="260" height="72" class="box payload"/>
@@ -42,7 +42,7 @@
   <text x="1060" y="101" text-anchor="middle" class="cond">HEAD_EOF_STA</text>
   <text x="1060" y="131" text-anchor="middle" class="name">CRC + EOF</text>
   <text x="1060" y="151" text-anchor="middle" class="state">crc_tx_1/2_en</text>
-  <text x="1060" y="169" text-anchor="middle" class="state">tx_eof_out</text>
+  <text x="1060" y="169" text-anchor="middle" class="state">frame_eof</text>
 
   <text x="40" y="245" class="row">slice frame</text>
   <rect x="180" y="215" width="260" height="72" class="box pre"/>
@@ -54,7 +54,7 @@
   <rect x="440" y="215" width="240" height="72" class="box sof"/>
   <text x="560" y="211" text-anchor="middle" class="cond">SLICE_SOF_STA</text>
   <text x="560" y="241" text-anchor="middle" class="name">SOF + slice command</text>
-  <text x="560" y="261" text-anchor="middle" class="state">tx_sof_out</text>
+  <text x="560" y="261" text-anchor="middle" class="state">frame_sof</text>
   <text x="560" y="279" text-anchor="middle" class="state">slice_cmd_1/2_en</text>
 
   <rect x="680" y="215" width="260" height="72" class="box payload"/>
@@ -67,5 +67,5 @@
   <text x="1060" y="211" text-anchor="middle" class="cond">SLICE_EOF_STA</text>
   <text x="1060" y="241" text-anchor="middle" class="name">CRC + EOF</text>
   <text x="1060" y="261" text-anchor="middle" class="state">crc_tx_1/2_en</text>
-  <text x="1060" y="279" text-anchor="middle" class="state">tx_eof_out</text>
+  <text x="1060" y="279" text-anchor="middle" class="state">frame_eof</text>
 </svg>

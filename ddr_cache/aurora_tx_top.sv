@@ -19,7 +19,7 @@ module aurora_tx_top (
     input  logic         console_reset_in,
     input  logic         aurora_tx_reset,
     input  logic         TX_CHANNEL_UP_in,
-    input  logic         tx_dst_rdy_n_in,
+    input  logic         m_axis_tx_tready,
 
     input  logic [127:0] user_r_data,
     input  logic         user_r_valid,
@@ -40,15 +40,14 @@ module aurora_tx_top (
     input  logic         rp_back_en_rst,
 
 `ifdef TX_DATA_WIDTH_32
-    output logic [1:0]   tx_rem_out,
-    output logic [31:0]  tx_d_out,
+    output logic [3:0]   m_axis_tx_tkeep,
+    output logic [31:0]  m_axis_tx_tdata,
 `else
-    output logic [2:0]   tx_rem_out,
-    output logic [63:0]  tx_d_out,
+    output logic [7:0]   m_axis_tx_tkeep,
+    output logic [63:0]  m_axis_tx_tdata,
 `endif
-    output logic         tx_sof_n_out,
-    output logic         tx_eof_n_out,
-    output logic         tx_src_rdy_n_out,
+    output logic         m_axis_tx_tvalid,
+    output logic         m_axis_tx_tlast,
 
     output logic         aurora_asy_fifo_almost_full,
     output logic         aurora_frame_fifo_empty,
@@ -123,6 +122,7 @@ module aurora_tx_top (
     logic       idle_slice_data_en;
     logic       idle_slice_trans_start;
     logic       idle_trig;
+    logic       axis_frame_sof;
     logic       slice_cmd_1_en;
     logic       slice_cmd_2_en;
     logic [7:0] slice_cnt;
@@ -226,7 +226,7 @@ module aurora_tx_top (
         .clk_40mhz_1us_in            (clk_40mhz_1us_in),
         .Fault_inject_en             (Fault_inject_en),
         .slice_sel                   (slice_sel[8:0]),
-        .tx_dst_rdy_n_in             (tx_dst_rdy_n_in),
+        .m_axis_tx_tready            (m_axis_tx_tready),
         .aurora_frame_fifo_prog_empty(aurora_frame_fifo_prog_empty),
         .aurora_frame_fifo_empty     (aurora_frame_fifo_empty),
         .idle_process_en             (idle_process_en),
@@ -242,18 +242,18 @@ module aurora_tx_top (
         .slice_length_even           (slice_length_even[11:0]),
 
 `ifdef TX_DATA_WIDTH_32
-        .tx_rem_out                  (tx_rem_out[1:0]),
-        .tx_d_out                    (tx_d_out[31:0]),
+        .m_axis_tx_tkeep             (m_axis_tx_tkeep[3:0]),
+        .m_axis_tx_tdata             (m_axis_tx_tdata[31:0]),
 `else
-        .tx_rem_out                  (tx_rem_out[2:0]),
-        .tx_d_out                    (tx_d_out[63:0]),
+        .m_axis_tx_tkeep             (m_axis_tx_tkeep[7:0]),
+        .m_axis_tx_tdata             (m_axis_tx_tdata[63:0]),
 `endif
         .Diag_aurora_data_err_out    (Diag_aurora_data_err_out),
         .Diag_aurora_header_err_out  (Diag_aurora_header_err_out),
         .Diag_auroradata_en_rise_flag_out(Diag_auroradata_en_rise_flag_out),
-        .tx_sof_n_out                (tx_sof_n_out),
-        .tx_eof_n_out                (tx_eof_n_out),
-        .tx_src_rdy_n_out            (tx_src_rdy_n_out),
+        .m_axis_tx_tvalid            (m_axis_tx_tvalid),
+        .m_axis_tx_tlast             (m_axis_tx_tlast),
+        .axis_frame_sof              (axis_frame_sof),
         .fifo_rd_en                  (fifo_rd_en),
         .view_tx_done                (view_tx_done),
         .idle_frame_ind              (idle_frame_ind),
@@ -327,20 +327,22 @@ module aurora_tx_top (
 
 `ifdef TX_DATA_WIDTH_32
     crc_chk_32 crc_chk (
-        .tx_sof_n_out     (tx_sof_n_out),
-        .tx_eof_n_out     (tx_eof_n_out),
-        .tx_src_rdy_n_out (tx_src_rdy_n_out),
-        .tx_d_out         (tx_d_out[31:0]),
+        .axis_frame_sof   (axis_frame_sof),
+        .m_axis_tx_tlast  (m_axis_tx_tlast),
+        .m_axis_tx_tvalid (m_axis_tx_tvalid),
+        .m_axis_tx_tready (m_axis_tx_tready),
+        .m_axis_tx_tdata  (m_axis_tx_tdata[31:0]),
         .crc_rst          (crc_rst),
         .gtx_user_clk_in  (gtx_user_clk_in),
         .crc_error        (crc_error)
     );
 `else
     crc_chk crc_chk (
-        .tx_sof_n_out     (tx_sof_n_out),
-        .tx_eof_n_out     (tx_eof_n_out),
-        .tx_src_rdy_n_out (tx_src_rdy_n_out),
-        .tx_d_out         (tx_d_out[63:0]),
+        .axis_frame_sof   (axis_frame_sof),
+        .m_axis_tx_tlast  (m_axis_tx_tlast),
+        .m_axis_tx_tvalid (m_axis_tx_tvalid),
+        .m_axis_tx_tready (m_axis_tx_tready),
+        .m_axis_tx_tdata  (m_axis_tx_tdata[63:0]),
         .crc_rst          (crc_rst),
         .gtx_user_clk_in  (gtx_user_clk_in),
         .crc_error        (crc_error)

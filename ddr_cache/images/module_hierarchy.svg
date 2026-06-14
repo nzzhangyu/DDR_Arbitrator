@@ -15,7 +15,7 @@
   </defs>
 
   <text x="40" y="42" class="title">ddr_cache 代码层级</text>
-  <text x="40" y="68" class="hint">树状竖向展开：按 ddr_cache_and_frame_gen 的实例化顺序组织，并展开 aurora_tx_top 内部实例。</text>
+  <text x="40" y="68" class="hint">树状竖向展开：按 ddr_cache_and_frame_gen 的实例化顺序组织，并展开 aurora_tx_top 内部实例�?/text>
 
   <rect x="70" y="95" width="420" height="68" class="box top"/>
   <text x="280" y="123" text-anchor="middle" class="name">ddr_cache_and_frame_gen</text>
@@ -31,14 +31,14 @@
   <path d="M100 305 L145 305" class="tree"/>
   <rect x="145" y="275" width="350" height="60" class="box major"/>
   <text x="320" y="300" text-anchor="middle" class="name">aurora_tx_top</text>
-  <text x="320" y="321" text-anchor="middle" class="note">Aurora 发送侧顶层、FIFO 缓存和诊断汇聚</text>
+  <text x="320" y="321" text-anchor="middle" class="note">Aurora 发送侧顶层、FIFO 缓存和诊断汇�?/text>
 
   <path d="M175 335 L175 678" class="tree"/>
 
   <path d="M175 390 L220 390" class="tree"/>
   <rect x="220" y="362" width="360" height="56" class="box"/>
   <text x="400" y="385" text-anchor="middle" class="name">aurora_frame_fifo / aurora_frame_fifo_32</text>
-  <text x="400" y="405" text-anchor="middle" class="note">DDR 数据跨 ui_clk 到 gtx_user_clk_in</text>
+  <text x="400" y="405" text-anchor="middle" class="note">DDR 数据�?ui_clk �?gtx_user_clk_in</text>
 
   <path d="M175 462 L220 462" class="tree"/>
   <rect x="220" y="434" width="360" height="56" class="box"/>
@@ -48,27 +48,27 @@
   <path d="M175 534 L220 534" class="tree"/>
   <rect x="220" y="506" width="360" height="56" class="box"/>
   <text x="400" y="529" text-anchor="middle" class="name">aurora_tx_frame</text>
-  <text x="400" y="549" text-anchor="middle" class="note">帧状态机、SOF/EOF、TX 控制和 FIFO 读使能</text>
+  <text x="400" y="549" text-anchor="middle" class="note">帧状态机、SOF/EOF、TX 控制�?FIFO 读使�?/text>
 
   <path d="M175 606 L220 606" class="tree"/>
   <rect x="220" y="578" width="360" height="56" class="box"/>
   <text x="400" y="601" text-anchor="middle" class="name">idle_frame_gen / idle_frame_gen_32</text>
-  <text x="400" y="621" text-anchor="middle" class="note">idle header、slice payload、footer 和 CRC 数据</text>
+  <text x="400" y="621" text-anchor="middle" class="note">idle header、slice payload、footer �?CRC 数据</text>
 
   <path d="M175 678 L220 678" class="tree"/>
   <rect x="220" y="650" width="360" height="56" class="box"/>
   <text x="400" y="673" text-anchor="middle" class="name">crc_chk / crc_chk_32</text>
-  <text x="400" y="693" text-anchor="middle" class="note">发送侧 CRC 检查</text>
+  <text x="400" y="693" text-anchor="middle" class="note">发送侧 CRC 检�?/text>
 
   <path d="M100 755 L145 755" class="tree"/>
   <rect x="145" y="725" width="350" height="60" class="box major"/>
   <text x="320" y="750" text-anchor="middle" class="name">commok_check</text>
-  <text x="320" y="771" text-anchor="middle" class="note">通信确认、refresh 流程和 read backtracking</text>
+  <text x="320" y="771" text-anchor="middle" class="note">通信确认、refresh 流程�?read backtracking</text>
 
   <path d="M100 835 L145 835" class="tree"/>
   <rect x="145" y="805" width="350" height="60" class="box support"/>
   <text x="320" y="830" text-anchor="middle" class="name">cross_clk_pulse x3</text>
-  <text x="320" y="851" text-anchor="middle" class="note">回退、最后 view 确认、view done 跨时钟域同步</text>
+  <text x="320" y="851" text-anchor="middle" class="note">回退、最�?view 确认、view done 跨时钟域同步</text>
 
   <path d="M495 835 L610 835" class="tree"/>
   <path d="M610 792 L610 878" class="tree"/>
@@ -91,5 +91,5 @@
   <path d="M100 885 L145 885" class="tree"/>
   <rect x="145" y="875" width="350" height="52" class="box major"/>
   <text x="320" y="897" text-anchor="middle" class="name">gtx_status_reg</text>
-  <text x="320" y="916" text-anchor="middle" class="note">Aurora TX 状态和诊断寄存器输出</text>
+  <text x="320" y="916" text-anchor="middle" class="note">Aurora TX 状态和诊断寄存器输�?/text>
 </svg>

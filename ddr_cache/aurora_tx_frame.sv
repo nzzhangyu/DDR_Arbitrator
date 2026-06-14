@@ -11,7 +11,7 @@ module aurora_tx_frame (
 
     input  logic        console_reset_in,
     input  logic        TX_CHANNEL_UP_in,
-    input  logic        tx_dst_rdy_n_in,
+    input  logic        m_axis_tx_tready,
     input  logic        refresh_process_en,
     input  logic        clk_40mhz_1us_in,
     input  logic        Fault_inject_en,
@@ -28,18 +28,18 @@ module aurora_tx_frame (
 `ifdef TX_DATA_WIDTH_32
     input  logic [31:0] aurora_frame_fifo_dout,
     input  logic [31:0] idle_data_out,
-    output logic [1:0]  tx_rem_out,
-    output logic [31:0] tx_d_out,
+    output logic [3:0]  m_axis_tx_tkeep,
+    output logic [31:0] m_axis_tx_tdata,
 `else
     input  logic [63:0] aurora_frame_fifo_dout,
     input  logic [63:0] idle_data_out,
-    output logic [2:0]  tx_rem_out,
-    output logic [63:0] tx_d_out,
+    output logic [7:0]  m_axis_tx_tkeep,
+    output logic [63:0] m_axis_tx_tdata,
 `endif
 
-    output logic        tx_sof_n_out,
-    output logic        tx_eof_n_out,
-    output logic        tx_src_rdy_n_out,
+    output logic        m_axis_tx_tvalid,
+    output logic        m_axis_tx_tlast,
+    output logic        axis_frame_sof,
     output logic        fifo_rd_en,
 
     output logic        view_tx_done,
@@ -108,7 +108,7 @@ module aurora_tx_frame (
     logic [11:0] idle_slice_length;  // fixed idle slice length
     logic [11:0] slice_length_tx;    // selected TX slice length
 
-    logic tx_dst_rdy;                // Aurora accepts data
+    logic axis_tx_fire;              // AXI4-Stream handshake while channel is up
     logic rst_local;                 // local GTX reset active
     logic fifo_reset;                // DDR-side FIFO reset
 
@@ -172,16 +172,17 @@ module aurora_tx_frame (
     logic        slice_cnt_lim;            // last slice selected
     logic        slice_cnt_rch;            // all slices done
     logic [3:0]  ref_data_cnt;             // refresh beat counter
-    logic        ref_data_cnt_rch;         // refresh frame done
+    logic        ref_data_cnt_lim;         // refresh last beat selected
+    logic        ref_data_cnt_rch;         // refresh frame done handshake
     logic [3:0]  slice_interview_cnt;      // inter-slice gap counter
     logic        slice_interview_cnt_rch;  // inter-slice gap done
 
-    logic tx_sof_out;                       // normal SOF pulse
-    logic tx_eof_out;                       // normal EOF pulse
-    logic tx_src_rdy_out;                   // normal data valid
-    logic tx_sof_refresh;                   // refresh SOF pulse
-    logic tx_eof_refresh;                   // refresh EOF pulse
-    logic tx_src_rdy_refresh;               // refresh data valid
+    logic frame_sof;                  // normal frame start marker
+    logic frame_eof;                  // normal frame end marker
+    logic axis_frame_valid;           // normal AXI4-Stream valid
+    logic refresh_frame_sof;          // refresh frame start marker
+    logic refresh_frame_eof;          // refresh frame end marker
+    logic refresh_axis_valid;         // refresh AXI4-Stream valid
 
     logic fifo_rd_en_t;                     // raw FIFO read enable
     logic data_valid_rd_en;                 // delayed-data valid seed
@@ -204,9 +205,9 @@ module aurora_tx_frame (
     logic slice_data_en;                    // legacy slice data flag
 
 `ifdef TX_DATA_WIDTH_32
-    logic [31:0] tx_d_out_t;         // selected TX data
+    logic [31:0] axis_tdata_pre_fault; // selected AXI4-Stream data before fault injection
 `else
-    logic [63:0] tx_d_out_t;         // selected TX data
+    logic [63:0] axis_tdata_pre_fault; // selected AXI4-Stream data before fault injection
 `endif
 
 `ifdef TX_DATA_WIDTH_32
@@ -269,8 +270,8 @@ module aurora_tx_frame (
         end
     end
 
-    // derive ready and resets
-    assign tx_dst_rdy = (~tx_dst_rdy_n_in) & tx_channel_up_gtx_d3;
+    // derive AXI4-Stream handshake and resets
+    assign axis_tx_fire = m_axis_tx_tready & tx_channel_up_gtx_d3;
     assign rst_local  = ~rst_local_gtx_d1;
     assign fifo_reset = ddr_user_rst | rst_local_ddr_dly;
 
@@ -426,16 +427,16 @@ module aurora_tx_frame (
     // SOF, EOF, Header, Slice, and Refresh Counters
     // -------------------------------------------------------------------------
     // detect counter terminal beats
-    assign sof_pre_cnt_rch = (sof_pre_cnt == sof_pre_cnt_lim) & tx_dst_rdy;
+    assign sof_pre_cnt_rch = (sof_pre_cnt == sof_pre_cnt_lim) & axis_tx_fire;
     assign sof_cnt_rch     = (sof_cnt == sof_cnt_lim);
     assign eof_cnt_rch     = (eof_cnt == eof_cnt_lim);
-    assign header_cnt_rch  = (header_cnt == header_cnt_lim) & tx_dst_rdy;
+    assign header_cnt_rch  = (header_cnt == header_cnt_lim) & axis_tx_fire;
 
     // count slice payload beats
     assign slice_data_cnt_add_normal = (~aurora_frame_fifo_empty) &
-                                       tx_dst_rdy &
+                                       axis_tx_fire &
                                        (~idle_frame_ind);
-    assign slice_data_cnt_add_idle = tx_dst_rdy & idle_frame_ind;
+    assign slice_data_cnt_add_idle = axis_tx_fire & idle_frame_ind;
     assign slice_data_cnt_add_en   = slice_data_cnt_add_normal | slice_data_cnt_add_idle;
     assign slice_data_cnt_rch      = (slice_data_cnt == slice_data_cnt_lim) &
                                      (slice_data_cnt_add_normal | slice_data_cnt_add_idle);
@@ -443,14 +444,15 @@ module aurora_tx_frame (
     // select slice count
     assign latch_frame_kind = (auro_frame_state == HEAD_DATA_STA) &
                               (header_cnt == 'h7) &
-                              tx_dst_rdy;
+                              axis_tx_fire;
     assign slice_sel_r   = idle_frame_ind ? 8'h20 : slice_sel;
-    assign add_slice_cnt = (auro_frame_state == SLICE_EOF_STA) & eof_cnt_rch & tx_dst_rdy;
+    assign add_slice_cnt = (auro_frame_state == SLICE_EOF_STA) & eof_cnt_rch & axis_tx_fire;
     assign slice_cnt_lim = (slice_cnt == (slice_sel_r - 1));
     assign slice_cnt_rch = slice_cnt_lim & add_slice_cnt;
 
     // detect refresh and inter-slice completion
-    assign ref_data_cnt_rch        = (ref_data_cnt == 'h1) & tx_dst_rdy;
+    assign ref_data_cnt_lim        = (ref_data_cnt == 'h1);
+    assign ref_data_cnt_rch        = ref_data_cnt_lim & axis_tx_fire;
     assign slice_interview_cnt_rch = 'h1;
 
     // count SOF preamble
@@ -462,7 +464,7 @@ module aurora_tx_frame (
                  (auro_frame_state != SLICE_SOF_PRE_STA)) begin
             sof_pre_cnt <= 'h0;
         end
-        else if ((~sof_pre_cnt_rch) && tx_dst_rdy) begin
+        else if ((~sof_pre_cnt_rch) && axis_tx_fire) begin
             sof_pre_cnt <= sof_pre_cnt + 1'h1;
         end
     end
@@ -476,7 +478,7 @@ module aurora_tx_frame (
                  (auro_frame_state != SLICE_SOF_STA)) begin
             sof_cnt <= 'h0;
         end
-        else if ((~sof_cnt_rch) && tx_dst_rdy) begin
+        else if ((~sof_cnt_rch) && axis_tx_fire) begin
             sof_cnt <= sof_cnt + 1'h1;
         end
     end
@@ -490,7 +492,7 @@ module aurora_tx_frame (
                  (auro_frame_state != SLICE_EOF_STA)) begin
             eof_cnt <= 'h0;
         end
-        else if ((~eof_cnt_rch) && tx_dst_rdy) begin
+        else if ((~eof_cnt_rch) && axis_tx_fire) begin
             eof_cnt <= eof_cnt + 1'h1;
         end
     end
@@ -503,7 +505,7 @@ module aurora_tx_frame (
         else if (auro_frame_state != HEAD_DATA_STA) begin
             header_cnt <= 'h0;
         end
-        else if ((~header_cnt_rch) && tx_dst_rdy) begin
+        else if ((~header_cnt_rch) && axis_tx_fire) begin
             header_cnt <= header_cnt + 1'h1;
         end
     end
@@ -542,7 +544,7 @@ module aurora_tx_frame (
         else if (auro_frame_state != REFRESH_DATA) begin
             ref_data_cnt <= 'h0;
         end
-        else if ((~ref_data_cnt_rch) & tx_dst_rdy) begin
+        else if ((~ref_data_cnt_rch) & axis_tx_fire) begin
             ref_data_cnt <= ref_data_cnt + 1'h1;
         end
     end
@@ -605,7 +607,7 @@ module aurora_tx_frame (
                 if (rst_local) begin
                     auro_frame_state_next = IDLE;
                 end
-                else if (tx_dst_rdy) begin
+                else if (axis_tx_fire) begin
                     auro_frame_state_next = HEAD_SOF_STA;
                 end
             end
@@ -614,7 +616,7 @@ module aurora_tx_frame (
                 if (rst_local) begin
                     auro_frame_state_next = HEAD_EOF_STA;
                 end
-                else if (sof_cnt_rch && tx_dst_rdy) begin
+                else if (sof_cnt_rch && axis_tx_fire) begin
                     auro_frame_state_next = HEAD_DATA_STA;
                 end
             end
@@ -626,10 +628,10 @@ module aurora_tx_frame (
             end
 
             HEAD_EOF_STA: begin
-                if (rst_local /*&& (tx_dst_rdy)*/) begin
+                if (rst_local /*&& (axis_tx_fire)*/) begin
                     auro_frame_state_next = IDLE;
                 end
-                else if (eof_cnt_rch && tx_dst_rdy) begin
+                else if (eof_cnt_rch && axis_tx_fire) begin
                     auro_frame_state_next = WAIT_SLICE_STA;
                 end
             end
@@ -657,7 +659,7 @@ module aurora_tx_frame (
                 if (rst_local) begin
                     auro_frame_state_next = IDLE;
                 end
-                if (tx_dst_rdy) begin
+                if (axis_tx_fire) begin
                     auro_frame_state_next = SLICE_SOF_STA;
                 end
             end
@@ -666,7 +668,7 @@ module aurora_tx_frame (
                 if (rst_local) begin
                     auro_frame_state_next = SLICE_EOF_STA;
                 end
-                else if (sof_cnt_rch && tx_dst_rdy) begin
+                else if (sof_cnt_rch && axis_tx_fire) begin
                     auro_frame_state_next = SLICE_DATA_STA;
                 end
             end
@@ -678,10 +680,10 @@ module aurora_tx_frame (
             end
 
             SLICE_EOF_STA: begin
-                if (rst_local /*&& (tx_dst_rdy)*/) begin
+                if (rst_local /*&& (axis_tx_fire)*/) begin
                     auro_frame_state_next = IDLE;
                 end
-                else if (eof_cnt_rch && tx_dst_rdy) begin
+                else if (eof_cnt_rch && axis_tx_fire) begin
                     if (slice_cnt_rch) begin
                         auro_frame_state_next = SLICE_DONE_STA;
                     end
@@ -720,10 +722,10 @@ module aurora_tx_frame (
     // Frame FSM: State Output and Control Assignment
     // -------------------------------------------------------------------------
     // generate normal frame strobes
-    assign tx_sof_out = (sof_cnt == 'h0) &
+    assign frame_sof = (sof_cnt == 'h0) &
                         ((auro_frame_state == HEAD_SOF_STA) |
                          (auro_frame_state == SLICE_SOF_STA));
-    assign tx_eof_out = eof_cnt_rch &
+    assign frame_eof = eof_cnt_rch &
                         ((auro_frame_state == HEAD_EOF_STA) |
                          (auro_frame_state == SLICE_EOF_STA));
     assign aurora_frame_ok = (auro_frame_state == SLICE_DONE_STA) |
@@ -733,7 +735,7 @@ module aurora_tx_frame (
     // FIFO Read and TX Valid Control
     // -------------------------------------------------------------------------
     // read during frame data path states
-    assign fifo_rd_en_t = tx_dst_rdy &
+    assign fifo_rd_en_t = axis_tx_fire &
                           ((auro_frame_state == HEAD_SOF_PRE_STA) |
                            (auro_frame_state == HEAD_SOF_PRE_STA2) |
                            (auro_frame_state == HEAD_SOF_STA) |
@@ -748,7 +750,7 @@ module aurora_tx_frame (
     assign fifo_rd_en = (~idle_frame_ind) & fifo_rd_en_t;
 
     // align valid with FIFO output latency
-    assign data_valid_rd_en = tx_dst_rdy &
+    assign data_valid_rd_en = axis_tx_fire &
                               ((auro_frame_state == HEAD_SOF_PRE_STA2) |
                                (auro_frame_state == HEAD_SOF_STA) |
                                (auro_frame_state == HEAD_DATA_STA) |
@@ -763,49 +765,49 @@ module aurora_tx_frame (
         if (aurora_sw_rst) begin
             fifo_rd_en_dly <= 'h0;
         end
-        else if (tx_dst_rdy) begin
+        else if (axis_tx_fire) begin
             fifo_rd_en_dly <= data_valid_rd_en;
         end
     end
 
-    // qualify TX valid by ready
-    assign tx_src_rdy_out = fifo_rd_en_dly & tx_dst_rdy;
+    // expose valid after FIFO latency; counters advance only on axis_tx_fire
+    assign axis_frame_valid = fifo_rd_en_dly & tx_channel_up_gtx_d3;
 
     // -------------------------------------------------------------------------
     // Header, Slice, Footer, and CRC Control
     // -------------------------------------------------------------------------
     // mark idle slice data window
     assign idle_slice_data_en = idle_slice_data_en_t;
-    assign idle_slice_data_en_t = tx_dst_rdy &
+    assign idle_slice_data_en_t = axis_tx_fire &
                                   ((auro_frame_state == SLICE_SOF_PRE_STA2) |
                                    (auro_frame_state == SLICE_SOF_STA) |
                                    (auro_frame_state == SLICE_DATA_STA));
 
     // mark header command and payload beats
-    assign header_cmd_2_en = sof_cnt_rch      & tx_dst_rdy & (auro_frame_state == HEAD_SOF_STA);
-    assign header_cmd_1_en = (sof_cnt == 'h0) & tx_dst_rdy & (auro_frame_state == HEAD_SOF_STA);
-    assign header_en       = tx_dst_rdy & (auro_frame_state == HEAD_DATA_STA);
+    assign header_cmd_2_en = sof_cnt_rch      & axis_tx_fire & (auro_frame_state == HEAD_SOF_STA);
+    assign header_cmd_1_en = (sof_cnt == 'h0) & axis_tx_fire & (auro_frame_state == HEAD_SOF_STA);
+    assign header_en       = axis_tx_fire & (auro_frame_state == HEAD_DATA_STA);
 
     // mark slice command beats
-    assign slice_cmd_2_en = sof_cnt_rch      & tx_dst_rdy & (auro_frame_state == SLICE_SOF_STA);
-    assign slice_cmd_1_en = (sof_cnt == 'h0) & tx_dst_rdy & (auro_frame_state == SLICE_SOF_STA);
+    assign slice_cmd_2_en = sof_cnt_rch      & axis_tx_fire & (auro_frame_state == SLICE_SOF_STA);
+    assign slice_cmd_1_en = (sof_cnt == 'h0) & axis_tx_fire & (auro_frame_state == SLICE_SOF_STA);
 
 `ifdef TX_DATA_WIDTH_32
     // 32-bit footer and CRC cadence
-    assign footer_en   = tx_dst_rdy & (auro_frame_state == SLICE_DATA_STA) &
+    assign footer_en   = axis_tx_fire & (auro_frame_state == SLICE_DATA_STA) &
                          (slice_data_cnt == slice_data_cnt_lim);
-    assign footer_1_en = tx_dst_rdy & (auro_frame_state == SLICE_DATA_STA) &
+    assign footer_1_en = axis_tx_fire & (auro_frame_state == SLICE_DATA_STA) &
                          (slice_data_cnt == (slice_data_cnt_lim - 1));
-    assign crc_en_t    = tx_dst_rdy &
+    assign crc_en_t    = axis_tx_fire &
                          (((auro_frame_state == HEAD_DATA_STA) && header_cnt[0]) |
                           ((auro_frame_state == SLICE_DATA_STA) && slice_data_cnt[0]));
 `else
     // 64-bit footer and CRC cadence
-    assign footer_en   = tx_dst_rdy & (auro_frame_state == SLICE_DATA_STA) &
+    assign footer_en   = axis_tx_fire & (auro_frame_state == SLICE_DATA_STA) &
                          (slice_data_cnt == slice_data_cnt_lim);
-    assign footer_1_en = tx_dst_rdy & (auro_frame_state == SLICE_DATA_STA) &
+    assign footer_1_en = axis_tx_fire & (auro_frame_state == SLICE_DATA_STA) &
                          (slice_data_cnt == (slice_data_cnt_lim - 1));
-    assign crc_en_t    = tx_dst_rdy &
+    assign crc_en_t    = axis_tx_fire &
                          ((auro_frame_state == HEAD_DATA_STA) |
                           (auro_frame_state == SLICE_DATA_STA));
 `endif
@@ -826,9 +828,9 @@ module aurora_tx_frame (
     // Refresh Frame Control
     // -------------------------------------------------------------------------
     // generate refresh frame strobes
-    assign tx_sof_refresh     = (auro_frame_state == REFRESH_DATA) & tx_dst_rdy & (ref_data_cnt == 'h0);
-    assign tx_eof_refresh     = (auro_frame_state == REFRESH_DATA) & tx_dst_rdy & ref_data_cnt_rch;
-    assign tx_src_rdy_refresh = tx_sof_refresh | tx_eof_refresh;
+    assign refresh_frame_sof     = (auro_frame_state == REFRESH_DATA) & (ref_data_cnt == 'h0);
+    assign refresh_frame_eof     = (auro_frame_state == REFRESH_DATA) & ref_data_cnt_lim;
+    assign refresh_axis_valid = (auro_frame_state == REFRESH_DATA) & tx_channel_up_gtx_d3;
 
     // -------------------------------------------------------------------------
     // TX Output Selection
@@ -837,24 +839,25 @@ module aurora_tx_frame (
     logic [3:0]  PROTOCAL_CODE = 'h3;   // refresh protocol tag
     logic [3:0]  REFRESH_ID    = 'h2;   // refresh frame tag
 
-    // drive Aurora active-low controls
-    assign tx_rem_out       = 'h0;
-    assign tx_sof_n_out     = ~(tx_sof_out | tx_sof_refresh);
-    assign tx_eof_n_out     = ~(tx_eof_out | tx_eof_refresh);
-    assign tx_src_rdy_n_out = ~(tx_src_rdy_out | tx_src_rdy_refresh);
+    // Drive AXI4-Stream output controls. SOF stays internal and marks the
+    // first TVALID/TREADY beat after reset or after a previous TLAST.
+    assign m_axis_tx_tkeep  = '1;
+    assign axis_frame_sof   = frame_sof | refresh_frame_sof;
+    assign m_axis_tx_tlast  = frame_eof | refresh_frame_eof;
+    assign m_axis_tx_tvalid = axis_frame_valid | refresh_axis_valid;
 
 `ifdef TX_DATA_WIDTH_32
     // select 32-bit TX payload
-    assign tx_d_out = fault_gen_inject_ind ? {12'hFAE, tx_d_out_t[19:0]} : tx_d_out_t;
-    assign tx_d_out_t = tx_sof_refresh ? 32'h00000100 :
-                        tx_eof_refresh ? {PROJECT_CODE, PROTOCAL_CODE, REFRESH_ID, 12'h0} :
+    assign m_axis_tx_tdata = fault_gen_inject_ind ? {12'hFAE, axis_tdata_pre_fault[19:0]} : axis_tdata_pre_fault;
+    assign axis_tdata_pre_fault = refresh_frame_sof ? 32'h00000100 :
+                        refresh_frame_eof ? {PROJECT_CODE, PROTOCAL_CODE, REFRESH_ID, 12'h0} :
                         idle_frame_ind ? idle_data_out :
                         aurora_frame_fifo_dout;
 `else
     // select 64-bit TX payload
-    assign tx_d_out = fault_gen_inject_ind ? {12'hFAE, tx_d_out_t[51:0]} : tx_d_out_t;
-    assign tx_d_out_t = tx_sof_refresh ? {PROJECT_CODE, PROTOCAL_CODE, REFRESH_ID, 12'h0, 32'h00000100} :
-                        tx_eof_refresh ? {PROJECT_CODE, PROTOCAL_CODE, REFRESH_ID, 12'h0, 32'h00000100} :
+    assign m_axis_tx_tdata = fault_gen_inject_ind ? {12'hFAE, axis_tdata_pre_fault[51:0]} : axis_tdata_pre_fault;
+    assign axis_tdata_pre_fault = refresh_frame_sof ? {PROJECT_CODE, PROTOCAL_CODE, REFRESH_ID, 12'h0, 32'h00000100} :
+                        refresh_frame_eof ? {PROJECT_CODE, PROTOCAL_CODE, REFRESH_ID, 12'h0, 32'h00000100} :
                         idle_frame_ind ? idle_data_out :
                         aurora_frame_fifo_dout;
 `endif
@@ -863,24 +866,24 @@ module aurora_tx_frame (
     // Diagnostic and Debug Outputs
     // -------------------------------------------------------------------------
     // sample SOF check points
-    assign data_sof = tx_dst_rdy & (auro_frame_state == SLICE_SOF_STA);
-    assign head_sof = tx_dst_rdy & (auro_frame_state == HEAD_SOF_STA);
+    assign data_sof = axis_tx_fire & (auro_frame_state == SLICE_SOF_STA);
+    assign head_sof = axis_tx_fire & (auro_frame_state == HEAD_SOF_STA);
 
 `ifdef TX_DATA_WIDTH_32
     // check 32-bit frame tags
-    assign set_Diag_aurora_data_err_out   = data_sof & sof_cnt_rch & (tx_d_out[31:12] != 'h4330);
-    assign set_Diag_aurora_header_err_out = head_sof & sof_cnt_rch & (tx_d_out[31:12] != 'h4331);
+    assign set_Diag_aurora_data_err_out   = data_sof & sof_cnt_rch & (m_axis_tx_tdata[31:12] != 'h4330);
+    assign set_Diag_aurora_header_err_out = head_sof & sof_cnt_rch & (m_axis_tx_tdata[31:12] != 'h4331);
 `else
     // check 64-bit frame tags
-    assign set_Diag_aurora_data_err_out   = data_sof & sof_cnt_rch & (tx_d_out[63:44] != 'h4330);
-    assign set_Diag_aurora_header_err_out = head_sof & sof_cnt_rch & (tx_d_out[63:44] != 'h4331);
+    assign set_Diag_aurora_data_err_out   = data_sof & sof_cnt_rch & (m_axis_tx_tdata[63:44] != 'h4330);
+    assign set_Diag_aurora_header_err_out = head_sof & sof_cnt_rch & (m_axis_tx_tdata[63:44] != 'h4331);
 `endif
 
     // detect first view marker
     assign aurora_first_view_temp = (header_cnt == 'h0) &
-                                    tx_d_out[20] &
+                                    m_axis_tx_tdata[20] &
                                     (auro_frame_state == HEAD_DATA_STA) &
-                                    tx_src_rdy_out;
+                                    axis_frame_valid;
 
     // pulse data tag error
     always_ff @(posedge gtx_user_clk_in) begin
@@ -923,7 +926,7 @@ module aurora_tx_frame (
         if (aurora_sw_rst) begin
             aurora_idle_cnt <= 'h0;
         end
-        else if (tx_eof_out) begin
+        else if (frame_eof) begin
             aurora_idle_cnt <= 'h0;
         end
         else if (pulse_1us_gtx_d2 && (~pulse_1us_gtx_d3)) begin

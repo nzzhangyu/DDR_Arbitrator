@@ -1,522 +1,138 @@
-# ddr_cache 模块说明
+# DDR_CACHE_MODULE_DESCRIPTION
 
 ## 1. 总体功能
 
-`ddr_cache` 是 DDR 调度器下一级的缓存读取与 Aurora 发送模块。它从 DDR 读通道接收 `user_r_data/user_r_valid`，按 view 粒度缓存到 Aurora 发送 FIFO，再由 Aurora TX 帧生成逻辑组织为 header frame、slice frame、idle frame 或 refresh frame，最终输出 Aurora LocalLink 风格的 `tx_*` 接口。
+`ddr_cache` 是独立的 DDR 读缓存和 Aurora TX frame 发送工程。它从 DDR 读侧组织 view 数据，经 FIFO 跨到 GTX 用户时钟域，再由 `aurora_tx_frame` 组成 normal、idle 或 refresh frame，通过 AXI4-Stream master 接口输出到下游 Aurora TX 路径。
 
-该模块同时负责：
+工程的外部 TX 边界已经改为 AXI4-Stream：
 
-- 根据写入 view 数和读出 view 数控制 DDR 读请求。
-- 在 Aurora 侧发送每个 view 的 header frame 与多个 slice frame。
-- 在无有效采集数据或链路等待期间发送 idle frame。
-- 根据通信确认 `comm_ok` 判断 view 是否发送成功。
-- 通信异常时触发 refresh 流程和 DDR read backtracking。
-- 生成和检查 CRC，并输出 Aurora 发送诊断状态。
+- `m_axis_tx_tdata`
+- `m_axis_tx_tvalid`
+- `m_axis_tx_tready`
+- `m_axis_tx_tlast`
+- `m_axis_tx_tkeep`
 
-## 2. 代码层级
+不导出 SOF 或 `TUSER`。packet 起点按 AXI4-Stream 规则隐式识别：reset 后或上一个 `TLAST` handshake 后的第一个 `TVALID && TREADY` beat 是新 packet 的第一个 beat。
 
-当前 `ddr_cache` 目录的主要层级如下：
+## 2. 主要模块
 
-![ddr_cache 代码层级](images/module_hierarchy.svg)
+| 模块 | 功能 |
+| --- | --- |
+| `ddr_cache_and_frame_gen` | ddr_cache 独立工程顶层，连接 DDR 读控制、Aurora TX top 和 AXI4-Stream 输出 |
+| `rd_cache_ctrl` | DDR 读 view 控制、读地址/长度管理、回退重传相关控制 |
+| `aurora_tx_top` | GTX 侧发送子系统顶层，连接 FIFO、frame 生成、idle frame、CRC 检查和诊断 |
+| `aurora_tx_frame` | TX frame 状态机，选择 normal/idle/refresh 数据并驱动 AXI4-Stream 输出 |
+| `idle_frame_gen` | 生成 idle header/slice/footer 数据 |
+| `crc_chk` / `crc_chk_32` | 按 AXI4-Stream handshake 检查发送帧尾 CRC |
 
-其中 `ddr_cache_and_frame_gen.sv` 是目录级顶层，连接 DDR UI 时钟域、GTX/Aurora 时钟域、系统控制时钟域，以及外部 DDR 调度器和 Aurora TX 接口。
+## 3. 数据流
 
-| 层级 | 模块 | 主要职责 |
+![ddr_cache 模块层级](images/module_hierarchy.svg)
+
+基本路径如下：
+
+```text
+DDR read data
+  -> aurora_frame_fifo
+  -> aurora_tx_frame
+  -> m_axis_tx_tdata/tvalid/tready/tlast/tkeep
+```
+
+normal view 数据来自 DDR FIFO。idle frame 不读取 DDR FIFO，由 `idle_frame_gen` 生成固定结构数据。refresh frame 优先级最高，由 `aurora_tx_frame` 内部生成固定控制字并通过同一 AXI4-Stream 输出。
+
+## 4. AXI4-Stream 输出接口
+
+| 信号 | 方向 | 说明 |
 | --- | --- | --- |
-| 目录级顶层 | `ddr_cache_and_frame_gen` | 连接 DDR 读控制、Aurora 发送、通信确认和回退重传 |
-| DDR 读控制 | `rd_cache_ctrl` | 产生 DDR 读请求，统计 view 读写进度，计算回退地址 |
-| Aurora 发送顶层 | `aurora_tx_top` | FIFO 缓存、帧发送、idle 数据、CRC 检查和诊断汇聚 |
-| Aurora 数据 FIFO | `aurora_frame_fifo` / `aurora_frame_fifo_32` | DDR 数据跨时钟域缓存 |
-| 发送模式选择 | `trans_frame_type_ctrl` | 选择 normal / idle 发送模式 |
-| 帧控制核心 | `aurora_tx_frame` | 组织 header/slice/idle/refresh frame 并输出 `tx_*` |
-| idle 数据 | `idle_frame_gen` / `idle_frame_gen_32` | 生成 idle frame 的 header、slice、footer、CRC 数据 |
-| CRC 检查 | `crc_chk` / `crc_chk_32` | 检查 Aurora TX 输出帧尾 CRC |
-| 通信确认 | `commok_check` | 根据 `comm_ok` 判断发送是否成功，触发 refresh 和回退 |
-| 跨时钟同步 | `cross_clk_pulse` | 同步回退、最后 view 确认和 view done 脉冲 |
-| 状态寄存器 | `gtx_status_reg` | 汇总 Aurora TX 状态和诊断输出 |
-
-## 3. 模块功能介绍
-
-### 3.1 `ddr_cache_and_frame_gen.sv`
-
-`ddr_cache_and_frame_gen` 是 `ddr_cache` 的总顶层，负责把 DDR 读控制、Aurora 帧发送、通信确认和回退重传控制串起来。
-
-主要功能：
-
-- 接收 DDR 读数据 `user_r_data/user_r_valid`，交给 `aurora_tx_top` 缓存和发送。
-- 通过 `rd_cache_ctrl` 产生 `ddr_rd_req` 和 `req_stop`，控制上一级 DDR 调度器是否继续读数据。
-- 通过 `commok_check` 检测每个 view 发送后的通信确认结果。
-- 在通信异常时输出 `rp_back_en`、`rp_back_view_addr`，通知 DDR 读地址回退。
-- 将 `view_tx_done`、`last_view_trans_ok`、`rp_back_cnt_add_en` 等跨时钟域控制信号通过 `cross_clk_pulse` 同步到目标时钟域。
-- 输出 `cache_tp`、`rd_cache_state`、`rd_wr_num_equ`、`auro_tx_status_reg_out` 等调试和状态信号。
-
-### 3.2 `rd_cache_ctrl.sv`
-
-`rd_cache_ctrl` 负责 DDR 读请求调度和 view 级读写进度管理，是 DDR 调度器与 Aurora 发送缓存之间的读控制模块。
-
-主要功能：
-
-- 将系统时钟域的 `view_Reading_Done`、`last_view_wr_done` 同步到 `ui_clk`。
-- 维护 `wr_view_num` 和 `rd_view_num`，判断是否存在“已写入但未读出”的 view。
-- 当 `wr_view_num > rd_view_num`、Aurora FIFO 未满、非 idle、非 refresh 且链路正常时，允许发起 DDR 读请求。
-- 用三段式状态机控制 `ddr_rd_req`，并在两个 view 之间插入约 90 us 的读间隔。
-- 根据 `view_size` 和 `user_r_valid` 统计单个 view 的 DDR 返回数据数量，产生 `sample_frame_rd_done`。
-- 支持最多两个 view 的 read backtracking，计算 `rp_back_view_addr` 供上一级 DDR 读地址回退。
-- 当最后一个写入 view 已读完、发送成功且 DDR 读 FIFO 为空时，输出 `last_view_trans_ok`。
-
-### 3.3 `aurora_tx_top.sv`
-
-`aurora_tx_top` 是 Aurora 发送侧顶层，工作在 DDR UI 时钟域和 GTX 用户时钟域之间。
-
-主要功能：
-
-- 将 DDR 输出的 128-bit `user_r_data` 按 32-bit 或 64-bit Aurora 数据宽度重排后写入异步 FIFO。
-- 例化 `aurora_frame_fifo` 或 `aurora_frame_fifo_32`，完成 `ui_clk` 到 `gtx_user_clk_in` 的数据跨域缓存。
-- 根据 `slice_length_odd/even` 设置 FIFO `prog_empty_thresh`，用于判断一段 slice 数据是否足够发送。
-- 管理 Aurora TX 本地复位，包括 `make_data_on` 上升沿、回退重传复位 `rp_back_en_rst` 和 Aurora reset。
-- 例化 `trans_frame_type_ctrl` 判断当前应发送 normal frame 还是 idle frame。
-- 例化 `aurora_tx_frame` 产生 Aurora 的 SOF/EOF/SRC_RDY、FIFO 读使能和帧控制信号。
-- 例化 `idle_frame_gen` 生成 idle frame 的实际 payload。
-- 例化 `crc_chk` 对发送出的 Aurora 数据进行 CRC 检查。
-- 检测 FIFO overflow/underflow 并输出诊断脉冲。
-
-#### 3.3.1 `aurora_frame_fifo` / `aurora_frame_fifo_32`
-
-`aurora_frame_fifo` 是 Aurora 发送数据 FIFO，负责把 DDR UI 时钟域写入的数据缓存到 GTX 用户时钟域读出。
-
-主要功能：
-
-- 接收 `aurora_tx_top` 整理后的 DDR 读数据。
-- 通过异步 FIFO 完成 `ui_clk` 到 `gtx_user_clk_in` 的数据跨域。
-- 输出 `aurora_frame_fifo_dout` 供 normal frame 发送。
-- 输出 `empty/prog_empty/prog_full/full` 等状态，用于发送门控和 overflow/underflow 诊断。
-
-#### 3.3.2 `trans_frame_type_ctrl.sv`
-
-`trans_frame_type_ctrl` 用于决定 Aurora 当前处于 busy/normal 发送阶段还是 idle 发送阶段。
-
-主要功能：
-
-- 在 `sampling_data_on` 有效且 `view_start_cnt_half` 到来时，进入 busy 状态，表示后续应优先发送采集数据。
-- 在最后一个 view 发送完成并通过 `gtx_clk_last_view_trans_fsh` 同步到 GTX 时钟域后，退出 busy 状态。
-- 输出 `idle_process_en = ~busy_process_en`，供 `aurora_tx_frame` 和 `idle_frame_gen` 决定是否发送 idle frame。
-
-#### 3.3.3 `aurora_tx_frame.sv`
-
-`aurora_tx_frame` 是 Aurora 发送帧控制核心。它不直接生成 idle payload 内容，而是决定当前发送 normal、idle 或 refresh 数据，并产生所有帧时序控制信号。
-
-主要功能：
-
-- 按状态机顺序发送一个 view：
-  - header frame
-  - 多个 slice frame
-  - view done
-- normal 模式下从 `aurora_frame_fifo_dout` 取 DDR 数据。
-- idle 模式下从 `idle_data_out` 取 idle frame 数据。
-- refresh 模式下由 `refresh_process_en` 触发 refresh frame。
-- 产生 `tx_sof_n_out`、`tx_eof_n_out`、`tx_src_rdy_n_out`、`tx_d_out`。
-- 根据 SOF、EOF、header、slice、footer、CRC 位置产生：
-  - `header_en`
-  - `header_cmd_1_en/header_cmd_2_en`
-  - `slice_cmd_1_en/slice_cmd_2_en`
-  - `footer_en/footer_1_en`
-  - `crc_en`
-  - `crc_tx_1_en/crc_tx_2_en`
-  - `clear_crc`
-- 控制 FIFO 读使能 `fifo_rd_en`，idle frame 时不读 DDR FIFO。
-- 统计 `header_cnt`、`slice_cnt`、`slice_data_cnt` 等帧内计数。
-- 根据 `slice_length_odd/even` 区分奇偶 slice 长度。
-- 输出 `view_tx_done`，通知一个 view 的 Aurora 发送完成。
-- 支持 fault injection，将指定 slice 数据位置替换为错误标记，用于验证诊断链路。
-- 输出 Aurora header/data 错误诊断信号和 `auro_frame_state_test` 状态观察信号。
-
-#### 3.3.4 `idle_frame_gen.sv`
-
-`idle_frame_gen` 负责生成 idle frame 的数据内容。它使用 `aurora_tx_frame` 输出的 header/slice/footer/CRC 控制信号，在 idle 模式下构造对应的 payload。
-
-主要功能：
-
-- 根据 `idle_process_en`、`idle_frame_ind` 和内部计数产生 `idle_trig`，触发一次 idle frame 发送。
-- 输出 `idle_process_active_out` 和 debug 状态，表示 idle 过程是否处于活动状态。
-- 根据 `DMS_Type`、`L_FTP_temp`、`R_FTP_temp` 等输入生成 idle header 字段。
-- 生成 idle header、slice header、footer 和 slice data。
-- 在 slice data 区域使用 LFSR 类数据生成方式产生填充数据。
-- 根据 `aurora_tx_frame` 的 `clear_crc/crc_en/crc_tx_*` 控制生成 idle frame CRC。
-- 输出 `idle_data_out`，供 `aurora_tx_frame` 在 idle 模式下选择发送。
-
-#### 3.3.5 `crc_chk.sv`
-
-`crc_chk` 对 Aurora TX 输出数据做发送侧 CRC 校验。
-
-主要功能：
-
-- 在 `tx_src_rdy_n_out` 有效时锁存发送数据。
-- 在 SOF 后清 CRC，在普通数据段使能 CRC 累加。
-- EOF 到来时锁存发送的 CRC 字段。
-- 例化多个 `CRC_16_header_data`，分别对 64-bit 数据的 4 个 16-bit lane 计算 CRC。
-- 将计算得到的 CRC 与帧尾携带的 CRC 比较，输出单周期 `crc_error`。
-
-### 3.4 `comm_ok.sv`
-
-文件内模块名为 `commok_check`，用于检测每个 view 发送后的通信确认，并产生 refresh 和 read backtracking 控制。
-
-主要功能：
-
-- 将 `comm_ok` 同步到 `ui_clk`，检测其边沿作为通信确认事件。
-- 根据 `ui_clk_rd_view_pulse` 或 `sample_frame_rd_done` 判断一个 view 已进入待确认阶段。
-- 在 `WAIT_COMM_OK_STA` 中等待通信确认。
-- 如果通信超时、连续 view 未确认，或确认节奏异常，则触发 `rp_back_en_t`。
-- 输出 `rp_back_en_i/rp_back_en`，通知 `rd_cache_ctrl` 和 DDR 调度器进行读回退。
-- 输出 `rp_back_en_rst`，延长回退复位窗口，等待 DDR MIG 回到空闲状态。
-- 输出 `refresh_process_en`，驱动 Aurora 侧发送 refresh frame。
-- 输出 `view_trans_ok`，表示当前 view 发送确认通过。
-- 当 `comm_ok_disable` 有效时，使用内部 1 us 计数产生替代确认节奏，便于屏蔽外部确认信号。
-
-### 3.5 `cross_clk_pulse`
-
-`cross_clk_pulse` 在 `ddr_cache_and_frame_gen` 中被多次例化，用于把单周期控制事件同步到目标时钟域。
-
-主要功能：
-
-- `rp_back_en_sys_gen_dut`：将 `rp_back_cnt_add_en` 从 `ui_clk` 同步到 `clk_sysclk_in`。
-- `last_view_trans_fsh_gen_dut`：将 `last_view_trans_ok` 从 `ui_clk` 同步到 `gtx_user_clk_in`。
-- `rd_view_pulse_gen_dut`：将 `view_tx_done` 从 `gtx_user_clk_in` 同步到 `ui_clk`。
-
-### 3.6 `gtx_status_reg`
-
-`gtx_status_reg` 汇总 Aurora TX 侧状态和诊断信号，生成 `auro_tx_status_reg_out` 和 `idle_process_en_out`。
-
-主要功能：
-
-- 接收 `idle_process_en`、FIFO empty/prog_empty、`crc_error`、状态机观察值和诊断错误信号。
-- 在 40 MHz 状态寄存器域输出 Aurora TX 状态。
-- 为外部调试、状态读取和错误定位提供压缩后的状态信息。
-
-## 4. 主要数据流
-
-### 4.1 normal view 发送
-
-![normal view 发送数据流](images/normal_view_flow.svg)
-
-流程说明：
-
-- `rd_cache_ctrl` 判断存在未读出的 view 后发出 `ddr_rd_req`。
-- DDR 返回 `user_r_data/user_r_valid`。
-- `aurora_tx_top` 将数据写入异步 FIFO。
-- `aurora_tx_frame` 先发送 header frame，再根据 `slice_sel` 发送多个 slice frame。
-- 每个 slice 的数据来自 FIFO。
-- 一个 view 发送完成后，`view_tx_done` 跨域回到 `ui_clk`，参与通信确认和读进度更新。
-
-### 4.2 idle frame 发送
-
-![idle frame 发送数据流](images/idle_frame_flow.svg)
-
-流程说明：
-
-- 当系统未处于采集 view 发送阶段时，`idle_process_en` 有效。
-- `idle_frame_gen` 周期性产生 `idle_trig` 和 idle payload。
-- `aurora_tx_frame` 在 idle 模式下不读取 DDR FIFO，而是选择 `idle_data_out` 作为 `tx_d_out`。
-
-### 4.3 refresh 和回退重传
-
-![refresh 与回退重传控制流](images/refresh_replay_flow.svg)
-
-流程说明：
-
-- `commok_check` 在 view 发送后等待 `comm_ok`。
-- 若等待超时或确认异常，进入 refresh 状态并触发回退。
-- `rd_cache_ctrl` 根据最近读出的 view 数和 `view_size` 计算回退地址。
-- Aurora 侧通过 `refresh_process_en` 发送 refresh frame，通知链路进入刷新/恢复过程。
-
-## 5. 边界识别机制
-
-`ddr_cache` 的边界识别不是靠在数据流中临时搜索 SOF/EOF 关键字完成的，而是依赖两级约定：
-
-- DDR 读取侧按 `view_size` 识别 view 边界。
-- Aurora 发送侧按状态机和计数器标记 header frame、slice frame、SOF、EOF 和 CRC 位置。
-
-![ddr_cache 边界识别机制](images/boundary_recognition_flow.svg)
-
-### 5.1 view 边界识别
-
-`rd_cache_ctrl` 只负责 view 级完整读取。它不识别 header、slice 或 EOF，也不解析帧内容。
-
-写入侧通过 `wr_view_pulse` 统计已经写入 DDR 的 view 数：
+| `m_axis_tx_tdata` | output | 发送数据，32-bit 或 64-bit 由 `TX_DATA_WIDTH_32` 决定 |
+| `m_axis_tx_tvalid` | output | 当前 beat 有效 |
+| `m_axis_tx_tready` | input | 下游 ready |
+| `m_axis_tx_tlast` | output | 当前 packet 最后一个 beat |
+| `m_axis_tx_tkeep` | output | 字节有效掩码，所有 beat 恒为全 1 |
+
+32-bit 模式下 `tkeep=4'hf`，64-bit 模式下 `tkeep=8'hff`。
+
+内部 handshake 使用：
 
 ```systemverilog
-else if (wr_view_pulse) begin
-    wr_view_num <= wr_view_num + 32'd1;
-end
+axis_tx_fire = m_axis_tx_tready & tx_channel_up_gtx_d3;
 ```
 
-读取侧通过 `rd_view_num` 统计已经从 DDR 读出的 view 数。当 `wr_view_num > rd_view_num` 时，说明 DDR 中至少有一个完整 view 可以读取：
+状态机计数、FIFO 读使能、CRC 累加、诊断采样都以 `axis_tx_fire` 为推进条件。
+
+## 5. 帧边界
+
+SOF/EOF 在工程内部仍然表示 frame 结构，但不再作为外部接口导出。
 
 ```systemverilog
-assign wr_gt_rd = (wr_view_num > rd_view_num);
+assign frame_sof = (sof_cnt == 'h0) &
+                   ((auro_frame_state == HEAD_SOF_STA) |
+                    (auro_frame_state == SLICE_SOF_STA));
+
+assign frame_eof = eof_cnt_rch &
+                   ((auro_frame_state == HEAD_EOF_STA) |
+                    (auro_frame_state == SLICE_EOF_STA));
 ```
 
-真正读取时，`rd_cache_ctrl` 用 `user_r_valid` 作为有效数据计数脉冲。每收到一个 DDR 返回数据，`rd_data_cnt` 加 1；当计数到 `view_size - 1` 时，认为一个 view 完整读完：
+外部 frame 尾部映射到 `m_axis_tx_tlast`：
 
 ```systemverilog
-assign rd_data_cnt_lim      = (rd_data_cnt == (view_size - 16'd1));
-assign sample_frame_rd_done = user_r_valid & rd_data_cnt_lim;
+assign axis_frame_sof   = frame_sof | refresh_frame_sof;
+assign m_axis_tx_tlast  = frame_eof | refresh_frame_eof;
+assign m_axis_tx_tvalid = axis_frame_valid | refresh_axis_valid;
 ```
 
-`sample_frame_rd_done` 有效后，`rd_data_cnt` 清零，`rd_view_num` 加 1，`rd_latest_addr` 增加 `view_size`。因此 view 边界来自固定长度计数：
+`axis_frame_sof` 只是内部桥接信号，用于 CRC 清零和诊断，不是 public `TUSER`。
 
-```text
-view 起点 + view_size 个 user_r_valid = view 结束
-```
+## 6. normal / idle / refresh 行为
 
-### 5.2 normal frame 启动边界
+normal view：
 
-`trans_normal_frame_trig` 表示 normal view 可以启动发送，但它本身不检查 FIFO 当前读指针是否指向帧头：
+- 从 DDR FIFO 读取 payload。
+- `TVALID && TREADY` 时状态机和计数器推进。
+- header 和 slice frame 的最后一个 beat 拉高 `m_axis_tx_tlast`。
+
+idle frame：
+
+- 不读 DDR FIFO。
+- 使用 `idle_frame_gen` 提供的 `idle_data_out`。
+- 仍通过 AXI4-Stream 输出完整 packet，并在尾 beat 拉高 `m_axis_tx_tlast`。
+
+refresh frame：
+
+- 优先于 normal/idle。
+- 由 `refresh_frame_sof` / `refresh_frame_eof` 标记内部边界。
+- `refresh_axis_valid` 参与生成外部 `m_axis_tx_tvalid`。
+
+## 7. CRC 和诊断
+
+CRC 检查模块接收 AXI4-Stream 命名端口：
 
 ```systemverilog
-assign trans_normal_frame_trig = (~idle_process_en) &
-                                 (~aurora_frame_fifo_prog_empty) &
-                                 head_gap_done &
-                                 tail_gap_done;
+.axis_frame_sof   (axis_frame_sof),
+.m_axis_tx_tlast  (m_axis_tx_tlast),
+.m_axis_tx_tvalid (m_axis_tx_tvalid),
+.m_axis_tx_tready (m_axis_tx_tready),
+.m_axis_tx_tdata  (m_axis_tx_tdata)
 ```
 
-这些条件只说明当前处于 normal 模式、FIFO 数据量足够、head gap 和 tail gap 已满足。它不是帧头搜索信号。
+CRC 只在 `TVALID && TREADY` 时推进；`axis_frame_sof` 的 handshake beat 清 CRC；`m_axis_tx_tlast` 的 handshake beat 捕获并比较 frame 尾部 CRC。
 
-normal frame 能从帧开头启动，依赖以下系统级约定：
+诊断保留原功能：
 
-- DDR 读请求从 view 边界开始。
-- 一个 view 的读取长度由 `view_size` 固定约束。
-- `aurora_frame_fifo` 按 DDR 返回顺序缓存数据。
-- `aurora_tx_frame` 每次按固定 header + 多个 slice 的结构完整消耗一个 view。
-- FIFO 没有 overflow、underflow 或读写错位。
+- header/data tag 检查继续使用内部 SOF 状态点。
+- first-view 标记继续从 header payload 指定位提取。
+- no-EOF watchdog 继续监控长时间没有 `frame_eof` 的异常。
 
-因此，前一次 view 发送完整结束后，FIFO 读指针理论上停在下一组 view/frame 的起点。下一次 `trans_normal_frame_trig` 被状态机在 `IDLE` 状态采纳时，就从该位置开始读。
+## 8. 命名清理结果
 
-代码中还有一致性诊断：状态机认为当前位置是 header SOF 或 slice SOF 时，会检查 `tx_d_out` 中的协议标识。例如 64-bit 模式下：
+`ddr_cache/` 中公开接口不再使用 旧式 `tx_*_n` 信号。`aurora_tx_frame` 内部临时信号使用 mixed `axis_*` / `frame_*` 命名：
 
-```systemverilog
-assign set_Diag_aurora_header_err_out =
-    head_sof & sof_cnt_rch & (tx_d_out[63:44] != 'h4331);
+- `axis_tx_fire`：AXI4-Stream sink ready 且 channel up。
+- `axis_frame_valid`：normal 数据路径贡献的 AXI4-Stream valid。
+- `frame_sof` / `frame_eof`：normal frame 内部边界。
+- `refresh_frame_sof` / `refresh_frame_eof`：refresh frame 内部边界。
+- `refresh_axis_valid`：refresh 数据路径贡献的 AXI4-Stream valid。
+- `axis_tdata_pre_fault`：fault injection 前的已选输出数据。
 
-assign set_Diag_aurora_data_err_out =
-    data_sof & sof_cnt_rch & (tx_d_out[63:44] != 'h4330);
-```
-
-这说明状态机负责标记边界，数据字段只用于一致性检查，不用于搜索启动点。
-
-### 5.3 slice/header/EOF 边界识别
-
-slice 和 header 边界由 `aurora_tx_frame` 在发送侧识别。它根据当前状态 `auro_frame_state` 和状态内计数器决定当前 beat 属于哪一段：
-
-```text
-HEAD_SOF_STA  -> header command / SOF
-HEAD_DATA_STA -> header payload
-HEAD_EOF_STA  -> header CRC / EOF
-
-SLICE_SOF_STA -> slice command / SOF
-SLICE_DATA_STA -> slice payload / footer
-SLICE_EOF_STA -> slice CRC / EOF
-```
-
-SOF/EOF 不是从 `tx_d_out` 中解析出来的，而是由状态机直接生成 Aurora 侧边界信号：
-
-```systemverilog
-assign tx_sof_out = (sof_cnt == 'h0) &
-                    ((auro_frame_state == HEAD_SOF_STA) |
-                     (auro_frame_state == SLICE_SOF_STA));
-
-assign tx_eof_out = eof_cnt_rch &
-                    ((auro_frame_state == HEAD_EOF_STA) |
-                     (auro_frame_state == SLICE_EOF_STA));
-```
-
-header payload 通过 `header_cnt` 计数，slice payload 通过 `slice_data_cnt` 计数。slice 长度由 `slice_length_odd/slice_length_even` 决定，`aurora_tx_frame` 根据 `slice_cnt[0]` 选择当前 slice 的长度：
-
-```systemverilog
-assign slice_length = slice_cnt[0] ? slice_length_even : slice_length_odd;
-```
-
-所以该模块的边界识别可以概括为：
-
-```text
-rd_cache_ctrl:
-    用 view_size + user_r_valid 识别 view 边界。
-
-aurora_tx_frame:
-    用状态机 + header_cnt/slice_data_cnt/sof_cnt/eof_cnt 识别发送侧帧内边界。
-
-trans_normal_frame_trig:
-    只表示 normal frame 可以启动，不负责验证当前数据是不是帧头。
-```
-
-## 6. 输出帧结构
-
-`ddr_cache` 最终通过 Aurora TX 接口输出帧数据：
-
-- `tx_d_out`：帧数据总线，宽度由 `TX_DATA_WIDTH_32` 决定。
-- `tx_sof_n_out`：低有效 SOF，标记一个 Aurora frame 的开始。
-- `tx_eof_n_out`：低有效 EOF，标记一个 Aurora frame 的结束。
-- `tx_src_rdy_n_out`：低有效 source ready，表示 `tx_d_out` 当前有效。
-- `tx_rem_out`：帧尾剩余字节指示，本模块中固定输出 0。
-
-### 6.1 view 级组织
-
-一次 normal view 的发送由 `aurora_tx_frame` 组织为：
-
-![view 级输出帧顺序](images/view_frame_sequence.svg)
-
-每个 view 先发送 1 个 header frame，再发送 `slice_sel` 个 slice frame。`slice_cnt` 统计当前 slice 编号，`view_tx_done` 在最后一个 slice frame 发送完成后产生。
-
-### 6.2 header frame 结构
-
-header frame 用于发送一个 view 的头部信息，数据来自 DDR FIFO 或 idle frame 生成器。
-
-![header frame 结构](images/header_frame_structure.svg)
-
-控制信号含义：
-
-- `header_cmd_1_en/header_cmd_2_en`：标记 header frame 的命令字位置。
-- `header_en`：标记 header payload 数据区。
-- `header_cnt`：统计 header payload beat。
-- `footer_en/footer_1_en`：标记帧尾 footer 相关位置。
-- `crc_en`：使能 CRC 累加。
-- `crc_tx_1_en/crc_tx_2_en`：标记 CRC 输出位置。
-
-在 normal 模式下，header frame 的实际数据从 `aurora_frame_fifo_dout` 发送；在 idle 模式下，header 内容由 `idle_frame_gen` 生成后通过 `idle_data_out` 发送。
-
-### 6.3 slice frame 结构
-
-slice frame 用于发送一段 slice 数据。一个 view 中包含多个 slice frame。
-
-![slice frame 结构](images/slice_frame_structure.svg)
-
-控制信号含义：
-
-- `slice_cmd_1_en/slice_cmd_2_en`：标记 slice frame 的命令字位置。
-- `slice_data_cnt`：统计 slice payload 数据 beat。
-- `idle_slice_data_en`：idle 模式下标记 idle slice payload 数据区。
-- `footer_en/footer_1_en`：标记 slice frame 尾部。
-- `crc_en`、`crc_tx_1_en/crc_tx_2_en`：控制 CRC 累加和输出。
-
-slice payload 长度由 `slice_length_odd` 和 `slice_length_even` 控制，`aurora_tx_frame` 根据 `slice_cnt[0]` 在奇偶 slice 长度之间选择。
-
-### 6.4 idle frame 结构
-
-`idle_frame_gen` 只生成 idle 模式下的 `idle_data_out` 数据内容；SOF、EOF、`tx_src_rdy_n_out` 和帧状态跳转仍由 `aurora_tx_frame` 负责。`aurora_tx_frame` 在 `idle_frame_ind` 有效时，从 `idle_data_out` 取数发送。
-
-idle 发送由 `idle_trig` 触发，一次 idle 发送过程沿用 normal view 的组织方式，包含 1 个 idle header frame 和若干 idle slice frame。区别在于 payload 不来自 DDR FIFO，而是由 `idle_frame_gen` 根据帧内控制信号实时生成。
-
-idle frame 的发送节奏为：`idle_process_en` 有效后等待 `conv` 边沿，`idle_process_active` 置位，`idle_counter` 开始计数；当计数到 `12'h258` 时产生 `idle_trig`，`aurora_tx_frame` 进入 idle 发送流程，并在 `idle_frame_ind` 有效时选择 `idle_data_out` 作为 `tx_d_out`。
-
-idle header frame 的结构与普通 header frame 一致，但 header payload 由 `idle_header_word()` 查表生成。64-bit 模式下，每个 `header_cnt` 对应 4 个 16-bit header word：
-
-```systemverilog
-{
-    idle_header_word({header_cnt, 2'b11}),
-    idle_header_word({header_cnt, 2'b10}),
-    idle_header_word({header_cnt, 2'b01}),
-    idle_header_word({header_cnt, 2'b00})
-}
-```
-
-主要字段如下：
-
-| 位置 | 数据来源 | 说明 |
-| --- | --- | --- |
-| header command | `64'h04331000_00002100` | `header_cmd_2_en` 有效时输出 |
-| header word 0 | `{DMS_Type, 8'h01}` | idle header 的类型/标识字段 |
-| header word 5 | `L_FTP_temp` | 左侧温度或状态字段 |
-| header word 6 | `R_FTP_temp` | 右侧温度或状态字段 |
-| 其他 header word | 固定 pattern，如 `16'hFACE`、`16'h1001` 等 | 用于构造协议规定的 idle header 内容 |
-| footer | `64'hFACEEACE_CACEBACE` | `footer_en` 有效时输出 |
-| CRC | `crc_out` | `crc_tx_2_en` 有效时输出 |
-
-idle slice frame 的结构与普通 slice frame 一致，但 slice payload 由内部 16-bit LFSR 生成。每个 64-bit beat 将当前 LFSR 值复制到 4 个 16-bit lane：
-
-```systemverilog
-idle_data_out_t = {data_lfsr_r, data_lfsr_r, data_lfsr_r, data_lfsr_r};
-```
-
-当 `idle_slice_data_en` 有效时，LFSR 每拍更新一次；当新的 `idle_trig` 到来时，LFSR 重新装载为 `16'hABCD`，保证每次 idle frame 的填充数据从固定初值开始。
-
-idle header frame 和 idle slice frame 如下图所示。每个相邻块表示发送顺序，SOF/EOF 由 `aurora_tx_frame` 产生，中间数据由 `idle_frame_gen` 输出到 `idle_data_out`。
-
-![idle frame 结构](images/idle_frame_structure.svg)
-
-### 6.5 `idle_data_out` 选择关系
-
-`idle_data_out` 根据帧内控制信号，填充对应的 command、payload、footer 和 CRC 块。SOF/EOF 不经过 `idle_data_out`，由 `aurora_tx_frame` 直接产生。
-
-![idle_data_out 选择关系](images/idle_data_out_select.svg)
-
-### 6.6 normal、idle、refresh 三类输出
-
-`tx_d_out` 的来源由当前工作模式决定：
-
-![tx_d_out 数据来源选择](images/tx_output_mux.svg)
-
-| 模式 | 触发条件 | `tx_d_out` 数据来源 | 说明 |
-| --- | --- | --- | --- |
-| normal frame | `idle_process_en = 0` 且 FIFO 数据足够 | `aurora_frame_fifo_dout` | 发送 DDR 缓存中的 view 数据 |
-| idle frame | `idle_process_en = 1` 且 `idle_trig` 触发 | `idle_data_out` | 链路空闲或等待期间发送保活/状态帧 |
-| refresh frame | `refresh_process_en` 有效 | refresh 固定控制字 | 通信异常恢复过程中的刷新帧 |
-
-refresh frame 不从 DDR FIFO 或 idle 生成器取数，而是在 `aurora_tx_frame` 内部生成固定控制字。其 SOF/EOF 由 `tx_sof_refresh` 和 `tx_eof_refresh` 控制，`tx_src_rdy_refresh` 表示 refresh frame 数据有效。
-
-### 6.7 32-bit 与 64-bit 数据宽度差异
-
-`TX_DATA_WIDTH_32` 控制输出数据宽度：
-
-- 32-bit 模式：`tx_d_out[31:0]`，`tx_rem_out[1:0]`。
-- 64-bit 模式：`tx_d_out[63:0]`，`tx_rem_out[2:0]`。
-
-两种模式的帧语义一致，区别主要在每个 beat 承载的数据量、header 计数上限、slice 数据计数上限和 CRC 数据 lane 数。
-
-## 7. 时钟域关系
-
-`ddr_cache` 涉及三个主要时钟域：
-
-- `ui_clk`：DDR 用户接口时钟域，负责 DDR 读请求、读数据计数、view 读写计数、回退地址计算。
-- `gtx_user_clk_in`：Aurora TX 用户时钟域，负责 FIFO 读出、帧状态机、idle frame、CRC、Aurora `tx_*` 输出。
-- `clk_sysclk_in`：系统控制时钟域，主要输入 view 写完成、最后 view 写完成等控制信号。
-
-关键跨域路径：
-
-![ddr_cache 时钟域关系](images/clock_domains.svg)
-
-| 信号/数据 | 源时钟域 | 目标时钟域 | 用途 |
-| --- | --- | --- | --- |
-| `view_Reading_Done` | `clk_sysclk_in` | `ui_clk` | 写入 view 计数 |
-| `last_view_wr_done` | `clk_sysclk_in` | `ui_clk` | 最后一个写入 view 完成标记 |
-| DDR read data | `ui_clk` | `gtx_user_clk_in` | 通过 Aurora FIFO 跨域发送 |
-| `view_tx_done` | `gtx_user_clk_in` | `ui_clk` | view 发送完成回传 |
-| `last_view_trans_ok` | `ui_clk` | `gtx_user_clk_in` | 最后 view 发送确认同步 |
-| `rp_back_cnt_add_en` | `ui_clk` | `clk_sysclk_in` | 回退计数同步 |
-
-## 8. 外部依赖和宏分支
-
-该目录代码依赖以下外部或生成模块：
-
-- `cross_clk_pulse`：跨时钟域脉冲同步。
-- `aurora_frame_fifo` / `aurora_frame_fifo_32`：Aurora 发送异步 FIFO。
-- `idle_frame_gen_32`：32-bit Aurora TX 模式下的 idle frame 生成模块。
-- `crc_chk_32`：32-bit Aurora TX 模式下的 CRC 检查模块。
-- `CRC_16_header_data`：CRC16 计算单元。
-- `h80_define.sv`：工程公共宏定义。
-
-`TX_DATA_WIDTH_32` 宏控制 Aurora TX 数据宽度：
-
-- 未定义时：默认 64-bit TX 数据路径。
-- 定义时：使用 32-bit TX 数据路径，并切换 FIFO、idle frame 和 CRC 相关实例。
-
-## 9. 关键状态和调试信号
-
-- `rd_cache_state`：DDR 读控制状态，来自 `rd_cache_ctrl`。
-- `rd_wr_num_equ`：读出 view 数与写入 view 数是否相等。
-- `auro_frame_state_test`：Aurora frame 状态机观察信号。
-- `aurora_frame_fifo_empty/prog_empty`：Aurora FIFO 数据状态。
-- `aurora_asy_fifo_almost_full`：DDR 向 Aurora FIFO 写入侧的近满状态。
-- `aurora_tx_fifo_overflow/underflow`：Aurora TX FIFO 异常脉冲。
-- `Diag_aurora_data_err_out`：slice data SOF 检查异常。
-- `Diag_aurora_header_err_out`：header SOF 检查异常。
-- `Diag_auroradata_en_rise_flag_out`：Aurora 数据长时间未发送的诊断标志。
-- `crc_error`：发送数据 CRC 检查错误。
+状态名中的 `HEAD_SOF_STA`、`SLICE_EOF_STA` 等仍保留，因为它们描述 frame 内部结构，不是外部接口信号。

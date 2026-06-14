@@ -19,13 +19,13 @@
   </defs>
 
   <text x="40" y="42" class="title">idle frame 结构</text>
-  <text x="40" y="76" class="note">SOF/EOF 由 aurora_tx_frame 产生；command、payload、footer、CRC 由 idle_frame_gen 通过 idle_data_out 提供。</text>
+  <text x="40" y="76" class="note">SOF/EOF �?aurora_tx_frame 产生；command、payload、footer、CRC �?idle_frame_gen 通过 idle_data_out 提供�?/text>
 
   <text x="40" y="132" class="row">idle header frame</text>
   <rect x="190" y="100" width="80" height="70" class="box sof"/>
   <text x="230" y="96" text-anchor="middle" class="cond">SOF</text>
   <text x="230" y="129" text-anchor="middle" class="name">SOF</text>
-  <text x="230" y="151" text-anchor="middle" class="note">帧开始</text>
+  <text x="230" y="151" text-anchor="middle" class="note">帧开�?/text>
 
   <rect x="270" y="100" width="240" height="70" class="box cmd"/>
   <text x="390" y="96" text-anchor="middle" class="cond">header_cmd_2_en</text>
@@ -50,13 +50,13 @@
   <rect x="1090" y="100" width="80" height="70" class="box eof"/>
   <text x="1130" y="96" text-anchor="middle" class="cond">EOF</text>
   <text x="1130" y="129" text-anchor="middle" class="name">EOF</text>
-  <text x="1130" y="151" text-anchor="middle" class="note">帧结束</text>
+  <text x="1130" y="151" text-anchor="middle" class="note">帧结�?/text>
 
   <text x="40" y="232" class="row">idle slice frame</text>
   <rect x="190" y="200" width="80" height="70" class="box sof"/>
   <text x="230" y="196" text-anchor="middle" class="cond">SOF</text>
   <text x="230" y="229" text-anchor="middle" class="name">SOF</text>
-  <text x="230" y="251" text-anchor="middle" class="note">帧开始</text>
+  <text x="230" y="251" text-anchor="middle" class="note">帧开�?/text>
 
   <rect x="270" y="200" width="240" height="70" class="box cmd"/>
   <text x="390" y="196" text-anchor="middle" class="cond">slice_cmd_2_en</text>
@@ -81,5 +81,5 @@
   <rect x="1090" y="200" width="80" height="70" class="box eof"/>
   <text x="1130" y="196" text-anchor="middle" class="cond">EOF</text>
   <text x="1130" y="229" text-anchor="middle" class="name">EOF</text>
-  <text x="1130" y="251" text-anchor="middle" class="note">帧结束</text>
+  <text x="1130" y="251" text-anchor="middle" class="note">帧结�?/text>
 </svg>

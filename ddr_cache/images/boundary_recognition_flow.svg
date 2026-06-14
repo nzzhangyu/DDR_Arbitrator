@@ -23,21 +23,21 @@
 
   <text x="40" y="44" class="title">ddr_cache 边界识别机制</text>
 
-  <text x="40" y="88" class="section">1. DDR 读取侧：只识别 view 边界</text>
+  <text x="40" y="88" class="section">1. DDR 读取侧：只识�?view 边界</text>
   <rect x="40" y="112" width="180" height="76" class="box blue"/>
   <text x="130" y="142" text-anchor="middle" class="label">view 写入完成</text>
   <text x="130" y="164" text-anchor="middle" class="small">wr_view_num 增加</text>
 
   <rect x="270" y="112" width="190" height="76" class="box green"/>
-  <text x="365" y="139" text-anchor="middle" class="label">有完整 view 可读</text>
+  <text x="365" y="139" text-anchor="middle" class="label">有完�?view 可读</text>
   <text x="365" y="162" text-anchor="middle" class="small">wr_view_num &gt; rd_view_num</text>
 
   <rect x="510" y="112" width="190" height="76" class="box yellow"/>
-  <text x="605" y="139" text-anchor="middle" class="label">拉起 DDR 读请求</text>
+  <text x="605" y="139" text-anchor="middle" class="label">拉起 DDR 读请�?/text>
   <text x="605" y="162" text-anchor="middle" class="small">RD_REQ_EN / ddr_rd_req</text>
 
   <rect x="750" y="112" width="210" height="76" class="box gray"/>
-  <text x="855" y="139" text-anchor="middle" class="label">按 view_size 计数</text>
+  <text x="855" y="139" text-anchor="middle" class="label">�?view_size 计数</text>
   <text x="855" y="162" text-anchor="middle" class="small">user_r_valid 推进 rd_data_cnt</text>
 
   <path d="M220 150 H270" class="line"/>
@@ -50,12 +50,12 @@
   <text x="978" y="180" class="small">sample_frame_rd_done</text>
 
   <path d="M855 188 C855 226, 210 226, 210 265" class="dash"/>
-  <text x="430" y="218" class="small">读满一个 view 后 rd_data_cnt 清零，rd_view_num 加 1</text>
+  <text x="430" y="218" class="small">读满一�?view �?rd_data_cnt 清零，rd_view_num �?1</text>
 
-  <text x="40" y="272" class="section">2. FIFO 与 normal frame 启动：不搜索帧头，只保证读指针对齐</text>
+  <text x="40" y="272" class="section">2. FIFO �?normal frame 启动：不搜索帧头，只保证读指针对�?/text>
   <rect x="40" y="296" width="220" height="76" class="box blue"/>
   <text x="150" y="323" text-anchor="middle" class="label">Aurora FIFO</text>
-  <text x="150" y="346" text-anchor="middle" class="small">按 DDR 返回顺序缓存 view 数据</text>
+  <text x="150" y="346" text-anchor="middle" class="small">�?DDR 返回顺序缓存 view 数据</text>
 
   <rect x="310" y="296" width="250" height="76" class="box green"/>
   <text x="435" y="320" text-anchor="middle" class="label">normal 启动许可</text>
@@ -63,19 +63,19 @@
   <text x="435" y="361" text-anchor="middle" class="small">~prog_empty + head/tail gap done</text>
 
   <rect x="610" y="296" width="230" height="76" class="box yellow"/>
-  <text x="725" y="323" text-anchor="middle" class="label">状态机从 IDLE 启动</text>
+  <text x="725" y="323" text-anchor="middle" class="label">状态机�?IDLE 启动</text>
   <text x="725" y="346" text-anchor="middle" class="small">trans_frame_trig -&gt; HEAD_SOF_PRE_STA</text>
 
   <path d="M260 334 H310" class="line"/>
   <path d="M560 334 H610" class="line"/>
 
   <rect x="890" y="296" width="190" height="76" class="box pink"/>
-  <text x="985" y="323" text-anchor="middle" class="label">一致性检查</text>
+  <text x="985" y="323" text-anchor="middle" class="label">一致性检�?/text>
   <text x="985" y="346" text-anchor="middle" class="small">header: 0x4331</text>
   <text x="985" y="364" text-anchor="middle" class="small">slice: 0x4330</text>
   <path d="M840 334 H890" class="line"/>
 
-  <text x="40" y="438" class="section">3. Aurora 发送侧：用状态机 + 计数器标记帧内边界</text>
+  <text x="40" y="438" class="section">3. Aurora 发送侧：用状态机 + 计数器标记帧内边�?/text>
   <rect x="40" y="462" width="145" height="80" class="box blue"/>
   <text x="112.5" y="492" text-anchor="middle" class="label">HEAD_SOF</text>
   <text x="112.5" y="515" text-anchor="middle" class="small">SOF / header cmd</text>
@@ -101,13 +101,13 @@
   <text x="962.5" y="515" text-anchor="middle" class="small">CRC / EOF</text>
 
   <line x1="40" y1="462" x2="40" y2="542" class="boundary"/>
-  <text x="44" y="452" class="small">tx_sof_out</text>
+  <text x="44" y="452" class="small">frame_sof</text>
   <line x1="370" y1="462" x2="370" y2="542" class="boundary"/>
-  <text x="374" y="452" class="small">tx_eof_out</text>
+  <text x="374" y="452" class="small">frame_eof</text>
   <line x1="555" y1="462" x2="555" y2="542" class="boundary"/>
-  <text x="559" y="452" class="small">tx_sof_out</text>
+  <text x="559" y="452" class="small">frame_sof</text>
   <line x1="890" y1="462" x2="890" y2="542" class="boundary"/>
-  <text x="894" y="452" class="small">tx_eof_out</text>
+  <text x="894" y="452" class="small">frame_eof</text>
 
-  <text x="40" y="586" class="text">要点：`rd_cache_ctrl` 负责 view 级完整读取；slice/header/EOF 边界由 `aurora_tx_frame` 的状态机和计数器在发送侧标记。</text>
+  <text x="40" y="586" class="text">要点：`rd_cache_ctrl` 负责 view 级完整读取；slice/header/EOF 边界�?`aurora_tx_frame` 的状态机和计数器在发送侧标记�?/text>
 </svg>

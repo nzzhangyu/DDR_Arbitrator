@@ -23,14 +23,15 @@ module crc_chk(/*AUTOARG*/
    // Outputs
    crc_error,
    // Inputs
-   tx_sof_n_out, tx_eof_n_out, tx_src_rdy_n_out, tx_d_out, crc_rst,
+   axis_frame_sof, m_axis_tx_tlast, m_axis_tx_tvalid, m_axis_tx_tready, m_axis_tx_tdata, crc_rst,
    gtx_user_clk_in
    );
 
-   input            tx_sof_n_out ;      // start of frame 
-   input            tx_eof_n_out ;      // end of frame 
-   input            tx_src_rdy_n_out ;  // 
-   input [63:0]     tx_d_out ;
+   input            axis_frame_sof ;    // internal start-of-frame marker
+   input            m_axis_tx_tlast ;   // AXI4-Stream end of frame
+   input            m_axis_tx_tvalid ;  // AXI4-Stream data valid
+   input            m_axis_tx_tready ;  // AXI4-Stream sink ready
+   input [63:0]     m_axis_tx_tdata ;
 
   
    input        crc_rst;
@@ -41,8 +42,10 @@ module crc_chk(/*AUTOARG*/
    output           crc_error;
    
    //reg [9:0]        data_cnt;
+   wire axis_tx_fire;
 
    //assign           crc_rst_n = aurora_tx_reset_n & rst_local_t_gtx_clk & (~aurora_sw_rst);
+   assign axis_tx_fire = m_axis_tx_tvalid & m_axis_tx_tready;
    
      
    reg [63:0] crc_data_in_reg;
@@ -51,14 +54,16 @@ module crc_chk(/*AUTOARG*/
       if(crc_rst) begin
          crc_data_in_reg  <= 'h0;
       end
-      else if(~tx_src_rdy_n_out) begin
-         crc_data_in_reg  <= tx_d_out;
+      else if(axis_tx_fire) begin
+         crc_data_in_reg  <= m_axis_tx_tdata;
       end
    end
    
    reg data_val;
+   wire data_val_tmp;
+   wire crc_en;
    
-   assign data_val_tmp = (~tx_src_rdy_n_out) & tx_sof_n_out & tx_eof_n_out ;
+   assign data_val_tmp = axis_tx_fire & (~axis_frame_sof) & (~m_axis_tx_tlast);
    
    always @(posedge gtx_user_clk_in ) begin
         data_val   <= data_val_tmp;
@@ -73,12 +78,13 @@ module crc_chk(/*AUTOARG*/
       if(crc_rst) begin
         crc_data_catch_reg   <= 'h0;
       end
-      else if((~tx_eof_n_out)&& (~tx_src_rdy_n_out)) begin
-        crc_data_catch_reg   <= tx_d_out;
+      else if(m_axis_tx_tlast && axis_tx_fire) begin
+        crc_data_catch_reg   <= m_axis_tx_tdata;
       end
    end
 
    reg [2:0]   data_cnt;
+   wire        data_cnt_lim;
 
    assign      data_cnt_lim = &data_cnt;
    
@@ -87,13 +93,13 @@ module crc_chk(/*AUTOARG*/
       if(crc_rst) begin
          data_cnt  <= 'h0;
       end
-      else if((~tx_sof_n_out)&& (~tx_src_rdy_n_out)) begin
+      else if(axis_frame_sof && axis_tx_fire) begin
          data_cnt   <= 'h1;
       end
-      else if((~tx_eof_n_out)&& (~tx_src_rdy_n_out)) begin
+      else if(m_axis_tx_tlast && axis_tx_fire) begin
          data_cnt   <= 'h0;
       end
-      else if( (|data_cnt) && (~data_cnt_lim) && (~tx_src_rdy_n_out) ) begin
+      else if( (|data_cnt) && (~data_cnt_lim) && axis_tx_fire ) begin
     data_cnt   <= data_cnt + 1'h1;
       end
    end
@@ -101,8 +107,9 @@ module crc_chk(/*AUTOARG*/
    
    
    reg crc_chk_val;
+   wire crc_chk_val_t;
 
-   assign crc_chk_val_t = (~tx_eof_n_out)& (~tx_src_rdy_n_out) & data_cnt_lim;
+   assign crc_chk_val_t = m_axis_tx_tlast & axis_tx_fire & data_cnt_lim;
    
    always @(posedge gtx_user_clk_in ) begin
       if(crc_rst) begin
@@ -133,7 +140,7 @@ module crc_chk(/*AUTOARG*/
    
    assign      RESET = crc_rst;
    assign      clk = gtx_user_clk_in;
-   assign      crc_clear = (~tx_sof_n_out);
+   assign      crc_clear = axis_frame_sof & axis_tx_fire;
 
    assign      crc_out = {crc_3_out,crc_2_out,crc_1_out,crc_0_out};
    
@@ -187,6 +194,7 @@ module crc_chk(/*AUTOARG*/
    
 
     /*(* mark_debug="true" *)*/ reg         crc_error;
+   wire        set_crc_error;
 
    assign      set_crc_error = crc_out != crc_data_catch_reg;
    
