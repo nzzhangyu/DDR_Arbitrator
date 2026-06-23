@@ -1,9 +1,21 @@
 `timescale 1ns/1ps
 
+`include "ddr4_tb_config.svh"
+
+`ifdef XILINX_SIMULATOR
+module short(in1, in1);
+   inout in1;
+endmodule
+`endif
+
 module tb_ddr4_controller_mock;
+`ifdef MIG
+    import arch_package::*;
+`endif
 
     // Test dimensions.
     localparam int CLK_PERIOD_PS      = 5000;
+    localparam int MIG_SYS_PERIOD_PS  = 4998;
     localparam int CONV_PERIOD_US     = 232;
     localparam int DEFAULT_SIM_VIEWS  = 2;
     localparam int TOTAL_VIEWS        = 2320;
@@ -14,7 +26,7 @@ module tb_ddr4_controller_mock;
     localparam int VIEW_PERIOD_CYCLES = (CONV_PERIOD_US * 1000000) / CLK_PERIOD_PS;
 
     // Native app bus dimensions.
-    localparam int ADDR_WIDTH     = 20;
+    localparam int ADDR_WIDTH     = 21;
     localparam int APP_ADDR_WIDTH = ADDR_WIDTH + 3;
     localparam int APP_DATA_BITS  = 128;
     
@@ -31,9 +43,26 @@ module tb_ddr4_controller_mock;
     localparam logic [2:0] APP_CMD_WRITE = 3'b000;
     localparam logic [2:0] APP_CMD_READ  = 3'b001;
 
+`ifdef MIG
+    // Real MIG smoke uses two x8 DDR4 component models to match the 16-bit DQ bus.
+    localparam int SDRAM_ADDR_WIDTH      = 17;
+    localparam int DQ_WIDTH              = 16;
+    localparam int DQS_WIDTH             = 2;
+    localparam int DRAM_WIDTH            = 8;
+    localparam int NUM_PHYSICAL_PARTS    = DQ_WIDTH / DRAM_WIDTH;
+    localparam int RANK_WIDTH            = 1;
+    localparam int CS_WIDTH              = 1;
+    localparam string CA_MIRROR          = "OFF";
+    localparam UTYPE_density CONFIGURED_DENSITY = _16G;
+    localparam logic [2:0] WR_CMD        = 3'b100;
+    localparam logic [2:0] RD_CMD        = 3'b101;
+`endif
+
     logic                  clk;
     logic                  reset;
     logic                  fast_mock_clk;
+    logic                  c0_sys_clk_p;
+    logic                  c0_sys_clk_n;
     logic                  rst_local_t_ddr_clk;
     logic                  data_from_ddr_en;
     logic [127:0]          data_from_ddr_dd;
@@ -74,6 +103,35 @@ module tb_ddr4_controller_mock;
     logic [127:0]              app_rd_data;
     logic                      app_rd_data_valid;
     logic                      app_rd_data_end;
+
+`ifdef MIG
+    logic                  c0_ddr4_act_n;
+    logic [16:0]           c0_ddr4_adr;
+    logic [1:0]            c0_ddr4_ba;
+    logic [1:0]            c0_ddr4_bg;
+    logic [0:0]            c0_ddr4_cke;
+    logic [0:0]            c0_ddr4_odt;
+    logic [0:0]            c0_ddr4_cs_n;
+    logic [0:0]            c0_ddr4_ck_t;
+    logic [0:0]            c0_ddr4_ck_c;
+    logic                  c0_ddr4_reset_n;
+    wire  [1:0]            c0_ddr4_dm_dbi_n;
+    wire  [15:0]           c0_ddr4_dq;
+    wire  [1:0]            c0_ddr4_dqs_c;
+    wire  [1:0]            c0_ddr4_dqs_t;
+
+    reg  [SDRAM_ADDR_WIDTH-1:0] c0_ddr4_adr_sdram[1:0];
+    reg  [1:0]                  c0_ddr4_ba_sdram[1:0];
+    reg  [1:0]                  c0_ddr4_bg_sdram[1:0];
+    reg  [SDRAM_ADDR_WIDTH-1:0] DDR4_ADRMOD[RANK_WIDTH-1:0];
+    bit                         en_model;
+    tri                         model_enable = en_model;
+    wire                        c0_ddr4_ck_t_mem;
+    wire                        c0_ddr4_ck_c_mem;
+
+    assign c0_ddr4_ck_t_mem = c0_ddr4_ck_t[0];
+    assign c0_ddr4_ck_c_mem = c0_ddr4_ck_c[0];
+`endif
 
     // Scoreboard and monitor state.
     logic [127:0]          expected_q[$];                       // Expected queue.
@@ -119,6 +177,9 @@ module tb_ddr4_controller_mock;
     logic                  urgent_read_data_event_fire;         // Urgent during read data.
     logic                  expected_data_remaining;             // Pending expected data.
     logic                  stream_start;                        // Stream start pulse.
+    logic                  global_stall_active;                 // Mock-only pressure flag.
+    logic                  cmd_stall_active;                    // Mock-only pressure flag.
+    logic                  read_stall_active;                   // Mock-only pressure flag.
 
     // DUT.
     user_app_top #(
@@ -166,6 +227,49 @@ module tb_ddr4_controller_mock;
         .rp_back_view_addr        (rp_back_view_addr)
     );
 
+`ifdef MIG
+    // Real native MIG model. Compile the native/sim/sim_mig export for this mode.
+    ddr4_1200m mig_u (
+        .c0_init_calib_complete   (init_calib_complete),
+        .c0_ddr4_ui_clk           (ui_clk),
+        .c0_ddr4_ui_clk_sync_rst  (ui_clk_sync_rst),
+        .dbg_bus                  (),
+        .dbg_clk                  (dbg_clk),
+        .c0_ddr4_adr              (c0_ddr4_adr),
+        .c0_ddr4_act_n            (c0_ddr4_act_n),
+        .c0_ddr4_ba               (c0_ddr4_ba),
+        .c0_ddr4_bg               (c0_ddr4_bg),
+        .c0_ddr4_cke              (c0_ddr4_cke),
+        .c0_ddr4_odt              (c0_ddr4_odt),
+        .c0_ddr4_cs_n             (c0_ddr4_cs_n),
+        .c0_ddr4_ck_t             (c0_ddr4_ck_t),
+        .c0_ddr4_ck_c             (c0_ddr4_ck_c),
+        .c0_ddr4_reset_n          (c0_ddr4_reset_n),
+        .c0_ddr4_dm_dbi_n         (c0_ddr4_dm_dbi_n),
+        .c0_ddr4_dq               (c0_ddr4_dq),
+        .c0_ddr4_dqs_c            (c0_ddr4_dqs_c),
+        .c0_ddr4_dqs_t            (c0_ddr4_dqs_t),
+        .sys_rst                  (reset),
+        .c0_sys_clk_p             (c0_sys_clk_p),
+        .c0_sys_clk_n             (c0_sys_clk_n),
+        .c0_ddr4_app_addr         (app_addr),
+        .c0_ddr4_app_cmd          (app_cmd),
+        .c0_ddr4_app_en           (app_en),
+        .c0_ddr4_app_rdy          (app_rdy),
+        .c0_ddr4_app_wdf_data     (app_wdf_data),
+        .c0_ddr4_app_wdf_mask     (app_wdf_mask),
+        .c0_ddr4_app_wdf_wren     (app_wdf_wren),
+        .c0_ddr4_app_wdf_end      (app_wdf_end),
+        .c0_ddr4_app_wdf_rdy      (app_wdf_rdy),
+        .c0_ddr4_app_rd_data      (app_rd_data),
+        .c0_ddr4_app_rd_data_valid(app_rd_data_valid),
+        .c0_ddr4_app_rd_data_end  (app_rd_data_end)
+    );
+
+    assign global_stall_active = 1'b0;
+    assign cmd_stall_active    = 1'b0;
+    assign read_stall_active   = 1'b0;
+`else
     // Fast native DDR model.
     ddr4_fast_mock #(
         .APP_ADDR_WIDTH      (APP_ADDR_WIDTH),
@@ -192,6 +296,11 @@ module tb_ddr4_controller_mock;
         .app_rd_data_valid   (app_rd_data_valid),
         .app_rd_data_end     (app_rd_data_end)
     );
+
+    assign global_stall_active = mock_u.stall_model_u.global_stall_active;
+    assign cmd_stall_active    = mock_u.stall_model_u.cmd_stall_active;
+    assign read_stall_active   = mock_u.stall_model_u.read_stall_active;
+`endif
 
     // Business stream source.
     ddr4_controller_tb_stream_source #(
@@ -228,6 +337,10 @@ module tb_ddr4_controller_mock;
     initial fast_mock_clk = 1'b0;
     always #(CLK_PERIOD_PS / 2000.0) fast_mock_clk = ~fast_mock_clk;
 
+    initial c0_sys_clk_p = 1'b0;
+    always #(MIG_SYS_PERIOD_PS / 2000.0) c0_sys_clk_p = ~c0_sys_clk_p;
+    assign c0_sys_clk_n = ~c0_sys_clk_p;
+
     // Passive monitor.
     ddr4_controller_tb_monitor monitor_u (
         .ui_clk                         (ui_clk),
@@ -254,9 +367,9 @@ module tb_ddr4_controller_mock;
         .native_write_cmd_fire          (native_write_cmd_fire),
         .in_read_data_state             (in_read_data_state),
         .urgent_read_data_event_fire    (urgent_read_data_event_fire),
-        .global_stall_active            (mock_u.stall_model_u.global_stall_active),
-        .cmd_stall_active               (mock_u.stall_model_u.cmd_stall_active),
-        .read_stall_active              (mock_u.stall_model_u.read_stall_active),
+        .global_stall_active            (global_stall_active),
+        .cmd_stall_active               (cmd_stall_active),
+        .read_stall_active              (read_stall_active),
         .wr_fifo_level                  (dut.ddr_wr_fifo_level),
         .wr_fifo_full                   (dut.ddr_wr_fifo_full),
         .rd_fifo_level                  (dut.ddr_rd_fifo_level),
@@ -264,7 +377,6 @@ module tb_ddr4_controller_mock;
         .rw_state                       (dut.user_rw_cmd_gen_uut.rw_state),
         .read_burst_len                 (dut.user_rw_cmd_gen_uut.read_burst_len),
         .read_beat_cnt                  (dut.user_rw_cmd_gen_uut.read_beat_cnt),
-        .wr_level_high                  (dut.user_rw_cmd_gen_uut.wr_level_high),
         .wr_level_urgent                (dut.user_rw_cmd_gen_uut.wr_level_urgent),
         .read_data_fire                 (dut.user_rw_cmd_gen_uut.read_data_fire),
         .sent_count                     (sent_count),
@@ -283,6 +395,9 @@ module tb_ddr4_controller_mock;
     initial begin
         // Main scenario: reset, configure, stream, drain, check.
         reset                = 1'b1;
+`ifdef MIG
+        en_model             = 1'b0;
+`endif
         rst_local_t_ddr_clk  = 1'b0;
         ddr_rd_req_base      = 1'b0;
         req_stop             = 1'b0;
@@ -317,6 +432,10 @@ module tb_ddr4_controller_mock;
         mock_cmd_stall_block_cfg       = 0;
         mock_read_stall_interval_cfg   = 0;
         mock_read_stall_block_cfg      = 0;
+
+`ifdef MIG
+        #5.0 en_model = 1'b1;
+`endif
 
         if (!$value$plusargs("log=%s", log_path)) begin
             log_path = "tb_ddr4_controller_mock.log";
@@ -471,25 +590,23 @@ module tb_ddr4_controller_mock;
 
         if (timeout_count != 0) begin
             monitor_u.write_summary("FAIL_TIMEOUT");
-            $fdisplay(log_fd, "FATAL: DDR controller mock test timed out after receiving %0d of %0d beats, wr_ptr=%0d rd_ptr=%0d state=%0d read_len=%0d read_cnt=%0d wr_high=%0b wr_urgent=%0b rd_cmds=%0d wr_cmds=%0d",
+            $fdisplay(log_fd, "FATAL: DDR controller mock test timed out after receiving %0d of %0d beats, wr_ptr=%0d rd_ptr=%0d state=%0d read_len=%0d read_cnt=%0d wr_urgent=%0b rd_cmds=%0d wr_cmds=%0d",
                     recv_count, sent_count,
                     dut.user_rw_cmd_gen_uut.user_ad_wr_i,
                     dut.user_rw_cmd_gen_uut.user_ad_rd_i,
                     dut.user_rw_cmd_gen_uut.rw_state,
                     dut.user_rw_cmd_gen_uut.read_burst_len,
                     dut.user_rw_cmd_gen_uut.read_beat_cnt,
-                    dut.user_rw_cmd_gen_uut.wr_level_high,
                     dut.user_rw_cmd_gen_uut.wr_level_urgent,
                     native_read_cmd_count,
                     native_write_cmd_count);
-            $fatal(1, "DDR controller mock test timed out after receiving %0d of %0d beats, wr_ptr=%0d rd_ptr=%0d state=%0d read_len=%0d read_cnt=%0d wr_high=%0b wr_urgent=%0b rd_cmds=%0d wr_cmds=%0d",
+            $fatal(1, "DDR controller mock test timed out after receiving %0d of %0d beats, wr_ptr=%0d rd_ptr=%0d state=%0d read_len=%0d read_cnt=%0d wr_urgent=%0b rd_cmds=%0d wr_cmds=%0d",
                     recv_count, sent_count,
                     dut.user_rw_cmd_gen_uut.user_ad_wr_i,
                     dut.user_rw_cmd_gen_uut.user_ad_rd_i,
                     dut.user_rw_cmd_gen_uut.rw_state,
                     dut.user_rw_cmd_gen_uut.read_burst_len,
                     dut.user_rw_cmd_gen_uut.read_beat_cnt,
-                    dut.user_rw_cmd_gen_uut.wr_level_high,
                     dut.user_rw_cmd_gen_uut.wr_level_urgent,
                     native_read_cmd_count,
                     native_write_cmd_count);
@@ -628,5 +745,145 @@ module tb_ddr4_controller_mock;
             update_hash = {hash_in[56:0], hash_in[63:57]} ^ mixed;
         end
     endfunction
+
+`ifdef MIG
+    always_comb begin
+        c0_ddr4_adr_sdram[0] = c0_ddr4_adr;
+        c0_ddr4_adr_sdram[1] = (CA_MIRROR == "ON") ?
+                               {c0_ddr4_adr[SDRAM_ADDR_WIDTH-1:14],
+                                c0_ddr4_adr[11], c0_ddr4_adr[12],
+                                c0_ddr4_adr[13], c0_ddr4_adr[10:9],
+                                c0_ddr4_adr[7], c0_ddr4_adr[8],
+                                c0_ddr4_adr[5], c0_ddr4_adr[6],
+                                c0_ddr4_adr[3], c0_ddr4_adr[4],
+                                c0_ddr4_adr[2:0]} :
+                               c0_ddr4_adr;
+        c0_ddr4_ba_sdram[0]  = c0_ddr4_ba;
+        c0_ddr4_ba_sdram[1]  = (CA_MIRROR == "ON") ?
+                               {c0_ddr4_ba[0], c0_ddr4_ba[1]} :
+                               c0_ddr4_ba;
+        c0_ddr4_bg_sdram[0]  = c0_ddr4_bg;
+        c0_ddr4_bg_sdram[1]  = (CA_MIRROR == "ON" && DRAM_WIDTH != 16) ?
+                               {c0_ddr4_bg[0], c0_ddr4_bg[1]} :
+                               c0_ddr4_bg;
+    end
+
+    genvar rnk;
+    generate
+        for (rnk = 0; rnk < CS_WIDTH; rnk++) begin : rankup
+            always_comb begin
+                if (c0_ddr4_act_n) begin
+                    unique casez (c0_ddr4_adr_sdram[0][16:14])
+                        WR_CMD,
+                        RD_CMD: DDR4_ADRMOD[rnk] =
+                            c0_ddr4_adr_sdram[rnk] & 17'h1c7ff;
+                        default: DDR4_ADRMOD[rnk] = c0_ddr4_adr_sdram[rnk];
+                    endcase
+                end
+                else begin
+                    DDR4_ADRMOD[rnk] = c0_ddr4_adr_sdram[rnk];
+                end
+            end
+        end
+    endgenerate
+
+    genvar i;
+    genvar r;
+    genvar s;
+
+    generate
+        DDR4_if #(.CONFIGURED_DQ_BITS(8))
+            iDDR4[0:(RANK_WIDTH*NUM_PHYSICAL_PARTS)-1]();
+
+        for (r = 0; r < RANK_WIDTH; r++) begin : memModels_Ri1
+            for (i = 0; i < NUM_PHYSICAL_PARTS; i++) begin : memModel1
+                ddr4_model #(
+                    .CONFIGURED_DQ_BITS (8),
+                    .CONFIGURED_DENSITY (CONFIGURED_DENSITY)
+                ) ddr4_model_u (
+                    .model_enable (model_enable),
+                    .iDDR4        (iDDR4[(r*NUM_PHYSICAL_PARTS)+i])
+                );
+            end
+        end
+
+        for (r = 0; r < RANK_WIDTH; r++) begin : tranDQ2
+            for (i = 0; i < NUM_PHYSICAL_PARTS; i++) begin : tranDQ12
+                for (s = 0; s < 8; s++) begin : tranDQ2
+`ifdef XILINX_SIMULATOR
+                    short bidiDQ(iDDR4[(r*NUM_PHYSICAL_PARTS)+i].DQ[s],
+                                  c0_ddr4_dq[s+i*8]);
+`else
+                    tran bidiDQ(iDDR4[(r*NUM_PHYSICAL_PARTS)+i].DQ[s],
+                                 c0_ddr4_dq[s+i*8]);
+`endif
+                end
+            end
+        end
+
+        for (r = 0; r < RANK_WIDTH; r++) begin : tranDQS2
+            for (i = 0; i < NUM_PHYSICAL_PARTS; i++) begin : tranDQS12
+`ifdef XILINX_SIMULATOR
+                short bidiDQS(iDDR4[(r*NUM_PHYSICAL_PARTS)+i].DQS_t,
+                               c0_ddr4_dqs_t[i]);
+                short bidiDQS_(iDDR4[(r*NUM_PHYSICAL_PARTS)+i].DQS_c,
+                                c0_ddr4_dqs_c[i]);
+                short bidiDM(iDDR4[(r*NUM_PHYSICAL_PARTS)+i].DM_n,
+                              c0_ddr4_dm_dbi_n[i]);
+`else
+                tran bidiDQS(iDDR4[(r*NUM_PHYSICAL_PARTS)+i].DQS_t,
+                             c0_ddr4_dqs_t[i]);
+                tran bidiDQS_(iDDR4[(r*NUM_PHYSICAL_PARTS)+i].DQS_c,
+                               c0_ddr4_dqs_c[i]);
+                tran bidiDM(iDDR4[(r*NUM_PHYSICAL_PARTS)+i].DM_n,
+                            c0_ddr4_dm_dbi_n[i]);
+`endif
+            end
+        end
+
+        for (r = 0; r < RANK_WIDTH; r++) begin : ADDR_RANKS
+            for (i = 0; i < NUM_PHYSICAL_PARTS; i++) begin : ADDR_R
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].BG      =
+                    c0_ddr4_bg_sdram[r];
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].BA      =
+                    c0_ddr4_ba_sdram[r];
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].ADDR_17 =
+                    (SDRAM_ADDR_WIDTH == 18) ?
+                    DDR4_ADRMOD[r][SDRAM_ADDR_WIDTH-1] : 1'b0;
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].ADDR    =
+                    DDR4_ADRMOD[r][13:0];
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].CS_n    =
+                    c0_ddr4_cs_n[r];
+            end
+        end
+
+        for (r = 0; r < RANK_WIDTH; r++) begin : tranADCTL_RANKS1
+            for (i = 0; i < NUM_PHYSICAL_PARTS; i++) begin : tranADCTL1
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].CK        =
+                    {c0_ddr4_ck_t_mem, c0_ddr4_ck_c_mem};
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].ACT_n     =
+                    c0_ddr4_act_n;
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].RAS_n_A16 =
+                    DDR4_ADRMOD[r][16];
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].CAS_n_A15 =
+                    DDR4_ADRMOD[r][15];
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].WE_n_A14  =
+                    DDR4_ADRMOD[r][14];
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].CKE       =
+                    c0_ddr4_cke[r];
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].ODT       =
+                    c0_ddr4_odt[r];
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].PARITY    = 1'b0;
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].TEN       = 1'b0;
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].ZQ        = 1'b1;
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].PWR       = 1'b1;
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].VREF_CA   = 1'b1;
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].VREF_DQ   = 1'b1;
+                assign iDDR4[(r*NUM_PHYSICAL_PARTS)+i].RESET_n   =
+                    c0_ddr4_reset_n;
+            end
+        end
+    endgenerate
+`endif
 
 endmodule

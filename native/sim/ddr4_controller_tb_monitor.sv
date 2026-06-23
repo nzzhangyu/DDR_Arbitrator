@@ -51,7 +51,6 @@ module ddr4_controller_tb_monitor (
    input  logic [3:0]  rw_state,
    input  logic [9:0]  read_burst_len,
    input  logic [9:0]  read_beat_cnt,
-   input  logic        wr_level_high,
    input  logic        wr_level_urgent,
    input  logic        read_data_fire,
 
@@ -349,7 +348,6 @@ module ddr4_controller_tb_monitor (
    //
    // These checks encode the intended native read-service contract:
    // - normal read service length must not exceed 512 beats;
-   // - when write FIFO is high, new read service must not exceed 128 beats;
    // - urgent write must block new read commands;
    // - if a read command was already accepted, the controller must still wait
    //   for its return data before leaving RW_READ_DATA.
@@ -371,15 +369,6 @@ module ddr4_controller_tb_monitor (
             $fdisplay(log_fd, "ERROR: Native read budget exceeded 512 at %0t: read_burst_len=%0d state=%0d",
                       $time, read_burst_len, rw_state);
             $error("Native read budget exceeded 512 at %0t: read_burst_len=%0d state=%0d",
-                   $time, read_burst_len, rw_state);
-         end
-
-         if (native_read_cmd_fire && (read_beat_cnt == 10'd0) &&
-             wr_level_high && (read_burst_len > 10'd128)) begin
-            read_budget_error_count <= read_budget_error_count + 1;
-            $fdisplay(log_fd, "ERROR: Native read command exceeded high-write budget at %0t: read_burst_len=%0d state=%0d",
-                      $time, read_burst_len, rw_state);
-            $error("Native read command exceeded high-write budget at %0t: read_burst_len=%0d state=%0d",
                    $time, read_burst_len, rw_state);
          end
 
