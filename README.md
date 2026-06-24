@@ -81,6 +81,29 @@ xelab tb_ddr4_controller_mock glbl -debug typical
 xsim "work.tb_ddr4_controller_mock#work.glbl" -runall
 ```
 
+The native TB has two compile-time test items in
+`native/sim/tb_ddr4_controller_mock.sv`:
+
+- `TEST_KIND = TEST_NORMAL` is the default normal loopback simulation. It keeps
+  mock stalls disabled and checks sent/received data consistency.
+- `TEST_KIND = TEST_STRESS` enables moderate fast-mock backpressure and
+  worst-case monitor limits for overflow, underflow, and long stall windows.
+
+To run the pressure item, change:
+
+```systemverilog
+localparam int TEST_KIND = TEST_STRESS;
+```
+
+then compile and run the same native fast mock command above.
+
+For waveform-friendly incrementing 8-bit repeated data, set
+`STREAM_INCREMENT_MODE = 1'b1` in `native/sim/tb_ddr4_controller_mock.sv`, then run:
+
+```powershell
+xsim "work.tb_ddr4_controller_mock#work.glbl" -testplusarg views=1 -runall
+```
+
 Native real MIG regression:
 
 Export the native `ddr4_1200m` MIG simulation files into `native\sim\sim_mig\` first.

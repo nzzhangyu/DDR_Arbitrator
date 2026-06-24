@@ -42,6 +42,71 @@ module tb_ddr4_controller_mock;
     localparam int TIMEOUT_CYCLES        = 1200000;
     localparam logic [2:0] APP_CMD_WRITE = 3'b000;
     localparam logic [2:0] APP_CMD_READ  = 3'b001;
+    localparam bit STREAM_INCREMENT_MODE = 1'b0;    // 0: frame, 1: 8-bit repeated increment.
+
+    // Test item select.
+    localparam int TEST_NORMAL = 0;                  // Loopback data correctness.
+    localparam int TEST_STRESS = 1;                  // Backpressure/overflow/underflow diagnostics.
+    localparam int TEST_KIND   = TEST_NORMAL;
+
+    // Normal test: keep the existing fast loopback behavior.
+    localparam int NORMAL_SIM_VIEWS                  = DEFAULT_SIM_VIEWS;
+    localparam int NORMAL_MAX_WR_FIFO_LEVEL          = 16383;
+    localparam int NORMAL_MIN_RD_FIFO_LEVEL          = 1;
+    localparam int NORMAL_MAX_USER_UNDERFLOW_CYCLES  = 0;
+    localparam int NORMAL_MAX_APP_RDY_STALL          = -1;
+    localparam int NORMAL_MAX_APP_WDF_STALL          = -1;
+    localparam int NORMAL_MAX_READ_DATA_GAP          = -1;
+    localparam int NORMAL_GLOBAL_STALL_INTERVAL      = 0;
+    localparam int NORMAL_GLOBAL_STALL_BLOCK         = 0;
+    localparam int NORMAL_CMD_STALL_INTERVAL         = 0;
+    localparam int NORMAL_CMD_STALL_BLOCK            = 0;
+    localparam int NORMAL_READ_STALL_INTERVAL        = 0;
+    localparam int NORMAL_READ_STALL_BLOCK           = 0;
+
+    // Stress test: apply moderate mock backpressure and enable worst-case checks.
+    localparam int STRESS_SIM_VIEWS                  = DEFAULT_SIM_VIEWS;
+    localparam int STRESS_MAX_WR_FIFO_LEVEL          = 16000;
+    localparam int STRESS_MIN_RD_FIFO_LEVEL          = 0;
+    localparam int STRESS_MAX_USER_UNDERFLOW_CYCLES  = 512;
+    localparam int STRESS_MAX_APP_RDY_STALL          = 64;
+    localparam int STRESS_MAX_APP_WDF_STALL          = 64;
+    localparam int STRESS_MAX_READ_DATA_GAP          = 64;
+    localparam int STRESS_GLOBAL_STALL_INTERVAL      = 0;
+    localparam int STRESS_GLOBAL_STALL_BLOCK         = 0;
+    localparam int STRESS_CMD_STALL_INTERVAL         = 2048;
+    localparam int STRESS_CMD_STALL_BLOCK            = 16;
+    localparam int STRESS_READ_STALL_INTERVAL        = 4096;
+    localparam int STRESS_READ_STALL_BLOCK           = 16;
+
+    localparam bit ACTIVE_STRESS_MODE =
+        (TEST_KIND == TEST_STRESS);
+    localparam int ACTIVE_SIM_VIEWS =
+        ACTIVE_STRESS_MODE ? STRESS_SIM_VIEWS : NORMAL_SIM_VIEWS;
+    localparam int ACTIVE_MAX_WR_FIFO_LEVEL =
+        ACTIVE_STRESS_MODE ? STRESS_MAX_WR_FIFO_LEVEL : NORMAL_MAX_WR_FIFO_LEVEL;
+    localparam int ACTIVE_MIN_RD_FIFO_LEVEL =
+        ACTIVE_STRESS_MODE ? STRESS_MIN_RD_FIFO_LEVEL : NORMAL_MIN_RD_FIFO_LEVEL;
+    localparam int ACTIVE_MAX_USER_UNDERFLOW_CYCLES =
+        ACTIVE_STRESS_MODE ? STRESS_MAX_USER_UNDERFLOW_CYCLES : NORMAL_MAX_USER_UNDERFLOW_CYCLES;
+    localparam int ACTIVE_MAX_APP_RDY_STALL =
+        ACTIVE_STRESS_MODE ? STRESS_MAX_APP_RDY_STALL : NORMAL_MAX_APP_RDY_STALL;
+    localparam int ACTIVE_MAX_APP_WDF_STALL =
+        ACTIVE_STRESS_MODE ? STRESS_MAX_APP_WDF_STALL : NORMAL_MAX_APP_WDF_STALL;
+    localparam int ACTIVE_MAX_READ_DATA_GAP =
+        ACTIVE_STRESS_MODE ? STRESS_MAX_READ_DATA_GAP : NORMAL_MAX_READ_DATA_GAP;
+    localparam int ACTIVE_GLOBAL_STALL_INTERVAL =
+        ACTIVE_STRESS_MODE ? STRESS_GLOBAL_STALL_INTERVAL : NORMAL_GLOBAL_STALL_INTERVAL;
+    localparam int ACTIVE_GLOBAL_STALL_BLOCK =
+        ACTIVE_STRESS_MODE ? STRESS_GLOBAL_STALL_BLOCK : NORMAL_GLOBAL_STALL_BLOCK;
+    localparam int ACTIVE_CMD_STALL_INTERVAL =
+        ACTIVE_STRESS_MODE ? STRESS_CMD_STALL_INTERVAL : NORMAL_CMD_STALL_INTERVAL;
+    localparam int ACTIVE_CMD_STALL_BLOCK =
+        ACTIVE_STRESS_MODE ? STRESS_CMD_STALL_BLOCK : NORMAL_CMD_STALL_BLOCK;
+    localparam int ACTIVE_READ_STALL_INTERVAL =
+        ACTIVE_STRESS_MODE ? STRESS_READ_STALL_INTERVAL : NORMAL_READ_STALL_INTERVAL;
+    localparam int ACTIVE_READ_STALL_BLOCK =
+        ACTIVE_STRESS_MODE ? STRESS_READ_STALL_BLOCK : NORMAL_READ_STALL_BLOCK;
 
 `ifdef MIG
     // Real MIG smoke uses two x8 DDR4 component models to match the 16-bit DQ bus.
@@ -169,6 +234,7 @@ module tb_ddr4_controller_mock;
     logic [63:0]           actual_hash;                         // Readback data hash.
     string                 scoreboard_mode;                     // Scoreboard plusarg.
     string                 log_path;                            // Log path plusarg.
+    string                 test_kind_name;                      // Selected test item.
     bit                    consumer_enable;                     // Consumer enable.
     bit                    send_done;                           // Stream done.
     logic                  native_read_cmd_fire;                // Accepted read command.
@@ -272,10 +338,16 @@ module tb_ddr4_controller_mock;
 `else
     // Fast native DDR model.
     ddr4_fast_mock #(
-        .APP_ADDR_WIDTH      (APP_ADDR_WIDTH),
-        .MEM_WORDS           (MOCK_MEM_WORDS),
-        .CALIB_DELAY_CYCLES  (16),
-        .READ_LATENCY_CYCLES (3)
+        .APP_ADDR_WIDTH                (APP_ADDR_WIDTH),
+        .MEM_WORDS                     (MOCK_MEM_WORDS),
+        .CALIB_DELAY_CYCLES            (16),
+        .READ_LATENCY_CYCLES           (3),
+        .GLOBAL_STALL_INTERVAL_CYCLES  (ACTIVE_GLOBAL_STALL_INTERVAL),
+        .GLOBAL_STALL_CYCLES           (ACTIVE_GLOBAL_STALL_BLOCK),
+        .CMD_STALL_INTERVAL_CYCLES     (ACTIVE_CMD_STALL_INTERVAL),
+        .CMD_STALL_CYCLES              (ACTIVE_CMD_STALL_BLOCK),
+        .READ_STALL_INTERVAL_CYCLES    (ACTIVE_READ_STALL_INTERVAL),
+        .READ_STALL_CYCLES             (ACTIVE_READ_STALL_BLOCK)
     ) mock_u (
         .clk_in              (fast_mock_clk),
         .RESET               (reset),
@@ -310,7 +382,8 @@ module tb_ddr4_controller_mock;
         .CH_NUM         (CH_NUM),
         .SLICE_NUM      (SLICE_NUM),
         .SAMPLE_BITS    (SAMPLE_BITS),
-        .APP_DATA_BITS  (APP_DATA_BITS)
+        .APP_DATA_BITS  (APP_DATA_BITS),
+        .INCREMENT_MODE (STREAM_INCREMENT_MODE)
     ) stream_source_u (
         .clk            (clk),
         .reset          (reset),
@@ -411,31 +484,37 @@ module tb_ddr4_controller_mock;
         mismatch_count       = 0;
         overflow_count       = 0;
         timeout_count        = 0;
-        sim_view_count       = DEFAULT_SIM_VIEWS;
-        max_wr_fifo_level_limit = 16383;
-        min_rd_fifo_level_limit = 1;
-        max_user_underflow_cycles_limit = 0;
-        max_app_rdy_stall_limit = -1;
-        max_app_wdf_stall_limit = -1;
-        max_read_data_gap_limit = -1;
+        sim_view_count       = ACTIVE_SIM_VIEWS;
+        max_wr_fifo_level_limit = ACTIVE_MAX_WR_FIFO_LEVEL;
+        min_rd_fifo_level_limit = ACTIVE_MIN_RD_FIFO_LEVEL;
+        max_user_underflow_cycles_limit = ACTIVE_MAX_USER_UNDERFLOW_CYCLES;
+        max_app_rdy_stall_limit = ACTIVE_MAX_APP_RDY_STALL;
+        max_app_wdf_stall_limit = ACTIVE_MAX_APP_WDF_STALL;
+        max_read_data_gap_limit = ACTIVE_MAX_READ_DATA_GAP;
         log_fd               = 0;
         use_hash_scoreboard  = 1'b0;
-        worst_check_enable   = 1'b0;
+        worst_check_enable   = ACTIVE_STRESS_MODE;
         expected_hash        = 64'h6a09_e667_f3bc_c909;
         actual_hash          = 64'h6a09_e667_f3bc_c909;
         log_path             = "tb_ddr4_controller_mock.log";
+        test_kind_name       = ACTIVE_STRESS_MODE ? "stress" : "normal";
         consumer_enable      = 1'b0;
         stream_start         = 1'b0;
-        mock_global_stall_interval_cfg = 0;
-        mock_global_stall_block_cfg    = 0;
-        mock_cmd_stall_interval_cfg    = 0;
-        mock_cmd_stall_block_cfg       = 0;
-        mock_read_stall_interval_cfg   = 0;
-        mock_read_stall_block_cfg      = 0;
+        mock_global_stall_interval_cfg = ACTIVE_GLOBAL_STALL_INTERVAL;
+        mock_global_stall_block_cfg    = ACTIVE_GLOBAL_STALL_BLOCK;
+        mock_cmd_stall_interval_cfg    = ACTIVE_CMD_STALL_INTERVAL;
+        mock_cmd_stall_block_cfg       = ACTIVE_CMD_STALL_BLOCK;
+        mock_read_stall_interval_cfg   = ACTIVE_READ_STALL_INTERVAL;
+        mock_read_stall_block_cfg      = ACTIVE_READ_STALL_BLOCK;
 
 `ifdef MIG
         #5.0 en_model = 1'b1;
 `endif
+
+        if ((TEST_KIND != TEST_NORMAL) && (TEST_KIND != TEST_STRESS)) begin
+            $fatal(1, "Invalid TEST_KIND=%0d, expected TEST_NORMAL or TEST_STRESS",
+                    TEST_KIND);
+        end
 
         if (!$value$plusargs("log=%s", log_path)) begin
             log_path = "tb_ddr4_controller_mock.log";
@@ -511,15 +590,19 @@ module tb_ddr4_controller_mock;
         expected_total_beats = sim_view_count * VIEW_TOTAL_BEATS;
         view_size            = VIEW_TOTAL_BEATS[15:0];
 
-        $display("DDR mock test config: views=%0d/%0d scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d",
+        $display("DDR mock test config: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d",
+                test_kind_name,
                 sim_view_count, TOTAL_VIEWS,
+                STREAM_INCREMENT_MODE ? "increment" : "frame",
                 use_hash_scoreboard ? "hash" : "queue",
                 worst_check_enable,
                 SLICE_NUM,
                 SLICE_TOTAL_BEATS, SLICE_PAYLOAD_BEATS,
                 VIEW_TOTAL_BEATS, VIEW_PERIOD_CYCLES);
-        $fdisplay(log_fd, "CONFIG: views=%0d/%0d scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d max_wr_fifo=%0d min_rd_fifo=%0d max_user_underflow=%0d max_app_rdy_stall=%0d max_app_wdf_stall=%0d max_read_data_gap=%0d global_stall=%0d/%0d cmd_stall=%0d/%0d read_stall=%0d/%0d",
+        $fdisplay(log_fd, "CONFIG: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d max_wr_fifo=%0d min_rd_fifo=%0d max_user_underflow=%0d max_app_rdy_stall=%0d max_app_wdf_stall=%0d max_read_data_gap=%0d global_stall=%0d/%0d cmd_stall=%0d/%0d read_stall=%0d/%0d",
+                    test_kind_name,
                     sim_view_count, TOTAL_VIEWS,
+                    STREAM_INCREMENT_MODE ? "increment" : "frame",
                     use_hash_scoreboard ? "hash" : "queue",
                     worst_check_enable,
                     SLICE_NUM,
@@ -628,13 +711,13 @@ module tb_ddr4_controller_mock;
                     expected_q.size());
         end
 
-        $display("DDR controller mock slice test passed: views=%0d sent=%0d received=%0d read_cmds=%0d write_cmds=%0d urgent_read_events=%0d",
-                sim_view_count, sent_count, recv_count,
+        $display("DDR controller mock slice test passed: test_kind=%s views=%0d sent=%0d received=%0d read_cmds=%0d write_cmds=%0d urgent_read_events=%0d",
+                test_kind_name, sim_view_count, sent_count, recv_count,
                 native_read_cmd_count, native_write_cmd_count,
                 urgent_read_data_event_count);
         monitor_u.write_summary("PASS");
-        $fdisplay(log_fd, "PASS: views=%0d sent=%0d received=%0d read_cmds=%0d write_cmds=%0d urgent_read_events=%0d",
-                    sim_view_count, sent_count, recv_count,
+        $fdisplay(log_fd, "PASS: test_kind=%s views=%0d sent=%0d received=%0d read_cmds=%0d write_cmds=%0d urgent_read_events=%0d",
+                    test_kind_name, sim_view_count, sent_count, recv_count,
                     native_read_cmd_count, native_write_cmd_count,
                     urgent_read_data_event_count);
         $fclose(log_fd);

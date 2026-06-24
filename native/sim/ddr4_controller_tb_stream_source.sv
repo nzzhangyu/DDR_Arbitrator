@@ -17,7 +17,8 @@ module ddr4_controller_tb_stream_source #(
     parameter int CH_NUM             = 48,
     parameter int SLICE_NUM          = 128,
     parameter int SAMPLE_BITS        = 16,
-    parameter int APP_DATA_BITS      = 128
+    parameter int APP_DATA_BITS      = 128,
+    parameter bit INCREMENT_MODE     = 1'b1
 ) (
     input  logic        clk,
     input  logic        reset,
@@ -40,6 +41,7 @@ module ddr4_controller_tb_stream_source #(
 
     int unsigned cycle_count;
     int          source_sent_count;
+    logic [7:0]  increment_byte;
 
     always @(posedge clk) begin
         if (reset) begin
@@ -58,6 +60,7 @@ module ddr4_controller_tb_stream_source #(
         data_word         = '0;
         send_done         = 1'b0;
         source_sent_count = 0;
+        increment_byte    = '0;
 
         wait (!reset);
         wait (start);
@@ -111,9 +114,12 @@ module ddr4_controller_tb_stream_source #(
             // posedge. There is no ready/valid backpressure on this user input;
             // FIFO overflow is intentionally reported by the DUT/testbench.
             @(negedge clk);
-            data_word = word;
+            data_word = INCREMENT_MODE ? {16{increment_byte}} : word;
             data_en   = 1'b1;
             source_sent_count++;
+            if (INCREMENT_MODE) begin
+                increment_byte++;
+            end
         end
     endtask
 
