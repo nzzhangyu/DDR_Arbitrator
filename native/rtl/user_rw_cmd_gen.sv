@@ -51,12 +51,12 @@ module user_rw_cmd_gen #(
 );
 
     // Watermark thresholds.
-    localparam logic [13:0] WR_LEVEL_URGENT   = 14'd12288;  // Force writes, block reads.
+    localparam logic [13:0] WR_LEVEL_URGENT   = 14'd2560;   // Force writes, block reads.
 
-    localparam logic [13:0] RD_LEVEL_URGENT   = 14'd4096;   // Refill reads urgently.
-    localparam logic [13:0] RD_LEVEL_HIGH     = 14'd12288;  // Stop read prefetch.
+    localparam logic [13:0] RD_LEVEL_URGENT   = 14'd1024;   // Refill reads urgently.
+    localparam logic [13:0] RD_LEVEL_HIGH     = 14'd3072;   // Stop read prefetch.
     
-    localparam logic [13:0] RD_FIFO_DEPTH     = 14'd16383;
+    localparam logic [13:0] RD_FIFO_DEPTH     = 14'd4095;
 
     localparam logic [8:0]  WR_BURST_NUM      = 9'd256;
     localparam logic [9:0]  RD_BURST_NUM      = 10'd512;

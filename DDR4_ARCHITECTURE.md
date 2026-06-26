@@ -59,13 +59,14 @@
 - 写侧 FIFO：`clk` 写入，`ui_clk` 读出。
 - 读侧 FIFO：`ui_clk` 写入，`clk` 读出。
 - 数据宽度：`128 bit`。
-- FIFO 深度：`16384 beat`。
+- 写侧 FIFO 深度：`4096 beat`。
+- 读侧 FIFO 深度：`4096 beat`。
 
 主要水位阈值保持一致：
 
-- `WR_LEVEL_URGENT = 12288`
-- `RD_LEVEL_URGENT = 4096`
-- `RD_LEVEL_HIGH = 12288`
+- `WR_LEVEL_URGENT = 2560`
+- `RD_LEVEL_URGENT = 1024`
+- `RD_LEVEL_HIGH = 3072`
 
 `WR_LEVEL_URGENT` 在写 FIFO 紧急时禁止普通读并强制优先写。普通写需要
 写 FIFO 有完整 `WR_BURST_NUM` 或尾部 aging 到期后参与仲裁。读侧水位用于紧急补读和高水位停止预取。

@@ -83,11 +83,13 @@ module user_app_top #(
 );
 
    localparam int FIFO_DATA_WIDTH        = 128;
-   localparam int DDR_FIFO_DEPTH         = 16384;
-   localparam int DDR_FIFO_COUNT_WIDTH   = 15;
+   localparam int WR_DDR_FIFO_DEPTH      = 4096;
+   localparam int WR_DDR_FIFO_COUNT_WIDTH = 13;
+   localparam int RD_DDR_FIFO_DEPTH      = 4096;
+   localparam int RD_DDR_FIFO_COUNT_WIDTH = 13;
    localparam int WR_PROG_EMPTY_THRESH   = 256;
-   localparam int RD_PROG_FULL_THRESH    = 12288;
-   localparam logic [13:0] RD_ALMOST_EMPTY_THRESH = 14'd4096;
+   localparam int RD_PROG_FULL_THRESH    = 3072;
+   localparam logic [13:0] RD_ALMOST_EMPTY_THRESH = 14'd1024;
 
    // Write-side DDR staging FIFO.
    // The upstream producer writes in clk, while the AXI writer drains in ui_clk.
@@ -97,10 +99,10 @@ module user_app_top #(
    logic         ddr_wr_fifo_full;
    logic         ddr_wr_fifo_overflow;
    logic         ddr_wr_fifo_rd_en;
-   logic [14:0]  ddr_wr_fifo_rd_count_raw;
+   logic [12:0]  ddr_wr_fifo_rd_count_raw;
    logic [13:0]  ddr_wr_fifo_level;
 
-   assign ddr_wr_fifo_level = ddr_wr_fifo_rd_count_raw[14] ? 14'h3fff : ddr_wr_fifo_rd_count_raw[13:0];
+   assign ddr_wr_fifo_level = {1'b0, ddr_wr_fifo_rd_count_raw};
    
    xpm_fifo_async #(
       .CASCADE_HEIGHT      (0),
@@ -109,11 +111,11 @@ module user_app_top #(
       .ECC_MODE            ("no_ecc"),
       .FIFO_MEMORY_TYPE    ("auto"),
       .FIFO_READ_LATENCY   (0),
-      .FIFO_WRITE_DEPTH    (DDR_FIFO_DEPTH),
+      .FIFO_WRITE_DEPTH    (WR_DDR_FIFO_DEPTH),
       .FULL_RESET_VALUE    (0),
       .PROG_EMPTY_THRESH   (WR_PROG_EMPTY_THRESH),
       .PROG_FULL_THRESH    (10),
-      .RD_DATA_COUNT_WIDTH (DDR_FIFO_COUNT_WIDTH),
+      .RD_DATA_COUNT_WIDTH (WR_DDR_FIFO_COUNT_WIDTH),
       .READ_DATA_WIDTH     (FIFO_DATA_WIDTH),
       .READ_MODE           ("fwft"),
       .RELATED_CLOCKS      (0),
@@ -121,7 +123,7 @@ module user_app_top #(
       .USE_ADV_FEATURES    ("1F1F"),
       .WAKEUP_TIME         (0),
       .WRITE_DATA_WIDTH    (FIFO_DATA_WIDTH),
-      .WR_DATA_COUNT_WIDTH (DDR_FIFO_COUNT_WIDTH)
+      .WR_DATA_COUNT_WIDTH (WR_DDR_FIFO_COUNT_WIDTH)
    ) ddr_wr_fifo_uut (
       .data_valid    (ddr_wr_fifo_valid),
       .dout          (ddr_wr_fifo_dout),
@@ -149,11 +151,10 @@ module user_app_top #(
    logic         ddr_rd_fifo_prog_full;
    logic         ddr_rd_fifo_almost_empty_ui;
    logic         ddr_rd_fifo_rd_en;
-   logic [14:0]  ddr_rd_fifo_wr_count_raw;
+   logic [12:0]  ddr_rd_fifo_wr_count_raw;
    logic [13:0]  ddr_rd_fifo_level;
 
-   assign ddr_rd_fifo_level = ddr_rd_fifo_wr_count_raw[14] ?
-                              14'h3fff : ddr_rd_fifo_wr_count_raw[13:0];
+   assign ddr_rd_fifo_level = {1'b0, ddr_rd_fifo_wr_count_raw};
    assign ddr_rd_fifo_almost_empty_ui =
       ddr_rd_fifo_level <= RD_ALMOST_EMPTY_THRESH;
    assign ddr_rd_fifo_rd_en = user_r_rd_en && user_r_valid;
@@ -165,11 +166,11 @@ module user_app_top #(
       .ECC_MODE            ("no_ecc"),
       .FIFO_MEMORY_TYPE    ("auto"),
       .FIFO_READ_LATENCY   (0),
-      .FIFO_WRITE_DEPTH    (DDR_FIFO_DEPTH),
+      .FIFO_WRITE_DEPTH    (RD_DDR_FIFO_DEPTH),
       .FULL_RESET_VALUE    (0),
       .PROG_EMPTY_THRESH   (WR_PROG_EMPTY_THRESH),
       .PROG_FULL_THRESH    (RD_PROG_FULL_THRESH),
-      .RD_DATA_COUNT_WIDTH (DDR_FIFO_COUNT_WIDTH),
+      .RD_DATA_COUNT_WIDTH (RD_DDR_FIFO_COUNT_WIDTH),
       .READ_DATA_WIDTH     (FIFO_DATA_WIDTH),
       .READ_MODE           ("fwft"),
       .RELATED_CLOCKS      (0),
@@ -177,7 +178,7 @@ module user_app_top #(
       .USE_ADV_FEATURES    ("1F1F"),
       .WAKEUP_TIME         (0),
       .WRITE_DATA_WIDTH    (FIFO_DATA_WIDTH),
-      .WR_DATA_COUNT_WIDTH (DDR_FIFO_COUNT_WIDTH)
+      .WR_DATA_COUNT_WIDTH (RD_DDR_FIFO_COUNT_WIDTH)
    ) ddr_rd_fifo_uut (
       .data_valid    (user_r_valid),
       .dout          (user_r_data),

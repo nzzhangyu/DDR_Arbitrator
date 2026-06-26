@@ -87,13 +87,13 @@ module user_rw_cmd_gen #(
     // Watermark thresholds.
     // The write-side levels describe how full the upstream staging buffer is.
     // The read-side levels describe how much data should be kept available for replay / refill.
-    localparam logic [13:0] WR_LEVEL_URGENT  = 14'd12288;  // Force writes, block reads.
+    localparam logic [13:0] WR_LEVEL_URGENT  = 14'd2560;   // Force writes, block reads.
     localparam logic [8:0]  WR_BURST_NUM     = 9'd256;
     localparam logic [10:0] WR_TAIL_AGE_LIMIT = 11'd1024;
 
-    localparam logic [13:0] RD_LEVEL_URGENT  = 14'd4096;   // Refill reads urgently.
-    localparam logic [13:0] RD_LEVEL_HIGH    = 14'd12288;  // Stop read prefetch.
-    localparam logic [13:0] RD_FIFO_DEPTH    = 14'd16383;
+    localparam logic [13:0] RD_LEVEL_URGENT  = 14'd1024;   // Refill reads urgently.
+    localparam logic [13:0] RD_LEVEL_HIGH    = 14'd3072;   // Stop read prefetch.
+    localparam logic [13:0] RD_FIFO_DEPTH    = 14'd4095;
 
     localparam logic [8:0]  RD_BURST_NUM     = 9'd256;
     localparam logic [11:0] RD_WAIT_AGE_LIMIT = 12'd2048;

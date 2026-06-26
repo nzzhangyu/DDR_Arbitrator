@@ -1,0 +1,169 @@
+#-----------------------------------------------------------
+# xsim v2022.2 (64-bit)
+# SW Build 3671981 on Fri Oct 14 05:00:03 MDT 2022
+# IP Build 3669848 on Fri Oct 14 08:30:02 MDT 2022
+# Start of session at: Fri Jun 26 17:25:45 2026
+# Process ID: 11052
+# Current directory: D:/FPGA/DDR_native/DDR_native.sim/sim_1/behav/xsim
+# Command line: xsim.exe -log D:/FPGA/DDR/tools/xsim_probe_app_rdy_timeline.log -mode tcl -source {xsim.dir/tb_ddr4_controller_mock_behav/xsim_script.tcl}
+# Log file: D:/FPGA/DDR/tools/xsim_probe_app_rdy_timeline.log
+# Journal file: D:/FPGA/DDR_native/DDR_native.sim/sim_1/behav/xsim\xsim.jou
+# Running On: NMS-20240704NGR, OS: Windows, CPU Frequency: 2112 MHz, CPU Physical cores: 12, Host memory: 16869 MB
+#-----------------------------------------------------------
+source xsim.dir/tb_ddr4_controller_mock_behav/xsim_script.tcl
+# xsim {tb_ddr4_controller_mock_behav} -autoloadwcfg -tclbatch {D:/FPGA/DDR/tools/xsim_probe_app_rdy_timeline.tcl}
+Time resolution is 1 ps
+source D:/FPGA/DDR/tools/xsim_probe_app_rdy_timeline.tcl
+## proc v {sig {radix unsigned}} {
+##     set obj [get_objects -quiet $sig]
+##     if {[llength $obj] == 0} {
+##         return "<missing>"
+##     }
+##     return [get_value -radix $radix $obj]
+## }
+## proc line {label} {
+##     puts [format "%-10s t=%-10s calib=%s rst=%s cmd=%s en=%s rdy=%s wdf_rdy=%s wdf_wren=%s wdf_end=%s wr_fire=%s rd_fire=%s wr_level=%s rd_level=%s" \
+##         $label [current_time -s] \
+##         [v /tb_ddr4_controller_mock/init_calib_complete] \
+##         [v /tb_ddr4_controller_mock/ui_clk_sync_rst] \
+##         [v /tb_ddr4_controller_mock/app_cmd] \
+##         [v /tb_ddr4_controller_mock/app_en] \
+##         [v /tb_ddr4_controller_mock/app_rdy] \
+##         [v /tb_ddr4_controller_mock/app_wdf_rdy] \
+##         [v /tb_ddr4_controller_mock/app_wdf_wren] \
+##         [v /tb_ddr4_controller_mock/app_wdf_end] \
+##         [v /tb_ddr4_controller_mock/native_write_cmd_fire] \
+##         [v /tb_ddr4_controller_mock/native_read_cmd_fire] \
+##         [v /tb_ddr4_controller_mock/dut/ddr_wr_fifo_level] \
+##         [v /tb_ddr4_controller_mock/dut/ddr_rd_fifo_level]]
+## }
+## puts "Objects matching rw_state:"
+Objects matching rw_state:
+## puts [join [get_objects -r -quiet -regexp {.*rw_state.*}] "\n"]
+
+## puts "Objects matching write_data_fire:"
+Objects matching write_data_fire:
+## puts [join [get_objects -r -quiet -regexp {.*write_data_fire.*}] "\n"]
+
+## puts "Objects matching app_rdy in MIG:"
+Objects matching app_rdy in MIG:
+## puts [join [lrange [get_objects -r -quiet -regexp {.*mig_u.*app.*rdy.*}] 0 80] "\n"]
+
+## line "t0"
+t0         t=0fs        calib=X rst=X cmd=X en=X rdy=X wdf_rdy=X wdf_wren=X wdf_end=X wr_fire=X rd_fire=X wr_level=X rd_level=X
+## run 3 us
+Loading timesets for 'tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[0].ddr4_model_u .LoadTiming' @0
+	Loaded timeset:TS_1875
+	Loaded timeset:TS_1500
+	Loaded timeset:TS_1250
+	Loaded timeset:TS_1072
+	Loaded timeset:TS_938
+	Loaded timeset:TS_833
+	Loaded timeset:TS_750
+	Loaded timeset:TS_682
+	Loaded timeset:TS_625
+Model based on DDR4 DDS version 0.999 6/06/2014 (build data 5/06/2016)
+tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[0].ddr4_model_u :Configured as x8 16G stack:1
+Loading timesets for 'tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[1].ddr4_model_u .LoadTiming' @0
+	Loaded timeset:TS_1875
+	Loaded timeset:TS_1500
+	Loaded timeset:TS_1250
+	Loaded timeset:TS_1072
+	Loaded timeset:TS_938
+	Loaded timeset:TS_833
+	Loaded timeset:TS_750
+	Loaded timeset:TS_682
+	Loaded timeset:TS_625
+Model based on DDR4 DDS version 0.999 6/06/2014 (build data 5/06/2016)
+tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[1].ddr4_model_u :Configured as x8 16G stack:1
+Info: [XPM_MEMORY 20-1] MEMORY_PRIMITIVE (0) instructs Vivado Synthesis to choose the memory primitive type. Depending on their values, other XPM_MEMORY parameters may preclude the choice of certain memory primitive types. Review XPM_MEMORY documentation and parameter values to understand any limitations, or set MEMORY_PRIMITIVE to a different value. tb_ddr4_controller_mock.dut.ddr_wr_fifo_uut.\gnuram_async_fifo.xpm_fifo_base_inst .\gen_sdpram.xpm_memory_base_inst .config_drc
+Time: 1 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/dut/ddr_wr_fifo_uut/gnuram_async_fifo.xpm_fifo_base_inst/gen_sdpram.xpm_memory_base_inst/Initial299_31  Scope: tb_ddr4_controller_mock.dut.ddr_wr_fifo_uut.\gnuram_async_fifo.xpm_fifo_base_inst .\gen_sdpram.xpm_memory_base_inst .config_drc  File: D:/Xilinx/Vivado/2022.2/data/ip/xpm/xpm_memory/hdl/xpm_memory.sv Line: 493
+Info: [XPM_MEMORY 20-1] MEMORY_PRIMITIVE (0) instructs Vivado Synthesis to choose the memory primitive type. Depending on their values, other XPM_MEMORY parameters may preclude the choice of certain memory primitive types. Review XPM_MEMORY documentation and parameter values to understand any limitations, or set MEMORY_PRIMITIVE to a different value. tb_ddr4_controller_mock.dut.ddr_rd_fifo_uut.\gnuram_async_fifo.xpm_fifo_base_inst .\gen_sdpram.xpm_memory_base_inst .config_drc
+Time: 1 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/dut/ddr_rd_fifo_uut/gnuram_async_fifo.xpm_fifo_base_inst/gen_sdpram.xpm_memory_base_inst/Initial299_31  Scope: tb_ddr4_controller_mock.dut.ddr_rd_fifo_uut.\gnuram_async_fifo.xpm_fifo_base_inst .\gen_sdpram.xpm_memory_base_inst .config_drc  File: D:/Xilinx/Vivado/2022.2/data/ip/xpm/xpm_memory/hdl/xpm_memory.sv Line: 493
+DDR controller mock log: tb_ddr4_controller_mock.log
+DDR mock test config: views=10/2320 scoreboard=queue worst_check=0 slices/view=128 beats/slice=182 payload_beats/slice=180 view_beats=23296 period_cycles=46400
+Info: [Unisim HPIO_VREF-1] Fabric Tune Value changed to 0011111. Instance: tb_ddr4_controller_mock.mig_u.inst.u_ddr4_mem_intfc.u_mig_ddr4_phy.inst.u_ddr_iob.\genByte[3].u_ddr_iob_byte .\genblk1.genVref.u_hpio_vref 
+Info: [Unisim HPIO_VREF-1] Fabric Tune Value changed to 0011111. Instance: tb_ddr4_controller_mock.mig_u.inst.u_ddr4_mem_intfc.u_mig_ddr4_phy.inst.u_ddr_iob.\genByte[4].u_ddr_iob_byte .\genblk1.genVref.u_hpio_vref 
+tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[0].ddr4_model_u .always_diff_ck.if_diff_ck:Initialization complete @2730366
+tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[1].ddr4_model_u .always_diff_ck.if_diff_ck:Initialization complete @2730366
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "3us"
+3us        t=3us        calib=0 rst=0 cmd=0 en=0 rdy=0 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=0 rd_level=0
+## run 1 us
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "4us"
+4us        t=4us        calib=1 rst=0 cmd=0 en=0 rdy=1 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=0 rd_level=0
+## run 1 us
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:1 dm:0 @4715822
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:1 dm:0 @4715822
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:2 dm:0 @4716238
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:2 dm:0 @4716238
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:3 dm:0 @4716655
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:3 dm:0 @4716655
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:0 dm:0 @4717071
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:0 dm:0 @4717071
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:5 dm:0 @4717488
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:5 dm:0 @4717488
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:6 dm:0 @4717904
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:6 dm:0 @4717904
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:7 dm:0 @4718321
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:7 dm:0 @4718321
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:4 dm:0 @4718737
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:4 dm:0 @4718737
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "5us"
+5us        t=5us        calib=1 rst=0 cmd=0 en=0 rdy=1 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=3 rd_level=0
+## run 1 us
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:1 dm:0 @5712090
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:1 dm:0 @5712090
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:2 dm:0 @5712506
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:2 dm:0 @5712506
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:3 dm:0 @5712923
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:3 dm:0 @5712923
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:0 dm:0 @5713339
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:0 dm:0 @5713339
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:5 dm:0 @5713756
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:5 dm:0 @5713756
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:6 dm:0 @5714172
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:6 dm:0 @5714172
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:7 dm:0 @5714589
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:7 dm:0 @5714589
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:4 dm:0 @5715005
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:4 dm:0 @5715005
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "6us"
+6us        t=6us        calib=1 rst=0 cmd=0 en=0 rdy=1 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=203 rd_level=0
+## run 2 us
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "8us"
+8us        t=8us        calib=1 rst=0 cmd=0 en=1 rdy=0 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=594 rd_level=0
+## run 2 us
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "10us"
+10us       t=10us       calib=1 rst=0 cmd=0 en=1 rdy=0 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=993 rd_level=0
+## run 5 us
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "15us"
+15us       t=15us       calib=1 rst=0 cmd=0 en=1 rdy=0 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=1994 rd_level=0
+## run 5 us
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "20us"
+20us       t=20us       calib=1 rst=0 cmd=0 en=1 rdy=0 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=2993 rd_level=0
+## run 2 us
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "22us"
+22us       t=22us       calib=1 rst=0 cmd=0 en=1 rdy=0 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=3393 rd_level=0
+## run 1 us
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:06 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "23us"
+23us       t=23us       calib=1 rst=0 cmd=0 en=1 rdy=0 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=3594 rd_level=0
+## run 1 us
+## line "24us"
+24us       t=24us       calib=1 rst=0 cmd=0 en=1 rdy=0 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=3794 rd_level=0
+## run 1 us
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:06 . Memory (MB): peak = 239.164 ; gain = 0.000
+## line "25us"
+25us       t=25us       calib=1 rst=0 cmd=0 en=1 rdy=0 wdf_rdy=1 wdf_wren=0 wdf_end=0 wr_fire=0 rd_fire=0 wr_level=3994 rd_level=0
+## quit
+INFO: xsimkernel Simulation Memory Usage: 46852 KB (Peak: 46852 KB), Simulation CPU Usage: 12312 ms
+INFO: [Common 17-206] Exiting xsim at Fri Jun 26 17:27:05 2026...

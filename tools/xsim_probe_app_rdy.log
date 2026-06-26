@@ -1,0 +1,486 @@
+#-----------------------------------------------------------
+# xsim v2022.2 (64-bit)
+# SW Build 3671981 on Fri Oct 14 05:00:03 MDT 2022
+# IP Build 3669848 on Fri Oct 14 08:30:02 MDT 2022
+# Start of session at: Fri Jun 26 17:23:43 2026
+# Process ID: 25184
+# Current directory: D:/FPGA/DDR_native/DDR_native.sim/sim_1/behav/xsim
+# Command line: xsim.exe -log D:/FPGA/DDR/tools/xsim_probe_app_rdy.log -mode tcl -source {xsim.dir/tb_ddr4_controller_mock_behav/xsim_script.tcl}
+# Log file: D:/FPGA/DDR/tools/xsim_probe_app_rdy.log
+# Journal file: D:/FPGA/DDR_native/DDR_native.sim/sim_1/behav/xsim\xsim.jou
+# Running On: NMS-20240704NGR, OS: Windows, CPU Frequency: 2112 MHz, CPU Physical cores: 12, Host memory: 16869 MB
+#-----------------------------------------------------------
+source xsim.dir/tb_ddr4_controller_mock_behav/xsim_script.tcl
+# xsim {tb_ddr4_controller_mock_behav} -autoloadwcfg -tclbatch {D:/FPGA/DDR/tools/xsim_probe_app_rdy.tcl}
+Time resolution is 1 ps
+source D:/FPGA/DDR/tools/xsim_probe_app_rdy.tcl
+## proc show_values {label} {
+##     puts "---- $label @ [current_time -s] ----"
+##     set sigs {
+##         /tb_ddr4_controller_mock/init_calib_complete
+##         /tb_ddr4_controller_mock/ui_clk_sync_rst
+##         /tb_ddr4_controller_mock/app_cmd
+##         /tb_ddr4_controller_mock/app_en
+##         /tb_ddr4_controller_mock/app_rdy
+##         /tb_ddr4_controller_mock/app_wdf_rdy
+##         /tb_ddr4_controller_mock/app_wdf_wren
+##         /tb_ddr4_controller_mock/app_wdf_end
+##         /tb_ddr4_controller_mock/app_rd_data_valid
+##         /tb_ddr4_controller_mock/native_write_cmd_fire
+##         /tb_ddr4_controller_mock/native_read_cmd_fire
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rw_state
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_beat_cnt
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_burst_len
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_beat_cnt
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_burst_len
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_fifo_valid
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/app_cmd_fire
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_data_fire
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_level_urgent
+##         /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rd_level_high
+##         /tb_ddr4_controller_mock/dut/ddr_wr_fifo_level
+##         /tb_ddr4_controller_mock/dut/ddr_rd_fifo_level
+##     }
+##     foreach sig $sigs {
+##         set obj [get_objects -quiet $sig]
+##         if {[llength $obj] == 0} {
+##             puts "$sig = <missing>"
+##         } else {
+##             report_values -radix unsigned $obj
+##         }
+##     }
+## }
+## puts "Probe available objects"
+Probe available objects
+## puts [get_objects -quiet /tb_ddr4_controller_mock/app_rdy]
+/tb_ddr4_controller_mock/app_rdy
+## puts [get_objects -quiet /tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rw_state]
+
+## run 24 us
+Loading timesets for 'tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[0].ddr4_model_u .LoadTiming' @0
+	Loaded timeset:TS_1875
+	Loaded timeset:TS_1500
+	Loaded timeset:TS_1250
+	Loaded timeset:TS_1072
+	Loaded timeset:TS_938
+	Loaded timeset:TS_833
+	Loaded timeset:TS_750
+	Loaded timeset:TS_682
+	Loaded timeset:TS_625
+Model based on DDR4 DDS version 0.999 6/06/2014 (build data 5/06/2016)
+tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[0].ddr4_model_u :Configured as x8 16G stack:1
+Loading timesets for 'tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[1].ddr4_model_u .LoadTiming' @0
+	Loaded timeset:TS_1875
+	Loaded timeset:TS_1500
+	Loaded timeset:TS_1250
+	Loaded timeset:TS_1072
+	Loaded timeset:TS_938
+	Loaded timeset:TS_833
+	Loaded timeset:TS_750
+	Loaded timeset:TS_682
+	Loaded timeset:TS_625
+Model based on DDR4 DDS version 0.999 6/06/2014 (build data 5/06/2016)
+tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[1].ddr4_model_u :Configured as x8 16G stack:1
+Info: [XPM_MEMORY 20-1] MEMORY_PRIMITIVE (0) instructs Vivado Synthesis to choose the memory primitive type. Depending on their values, other XPM_MEMORY parameters may preclude the choice of certain memory primitive types. Review XPM_MEMORY documentation and parameter values to understand any limitations, or set MEMORY_PRIMITIVE to a different value. tb_ddr4_controller_mock.dut.ddr_wr_fifo_uut.\gnuram_async_fifo.xpm_fifo_base_inst .\gen_sdpram.xpm_memory_base_inst .config_drc
+Time: 1 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/dut/ddr_wr_fifo_uut/gnuram_async_fifo.xpm_fifo_base_inst/gen_sdpram.xpm_memory_base_inst/Initial299_31  Scope: tb_ddr4_controller_mock.dut.ddr_wr_fifo_uut.\gnuram_async_fifo.xpm_fifo_base_inst .\gen_sdpram.xpm_memory_base_inst .config_drc  File: D:/Xilinx/Vivado/2022.2/data/ip/xpm/xpm_memory/hdl/xpm_memory.sv Line: 493
+Info: [XPM_MEMORY 20-1] MEMORY_PRIMITIVE (0) instructs Vivado Synthesis to choose the memory primitive type. Depending on their values, other XPM_MEMORY parameters may preclude the choice of certain memory primitive types. Review XPM_MEMORY documentation and parameter values to understand any limitations, or set MEMORY_PRIMITIVE to a different value. tb_ddr4_controller_mock.dut.ddr_rd_fifo_uut.\gnuram_async_fifo.xpm_fifo_base_inst .\gen_sdpram.xpm_memory_base_inst .config_drc
+Time: 1 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/dut/ddr_rd_fifo_uut/gnuram_async_fifo.xpm_fifo_base_inst/gen_sdpram.xpm_memory_base_inst/Initial299_31  Scope: tb_ddr4_controller_mock.dut.ddr_rd_fifo_uut.\gnuram_async_fifo.xpm_fifo_base_inst .\gen_sdpram.xpm_memory_base_inst .config_drc  File: D:/Xilinx/Vivado/2022.2/data/ip/xpm/xpm_memory/hdl/xpm_memory.sv Line: 493
+DDR controller mock log: tb_ddr4_controller_mock.log
+DDR mock test config: views=10/2320 scoreboard=queue worst_check=0 slices/view=128 beats/slice=182 payload_beats/slice=180 view_beats=23296 period_cycles=46400
+Info: [Unisim HPIO_VREF-1] Fabric Tune Value changed to 0011111. Instance: tb_ddr4_controller_mock.mig_u.inst.u_ddr4_mem_intfc.u_mig_ddr4_phy.inst.u_ddr_iob.\genByte[3].u_ddr_iob_byte .\genblk1.genVref.u_hpio_vref 
+Info: [Unisim HPIO_VREF-1] Fabric Tune Value changed to 0011111. Instance: tb_ddr4_controller_mock.mig_u.inst.u_ddr4_mem_intfc.u_mig_ddr4_phy.inst.u_ddr_iob.\genByte[4].u_ddr_iob_byte .\genblk1.genVref.u_hpio_vref 
+tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[0].ddr4_model_u .always_diff_ck.if_diff_ck:Initialization complete @2730366
+tb_ddr4_controller_mock.\memModels_Ri1[0].memModel1[1].ddr4_model_u .always_diff_ck.if_diff_ck:Initialization complete @2730366
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:1 dm:0 @4715822
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:1 dm:0 @4715822
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:2 dm:0 @4716238
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:2 dm:0 @4716238
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:3 dm:0 @4716655
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:3 dm:0 @4716655
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:0 dm:0 @4717071
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:0 dm:0 @4717071
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:5 dm:0 @4717488
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:5 dm:0 @4717488
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:6 dm:0 @4717904
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:6 dm:0 @4717904
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:7 dm:0 @4718321
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:7 dm:0 @4718321
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:4 dm:0 @4718737
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:4 dm:0 @4718737
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:1 dm:0 @5712090
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:1 dm:0 @5712090
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:2 dm:0 @5712506
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:2 dm:0 @5712506
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:3 dm:0 @5712923
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:3 dm:0 @5712923
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:0 dm:0 @5713339
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:0 dm:0 @5713339
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:5 dm:0 @5713756
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:5 dm:0 @5713756
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:6 dm:0 @5714172
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:6 dm:0 @5714172
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:7 dm:0 @5714589
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:7 dm:0 @5714589
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:4 dm:0 @5715005
+Model:WARNING: Reading unwritten address: C:0 BG:0 B:0 R:0 C:4 dm:0 @5715005
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:15 . Memory (MB): peak = 239.297 ; gain = 0.000
+## show_values "before first overrun window"
+---- before first overrun window @ 24us ----
+  Variable: {init_calib_complete}          Verilog 1
+
+  Variable: {ui_clk_sync_rst}              Verilog 0
+
+  Variable: {app_cmd[2:0]}                 Verilog 0
+
+  Variable: {app_en}                       Verilog 1
+
+  Variable: {app_rdy}                      Verilog 0
+
+  Variable: {app_wdf_rdy}                  Verilog 1
+
+  Variable: {app_wdf_wren}                 Verilog 0
+
+  Variable: {app_wdf_end}                  Verilog 0
+
+  Variable: {app_rd_data_valid}            Verilog 0
+
+  Variable: {native_write_cmd_fire}        Verilog 0
+
+  Variable: {native_read_cmd_fire}         Verilog 0
+
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rw_state = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_beat_cnt = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_burst_len = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_beat_cnt = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_burst_len = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_fifo_valid = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/app_cmd_fire = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_data_fire = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_level_urgent = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rd_level_high = <missing>
+  Variable: {/tb_ddr4_controller_mock/dut/ddr_wr_fifo_level[13:0]} Verilog 3794
+
+  Variable: {/tb_ddr4_controller_mock/dut/ddr_rd_fifo_level[13:0]} Verilog 0
+
+## run 1 us
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:07 . Memory (MB): peak = 239.297 ; gain = 0.000
+## show_values "near 25us"
+---- near 25us @ 25us ----
+  Variable: {init_calib_complete}          Verilog 1
+
+  Variable: {ui_clk_sync_rst}              Verilog 0
+
+  Variable: {app_cmd[2:0]}                 Verilog 0
+
+  Variable: {app_en}                       Verilog 1
+
+  Variable: {app_rdy}                      Verilog 0
+
+  Variable: {app_wdf_rdy}                  Verilog 1
+
+  Variable: {app_wdf_wren}                 Verilog 0
+
+  Variable: {app_wdf_end}                  Verilog 0
+
+  Variable: {app_rd_data_valid}            Verilog 0
+
+  Variable: {native_write_cmd_fire}        Verilog 0
+
+  Variable: {native_read_cmd_fire}         Verilog 0
+
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rw_state = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_beat_cnt = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_burst_len = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_beat_cnt = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_burst_len = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_fifo_valid = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/app_cmd_fire = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_data_fire = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_level_urgent = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rd_level_high = <missing>
+  Variable: {/tb_ddr4_controller_mock/dut/ddr_wr_fifo_level[13:0]} Verilog 3994
+
+  Variable: {/tb_ddr4_controller_mock/dut/ddr_rd_fifo_level[13:0]} Verilog 0
+
+## run 500 ns
+## show_values "near 25.5us"
+---- near 25.5us @ 25500ns ----
+  Variable: {init_calib_complete}          Verilog 1
+
+  Variable: {ui_clk_sync_rst}              Verilog 0
+
+  Variable: {app_cmd[2:0]}                 Verilog 0
+
+  Variable: {app_en}                       Verilog 1
+
+  Variable: {app_rdy}                      Verilog 0
+
+  Variable: {app_wdf_rdy}                  Verilog 1
+
+  Variable: {app_wdf_wren}                 Verilog 0
+
+  Variable: {app_wdf_end}                  Verilog 0
+
+  Variable: {app_rd_data_valid}            Verilog 0
+
+  Variable: {native_write_cmd_fire}        Verilog 0
+
+  Variable: {native_read_cmd_fire}         Verilog 0
+
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rw_state = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_beat_cnt = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_burst_len = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_beat_cnt = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_burst_len = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_fifo_valid = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/app_cmd_fire = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_data_fire = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_level_urgent = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rd_level_high = <missing>
+  Variable: {/tb_ddr4_controller_mock/dut/ddr_wr_fifo_level[13:0]} Verilog 4093
+
+  Variable: {/tb_ddr4_controller_mock/dut/ddr_rd_fifo_level[13:0]} Verilog 0
+
+## run 500 ns
+Error: DDR status event at 25503000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25502500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25508000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25507500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25513000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25512500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25518000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25517500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25523000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25522500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25528000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25527500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25533000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25532500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25538000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25537500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25543000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25542500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25548000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25547500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25553000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25552500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25558000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25557500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25563000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25562500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25568000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25567500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25573000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25572500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25578000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25577500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25583000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25582500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25588000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25587500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25593000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25592500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25598000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25597500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25603000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25602500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25608000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25607500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25613000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25612500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25618000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25617500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25623000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25622500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25628000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25627500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25633000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25632500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25638000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25637500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25643000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25642500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25648000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25647500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25653000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25652500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25658000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25657500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25663000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25662500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25668000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25667500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25673000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25672500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25678000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25677500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25683000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25682500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25688000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25687500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25693000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25692500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25698000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25697500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25703000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25702500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25708000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25707500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25713000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25712500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25718000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25717500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25723000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25722500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25728000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25727500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25733000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25732500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25738000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25737500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25743000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25742500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25748000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25747500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25753000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25752500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25758000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25757500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25763000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25762500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25768000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25767500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25773000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25772500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25778000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25777500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25783000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25782500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25788000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25787500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25793000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25792500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25798000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25797500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25803000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25802500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25808000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25807500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25813000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25812500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25818000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25817500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25823000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25822500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25828000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25827500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25833000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25832500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25838000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25837500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25843000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25842500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25848000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25847500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25853000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25852500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25858000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25857500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25863000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25862500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25868000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25867500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25873000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25872500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25878000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25877500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25883000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25882500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25888000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25887500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25893000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25892500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25898000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25897500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25903000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25902500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25908000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25907500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25913000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25912500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25918000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25917500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25923000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25922500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25928000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25927500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25933000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25932500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25938000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25937500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25943000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25942500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25948000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25947500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25953000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25952500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25958000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25957500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25963000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25962500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25968000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25967500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25973000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25972500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25978000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25977500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25983000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25982500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25988000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25987500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25993000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25992500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+Error: DDR status event at 25998000: wr_fifo_overrun=1 ddr_overrun=0 ddr_warning=0
+Time: 25997500 ps  Iteration: 0  Process: /tb_ddr4_controller_mock/Always644_5747  Scope: tb_ddr4_controller_mock  File: D:/FPGA/DDR_native/DDR_native.srcs/sim_1/imports/sim/tb_ddr4_controller_mock.sv Line: 650
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:06 . Memory (MB): peak = 239.297 ; gain = 0.000
+## show_values "near 26us"
+---- near 26us @ 26us ----
+  Variable: {init_calib_complete}          Verilog 1
+
+  Variable: {ui_clk_sync_rst}              Verilog 0
+
+  Variable: {app_cmd[2:0]}                 Verilog 0
+
+  Variable: {app_en}                       Verilog 1
+
+  Variable: {app_rdy}                      Verilog 0
+
+  Variable: {app_wdf_rdy}                  Verilog 1
+
+  Variable: {app_wdf_wren}                 Verilog 0
+
+  Variable: {app_wdf_end}                  Verilog 0
+
+  Variable: {app_rd_data_valid}            Verilog 0
+
+  Variable: {native_write_cmd_fire}        Verilog 0
+
+  Variable: {native_read_cmd_fire}         Verilog 0
+
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rw_state = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_beat_cnt = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_burst_len = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_beat_cnt = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/read_burst_len = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_fifo_valid = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/app_cmd_fire = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/write_data_fire = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/wr_level_urgent = <missing>
+/tb_ddr4_controller_mock/dut/user_rw_cmd_gen_u/rd_level_high = <missing>
+  Variable: {/tb_ddr4_controller_mock/dut/ddr_wr_fifo_level[13:0]} Verilog 4097
+
+  Variable: {/tb_ddr4_controller_mock/dut/ddr_rd_fifo_level[13:0]} Verilog 0
+
+## quit
+INFO: xsimkernel Simulation Memory Usage: 47548 KB (Peak: 47548 KB), Simulation CPU Usage: 10514 ms
+INFO: [Common 17-206] Exiting xsim at Fri Jun 26 17:24:17 2026...

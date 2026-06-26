@@ -45,9 +45,9 @@
 - 写侧 FIFO 写入速率：`200MHz * 16 Byte = 3.2GB/s`
 - 写侧 FIFO 读接口：MIG 用户时钟 `ui_clk ~= 300MHz`
 - 读侧 FIFO 写接口：MIG 用户时钟 `ui_clk ~= 300MHz`
-- 读侧 FIFO 读接口：系统时钟 `clk = 200MHz`
-- 读侧 FIFO 读接口位宽：`128 bit = 16 Byte`
-- 下游读出速率按系统侧连续读取估算：`200MHz * 16 Byte = 3.2GB/s`
+- 读侧 FIFO 读接口：GTY 用户时钟 `257.8125MHz`
+- 读侧 FIFO 读接口位宽：`64 bit = 0.5 * 128-bit beat`
+- 下游读出速率按 GTY 2-lane 8b/10b 连续读取估算：`128.90625 128-bit beat/us`
 - 一个 FIFO beat：`16 Byte`
 - 一个系统侧 beat 时间：`1 / 200MHz = 5ns`
 
@@ -103,35 +103,37 @@ Write-to-Read diff BG ~= 12 + 4 + 4  = 20CK ~= 16.66ns
 写 FIFO 和读 FIFO 的有效计数按 128-bit beat 估算：
 
 ```systemverilog
-FIFO_DEPTH_EFF  ~= 14'd16383;
-WR_LEVEL_URGENT = 14'd12288;
-RD_LEVEL_URGENT = 14'd4096;
-RD_LEVEL_LOW    = 14'd8192;
-RD_LEVEL_HIGH   = 14'd12288;
+WR_FIFO_DEPTH   = 4096;
+RD_FIFO_DEPTH   ~= 14'd4095;
+WR_LEVEL_URGENT = 14'd2560;
+RD_LEVEL_URGENT = 14'd1024;
+RD_LEVEL_LOW    = 14'd1024;
+RD_LEVEL_HIGH   = 14'd3072;
 ```
 
 写 FIFO 到达 urgent 水位后，剩余空间为：
 
 ```text
-16383 - 12288 = 4095 beat
-4095 beat * 16 Byte = 65520 Byte ~= 64KiB
+4096 - 2560 = 1536 beat
+1536 beat * 16 Byte = 24576 Byte = 24KiB
 ```
 
 按写侧 FIFO 写接口 `200MHz` 计算，这些剩余空间可继续吸收：
 
 ```text
-4095 beat * 5ns = 20.475us
+1536 beat * 5ns = 7.68us
 ```
 
 读 FIFO 到达 urgent 水位时，仍有数据缓存：
 
 ```text
-4096 beat * 16 Byte = 65536 Byte = 64KiB
-4096 beat * 5ns = 20.48us
+1024 beat * 16 Byte = 16384 Byte = 16KiB
+1024 beat / 128.90625 beat/us ~= 7.94us
 ```
 
-因此，在系统侧 `200MHz x 16Byte` 的持续写入/读取速率下，写 urgent 后的剩余空间和
-读 urgent 时的已有缓存都约对应 `20.5us` 的时间余量。
+因此，在系统侧 `200MHz x 16Byte` 的持续写入/读取速率下，写 urgent 后的剩余空间约对应
+`7.68us` 的时间余量。读侧按 GTY 2-lane 8b/10b 输出等效 `128.90625 beat/us`
+消耗估算，读 urgent 时的已有缓存约对应 `7.94us` 的时间余量。
 
 ## 4. 最坏 DDR 不服务写时间估算
 
@@ -315,16 +317,13 @@ rd_data_wait_max：读命令已被 MIG 接受后，等待 app_rd_data_valid / rv
 在 `T_write_block_worst_no_replay = 2us` 假设下，写 urgent 后的剩余空间对应的临界输入速率为：
 
 ```text
-精确按 4095 beat:
-65520 Byte / 2us = 32,760,000,000 Byte/s = 32.76GB/s
-
-近似按 64KiB:
-65536 Byte / 2us = 32,768,000,000 Byte/s = 32.768GB/s
+按 1536 beat:
+24576 Byte / 2us = 12,288,000,000 Byte/s = 12.288GB/s
 ```
 
 这表示：如果写 FIFO 已经到 `WR_LEVEL_URGENT`，并且 DDR 接下来整整 `2us`
-完全不消耗写 FIFO，那么上游平均写入速率超过约 `32.76GB/s`，才会在这段阻塞窗口内填满
-约 64KiB 剩余空间并触发 overflow。
+完全不消耗写 FIFO，那么上游平均写入速率超过约 `12.288GB/s`，才会在这段阻塞窗口内填满
+约 24KiB 剩余空间并触发 overflow。
 
 在 `2us` 内系统侧写入数据量为：
 
@@ -342,18 +341,27 @@ rd_data_wait_max：读命令已被 MIG 接受后，等待 app_rd_data_valid / rv
 该值仍小于写 urgent 后的剩余空间：
 
 ```text
-4095 beat - 800 beat = 3295 beat
-3295 beat * 16 Byte ~= 51.5KiB
+1536 beat - 800 beat = 736 beat
+736 beat * 16 Byte = 11776 Byte = 11.5KiB
 ```
 
-读侧同理，若系统侧读 FIFO 读接口以 `3.2GB/s` 持续消费：
+读侧同理，若 GTY 读 FIFO 接口以 `128.90625 beat/us` 持续消费：
 
 ```text
-2us 消耗：6400 Byte ~= 6.25KiB
-3us 消耗：9600 Byte ~= 9.375KiB
+2us 消耗：257.8125 beat
+3us 消耗：386.71875 beat
 ```
 
-这些值都远小于 `RD_LEVEL_URGENT = 4096 beat = 64KiB`。
+这些值都小于 `RD_LEVEL_URGENT = 1024 beat`。
+读 FIFO high 到 full 的余量为：
+
+```text
+4096 - 3072 = 1024 beat
+DDR 写入读 FIFO：300 beat/us
+GTY 读出读 FIFO：128.90625 beat/us
+净增长：171.09375 beat/us
+1024 / 171.09375 ~= 5.98us
+```
 
 ## 7. 结论
 
@@ -364,24 +372,26 @@ rd_data_wait_max：读命令已被 MIG 接受后，等待 app_rd_data_valid / rv
 考虑偶发单次 replay 的最坏 DDR 不服务写时间：保守取 3.5us ~ 4us
 不含 replay 的最坏 DDR 不返回读数据时间：保守取 2us
 考虑偶发单次 replay 的最坏 DDR 不返回读数据时间：保守取 3us
-写 FIFO urgent 后剩余空间：约 64KiB
-读 FIFO urgent 时已有缓存：64KiB
-系统侧持续写入/读取速率：3.2GB/s
-2us 内系统侧写入/读取数据量：约 6.25KiB
+写 FIFO urgent 后剩余空间：约 24KiB
+读 FIFO urgent 时已有缓存：1024 beat = 16KiB，约 7.94us GTY 续航
+读 FIFO high 到 full 剩余空间：1024 beat，约 5.98us 净增长余量
+系统侧持续写入速率：3.2GB/s
+GTY 等效持续读取速率：128.90625 beat/us
+2us 内系统侧写入数据量：约 6.25KiB
 4us 内系统侧写入数据量：约 12.5KiB
 ```
 
-因此，当前写侧 `WR_LEVEL_URGENT = 12288` 和读侧 `RD_LEVEL_URGENT = 4096`
-都留有较宽裕的安全空间。按不含 replay 的 2us 最坏阻塞估算，约有 10 倍以上余量：
+因此，当前写侧 `WR_LEVEL_URGENT = 2560` 和读侧 `RD_LEVEL_URGENT = 1024`
+都留有安全空间。按不含 replay 的 2us 最坏阻塞估算，写侧约有 3 倍以上余量：
 
 ```text
-64KiB / 6.25KiB ~= 10.2
+24KiB / 6.25KiB ~= 3.84
 ```
 
 按考虑偶发 replay 的 4us 写侧阻塞估算，写侧仍约有：
 
 ```text
-64KiB / 12.5KiB ~= 5.1
+24KiB / 12.5KiB ~= 1.92
 ```
 
 需要注意：上述 replay 估算针对偶发单次重传。如果 `rp_back_en` 连续频繁触发，或 MIG 用户口出现远超
