@@ -195,6 +195,7 @@ module user_rw_cmd_gen #(
     logic       app_cmd_fire;
     logic       write_data_fire;
     logic       read_data_fire;
+    logic       write_channel_ready;
     logic       block_for_replay;
     logic       rd_fifo_has_grant_space;
 
@@ -346,11 +347,12 @@ module user_rw_cmd_gen #(
 
     // Handshake pulses.
     assign app_cmd_fire    = app_en && app_rdy;
+    assign write_channel_ready = app_rdy && app_wdf_rdy;
     assign write_data_fire = (rw_state == RW_WRITE_REQ) &&
-                                app_en &&
-                                app_rdy &&
-                                app_wdf_wren &&
-                                app_wdf_rdy;
+                                wr_fifo_valid &&
+                                (write_burst_len != 0) &&
+                                (write_beat_cnt < write_burst_len) &&
+                                write_channel_ready;
     assign read_data_fire  = app_rd_data_valid && (~rd_fifo_full);
 
     always_ff @(posedge ui_clk) begin
@@ -428,10 +430,7 @@ module user_rw_cmd_gen #(
                             beat_to_app_addr(user_ad_rd) :
                             beat_to_app_addr(user_ad_wr);
     assign app_cmd      = (rw_state == RW_READ_CMD) ? APP_CMD_READ : APP_CMD_WRITE;
-    assign app_en       = ((rw_state == RW_WRITE_REQ) &&
-                            (write_burst_len != 0) &&
-                            wr_fifo_valid &&
-                            app_wdf_rdy) ||
+    assign app_en       = write_data_fire ||
                             ((rw_state == RW_READ_CMD) &&
                             (read_burst_len != 0) &&
                             rd_fifo_has_grant_space &&
@@ -439,10 +438,7 @@ module user_rw_cmd_gen #(
 
     assign app_wdf_data = wr_fifo_dout;
     assign app_wdf_mask = 16'h0000;
-    assign app_wdf_wren = (rw_state == RW_WRITE_REQ) &&
-                            wr_fifo_valid &&
-                            app_rdy &&
-                            (write_beat_cnt < write_burst_len);
+    assign app_wdf_wren = write_data_fire;
     assign app_wdf_end  = app_wdf_wren;
 
     assign rd_fifo_din   = app_rd_data;

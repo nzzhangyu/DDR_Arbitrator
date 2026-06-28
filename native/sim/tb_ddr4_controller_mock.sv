@@ -26,7 +26,11 @@ module tb_ddr4_controller_mock;
     localparam int VIEW_PERIOD_CYCLES = (CONV_PERIOD_US * 1000000) / CLK_PERIOD_PS;
 
     // Native app bus dimensions.
+`ifdef MIG
+    localparam int ADDR_WIDTH     = 28; // Real MIG app_addr is 31 bits.
+`else
     localparam int ADDR_WIDTH     = 21;
+`endif
     localparam int APP_ADDR_WIDTH = ADDR_WIDTH + 3;
     localparam int APP_DATA_BITS  = 128;
     
@@ -321,6 +325,7 @@ module tb_ddr4_controller_mock;
         .c0_ddr4_app_addr         (app_addr),
         .c0_ddr4_app_cmd          (app_cmd),
         .c0_ddr4_app_en           (app_en),
+        .c0_ddr4_app_hi_pri       (1'b0),
         .c0_ddr4_app_rdy          (app_rdy),
         .c0_ddr4_app_wdf_data     (app_wdf_data),
         .c0_ddr4_app_wdf_mask     (app_wdf_mask),

@@ -149,6 +149,7 @@ module ddr4_controller #(
       .c0_ddr4_app_addr        (app_addr),
       .c0_ddr4_app_cmd         (app_cmd),
       .c0_ddr4_app_en          (app_en),
+      .c0_ddr4_app_hi_pri      (1'b0),
       .c0_ddr4_app_rdy         (app_rdy),
       .c0_ddr4_app_wdf_data    (app_wdf_data),
       .c0_ddr4_app_wdf_mask    (app_wdf_mask),
