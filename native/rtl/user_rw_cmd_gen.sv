@@ -193,11 +193,19 @@ module user_rw_cmd_gen #(
     logic [ADDR_WIDTH:0] ddr_rd_avail_count;
 
     logic       app_cmd_fire;
+    logic       read_cmd_fire;
     logic       write_data_fire;
     logic       read_data_fire;
     logic       write_channel_ready;
     logic       block_for_replay;
     logic       rd_fifo_has_grant_space;
+    logic       read_cmd_send_en;
+    logic       read_cmd_last;
+    logic       read_cmd_send_done;
+    logic       read_cmd_stop;
+    logic       rd_outstanding_empty_next;
+    logic [9:0] read_cmd_cnt;
+    logic [9:0] rd_outstanding;
 
     // Keep the read service window fixed; FIFO space is only a hard gate.
     assign rd_available_len = (ddr_rd_avail_count >= RD_BURST_NUM) ?
@@ -306,24 +314,23 @@ module user_rw_cmd_gen #(
                 end
 
                 RW_READ_CMD: begin
-                    if ((read_burst_len == 0) || (~rd_fifo_has_grant_space) || wr_level_urgent) begin
-                        rw_next_state = RW_ARB;
-                    end
-                    // Unaccepted reads may be aborted by urgent write.
-                    else if (app_cmd_fire) begin
-                        rw_next_state = RW_READ_DATA;
-                    end
-                end
-
-                RW_READ_DATA: begin
-                    // Accepted reads wait for their return beat.
-                    if (read_data_fire) begin
-                        if (read_burst_done || wr_level_urgent) begin
-                            rw_next_state = RW_ARB;
+                    if (read_cmd_send_en) begin
+                        if (read_cmd_last) begin
+                            rw_next_state = RW_READ_DATA;
                         end
                         else begin
                             rw_next_state = RW_READ_CMD;
                         end
+                    end
+                    else if (read_cmd_stop) begin
+                        rw_next_state = (rd_outstanding == 0) ? RW_ARB : RW_READ_DATA;
+                    end
+                end
+
+                RW_READ_DATA: begin
+                    // Accepted reads must drain even if writes become urgent.
+                    if (rd_outstanding_empty_next) begin
+                        rw_next_state = RW_ARB;
                     end
                 end
 
@@ -337,6 +344,7 @@ module user_rw_cmd_gen #(
     // Circular DDR address pointers.
     logic [ADDR_WIDTH:0]   user_ad_wr_i;
     logic [ADDR_WIDTH:0]   user_ad_rd_i;
+    logic [ADDR_WIDTH:0]   rd_cmd_ptr;
     logic [ADDR_WIDTH-1:0] user_ad_wr;
     logic [ADDR_WIDTH-1:0] user_ad_rd;
 
@@ -346,14 +354,36 @@ module user_rw_cmd_gen #(
     assign ddr_rd_avail_count       = user_ad_wr_i - user_ad_rd_i;
 
     // Handshake pulses.
-    assign app_cmd_fire    = app_en && app_rdy;
+    assign app_cmd_fire        = app_en && app_rdy;
+    assign read_cmd_fire       = (rw_state == RW_READ_CMD) && app_cmd_fire;
     assign write_channel_ready = app_rdy && app_wdf_rdy;
-    assign write_data_fire = (rw_state == RW_WRITE_REQ) &&
+    assign write_data_fire     = (rw_state == RW_WRITE_REQ) &&
                                 wr_fifo_valid &&
                                 (write_burst_len != 0) &&
                                 (write_beat_cnt < write_burst_len) &&
                                 write_channel_ready;
-    assign read_data_fire  = app_rd_data_valid && (~rd_fifo_full);
+    assign read_data_fire      = app_rd_data_valid && (~rd_fifo_full) && (rd_outstanding != 0);
+    assign read_cmd_send_en    = (rw_state == RW_READ_CMD) &&
+                                (read_burst_len != 0) &&
+                                (read_cmd_cnt < read_burst_len) &&
+                                (rd_cmd_ptr != user_ad_wr_i) &&
+                                (rd_fifo_free_count > {5'd0, rd_outstanding}) &&
+                                (~wr_level_urgent) &&
+                                (~req_stop) &&
+                                (~block_for_replay);
+    assign read_cmd_last       = read_cmd_fire &&
+                                 (read_cmd_cnt == (read_burst_len - 1'b1));
+    assign read_cmd_send_done  = (read_cmd_cnt >= read_burst_len) || read_cmd_last;
+    assign read_cmd_stop       = (read_burst_len == 0) ||
+                                 read_cmd_send_done ||
+                                 (rd_cmd_ptr == user_ad_wr_i) ||
+                                 (rd_fifo_free_count <= {5'd0, rd_outstanding}) ||
+                                 wr_level_urgent ||
+                                 req_stop ||
+                                 block_for_replay;
+    assign rd_outstanding_empty_next =
+        (rd_outstanding == 0) ||
+        ((rd_outstanding == 10'd1) && read_data_fire && (!read_cmd_fire));
 
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
@@ -368,12 +398,24 @@ module user_rw_cmd_gen #(
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
             user_ad_rd_i <= '0;
         end
-        // Replay read pointer.
+        // Returned-data pointer. Keep user_ad_rd_i as the consumed boundary.
         else if (rp_back_en) begin
             user_ad_rd_i <= {1'b0, rp_back_view_addr};
         end
         else if (read_data_fire) begin
             user_ad_rd_i <= user_ad_rd_i + 1'b1;
+        end
+    end
+
+    always_ff @(posedge ui_clk) begin
+        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
+            rd_cmd_ptr <= '0;
+        end
+        else if (rp_back_en) begin
+            rd_cmd_ptr <= {1'b0, rp_back_view_addr};
+        end
+        else if (read_cmd_fire) begin
+            rd_cmd_ptr <= rd_cmd_ptr + 1'b1;
         end
     end
 
@@ -419,6 +461,34 @@ module user_rw_cmd_gen #(
         end
     end
 
+    always_ff @(posedge ui_clk) begin
+        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge ||
+            rp_back_en || block_for_replay) begin
+            read_cmd_cnt <= '0;
+        end
+        else if ((rw_state != RW_READ_CMD) && (rw_state != RW_READ_DATA)) begin
+            read_cmd_cnt <= '0;
+        end
+        else if (read_cmd_fire) begin
+            read_cmd_cnt <= read_cmd_cnt + 1'b1;
+        end
+    end
+
+    always_ff @(posedge ui_clk) begin
+        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge ||
+            rp_back_en || block_for_replay) begin
+            rd_outstanding <= '0;
+        end
+        else begin
+            unique case ({read_cmd_fire, read_data_fire})
+                2'b10: rd_outstanding <= rd_outstanding + 1'b1;
+                2'b01: rd_outstanding <= (rd_outstanding == 0) ? '0 :
+                                          (rd_outstanding - 1'b1);
+                default: rd_outstanding <= rd_outstanding;
+            endcase
+        end
+    end
+
     assign write_burst_done = write_data_fire && (write_beat_cnt == (write_burst_len - 1'b1));
     assign read_burst_done  = read_data_fire && (read_beat_cnt == (read_burst_len - 1'b1));
 
@@ -427,14 +497,10 @@ module user_rw_cmd_gen #(
     // Native app channel drive.
 
     assign app_addr     = (rw_state == RW_READ_CMD) ?
-                            beat_to_app_addr(user_ad_rd) :
+                            beat_to_app_addr(rd_cmd_ptr[ADDR_WIDTH-1:0]) :
                             beat_to_app_addr(user_ad_wr);
     assign app_cmd      = (rw_state == RW_READ_CMD) ? APP_CMD_READ : APP_CMD_WRITE;
-    assign app_en       = write_data_fire ||
-                            ((rw_state == RW_READ_CMD) &&
-                            (read_burst_len != 0) &&
-                            rd_fifo_has_grant_space &&
-                            (~wr_level_urgent));
+    assign app_en       = write_data_fire || read_cmd_send_en;
 
     assign app_wdf_data = wr_fifo_dout;
     assign app_wdf_mask = 16'h0000;
