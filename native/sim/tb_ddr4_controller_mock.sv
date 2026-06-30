@@ -35,12 +35,14 @@ module tb_ddr4_controller_mock;
     localparam int APP_DATA_BITS  = 128;
     
     // Derived frame and mock-memory limits.
-    localparam int SLICE_HEADER_BEATS    = 2;
+    localparam int READING_HEADER_BEATS  = 17;
+    localparam int SLICE_HEADER_BEATS    = 1;
+    localparam int SLICE_TRAILER_BEATS   = 1;
     localparam int SAMPLES_PER_BEAT      = APP_DATA_BITS / SAMPLE_BITS;
     localparam int SLICE_PAYLOAD_SAMPLES = FTP_NUM * CH_NUM;
     localparam int SLICE_PAYLOAD_BEATS   = (SLICE_PAYLOAD_SAMPLES + SAMPLES_PER_BEAT - 1) / SAMPLES_PER_BEAT;
-    localparam int SLICE_TOTAL_BEATS     = SLICE_HEADER_BEATS + SLICE_PAYLOAD_BEATS;
-    localparam int VIEW_TOTAL_BEATS      = SLICE_NUM * SLICE_TOTAL_BEATS;
+    localparam int SLICE_TOTAL_BEATS     = SLICE_HEADER_BEATS + SLICE_PAYLOAD_BEATS + SLICE_TRAILER_BEATS;
+    localparam int VIEW_TOTAL_BEATS      = READING_HEADER_BEATS + (SLICE_NUM * SLICE_TOTAL_BEATS);
     localparam int MOCK_MEM_WORDS        = 1 << ADDR_WIDTH;
     localparam int MOCK_MAX_VIEWS        = MOCK_MEM_WORDS / VIEW_TOTAL_BEATS;
     localparam int TIMEOUT_CYCLES        = 1200000;
@@ -388,7 +390,9 @@ module tb_ddr4_controller_mock;
         .SLICE_NUM      (SLICE_NUM),
         .SAMPLE_BITS    (SAMPLE_BITS),
         .APP_DATA_BITS  (APP_DATA_BITS),
-        .INCREMENT_MODE (STREAM_INCREMENT_MODE)
+        .INCREMENT_MODE (STREAM_INCREMENT_MODE),
+        .MODEL_HEADER_GAPS (1'b0),
+        .MODEL_VIEW_PERIOD (1'b0)
     ) stream_source_u (
         .clk            (clk),
         .reset          (reset),

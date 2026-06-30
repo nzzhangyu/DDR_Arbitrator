@@ -59,7 +59,7 @@ module user_rw_cmd_gen #(
     localparam logic [13:0] RD_FIFO_DEPTH     = 14'd4095;
 
     localparam logic [8:0]  WR_BURST_NUM      = 9'd256;
-    localparam logic [9:0]  RD_BURST_NUM      = 10'd512;
+    localparam logic [9:0]  RD_BURST_NUM      = 10'd256;
 
     localparam logic [10:0] WR_TAIL_AGE_LIMIT = 11'd1024;
     localparam logic [11:0] RD_WAIT_AGE_LIMIT = 12'd2048;
