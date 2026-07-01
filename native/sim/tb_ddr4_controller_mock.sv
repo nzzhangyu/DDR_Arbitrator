@@ -45,7 +45,11 @@ module tb_ddr4_controller_mock;
     localparam int VIEW_TOTAL_BEATS      = READING_HEADER_BEATS + (SLICE_NUM * SLICE_TOTAL_BEATS);
     localparam int MOCK_MEM_WORDS        = 1 << ADDR_WIDTH;
     localparam int MOCK_MAX_VIEWS        = MOCK_MEM_WORDS / VIEW_TOTAL_BEATS;
-    localparam int TIMEOUT_CYCLES        = 1200000;
+    localparam int READ_ENABLE_PERIOD_US = 90;
+    localparam int READ_ENABLE_PERIOD_CYCLES =
+        (READ_ENABLE_PERIOD_US * 1000000) / CLK_PERIOD_PS;
+    localparam int TIMEOUT_MARGIN_WINDOWS = 4;
+    localparam int TIMEOUT_MARGIN_CYCLES  = VIEW_PERIOD_CYCLES + 1024;
     localparam logic [2:0] APP_CMD_WRITE = 3'b000;
     localparam logic [2:0] APP_CMD_READ  = 3'b001;
     localparam bit STREAM_INCREMENT_MODE = 1'b0;    // 0: frame, 1: 8-bit repeated increment.
@@ -217,8 +221,10 @@ module tb_ddr4_controller_mock;
     int                    read_budget_error_count;             // Read-budget errors.
     int                    urgent_interrupt_error_count;        // Urgent-interrupt errors.
     int                    urgent_read_data_event_count;        // Urgent read-data events.
+    int                    read_window_count;                   // Downstream read windows.
     int                    sim_view_count;                      // Run view count.
     int                    expected_total_beats;                // Expected beat total.
+    int                    timeout_cycle_limit;                 // Runtime timeout cycle limit.
     int                    max_wr_fifo_level_limit;             // WR FIFO max limit.
     int                    min_rd_fifo_level_limit;             // RD FIFO min limit.
     int                    max_user_underflow_cycles_limit;     // Underflow run limit.
@@ -241,7 +247,7 @@ module tb_ddr4_controller_mock;
     string                 scoreboard_mode;                     // Scoreboard plusarg.
     string                 log_path;                            // Log path plusarg.
     string                 test_kind_name;                      // Selected test item.
-    bit                    consumer_enable;                     // Consumer enable.
+    logic                  consumer_enable;                     // Consumer enable.
     bit                    send_done;                           // Stream done.
     logic                  native_read_cmd_fire;                // Accepted read command.
     logic                  native_write_cmd_fire;               // Accepted write command.
@@ -249,6 +255,10 @@ module tb_ddr4_controller_mock;
     logic                  urgent_read_data_event_fire;         // Urgent during read data.
     logic                  expected_data_remaining;             // Pending expected data.
     logic                  stream_start;                        // Stream start pulse.
+    logic                  read_window_active;                  // Periodic downstream read window.
+    logic                  read_window_read_fire;               // Accepted beat in read window.
+    int unsigned           read_window_period_cnt;              // 90us window scheduler.
+    int unsigned           read_window_beat_cnt;                // Accepted beats in current window.
     logic                  global_stall_active;                 // Mock-only pressure flag.
     logic                  cmd_stall_active;                    // Mock-only pressure flag.
     logic                  read_stall_active;                   // Mock-only pressure flag.
@@ -412,6 +422,9 @@ module tb_ddr4_controller_mock;
         in_read_data_state && dut.user_rw_cmd_gen_uut.wr_level_urgent;
     assign ddr_rd_req = ddr_rd_req_base;
     assign expected_data_remaining = (recv_count < sent_count);
+    assign consumer_enable = read_window_active;
+    assign read_window_read_fire = user_r_rd_en && user_r_valid;
+    assign user_r_rd_en = read_window_active && user_r_valid;
 
     initial clk = 1'b0;
     always #(CLK_PERIOD_PS / 2000.0) clk = ~clk;
@@ -494,6 +507,7 @@ module tb_ddr4_controller_mock;
         overflow_count       = 0;
         timeout_count        = 0;
         sim_view_count       = ACTIVE_SIM_VIEWS;
+        timeout_cycle_limit  = 0;
         max_wr_fifo_level_limit = ACTIVE_MAX_WR_FIFO_LEVEL;
         min_rd_fifo_level_limit = ACTIVE_MIN_RD_FIFO_LEVEL;
         max_user_underflow_cycles_limit = ACTIVE_MAX_USER_UNDERFLOW_CYCLES;
@@ -507,7 +521,6 @@ module tb_ddr4_controller_mock;
         actual_hash          = 64'h6a09_e667_f3bc_c909;
         log_path             = "tb_ddr4_controller_mock.log";
         test_kind_name       = ACTIVE_STRESS_MODE ? "stress" : "normal";
-        consumer_enable      = 1'b0;
         stream_start         = 1'b0;
         mock_global_stall_interval_cfg = ACTIVE_GLOBAL_STALL_INTERVAL;
         mock_global_stall_block_cfg    = ACTIVE_GLOBAL_STALL_BLOCK;
@@ -598,8 +611,12 @@ module tb_ddr4_controller_mock;
         
         expected_total_beats = sim_view_count * VIEW_TOTAL_BEATS;
         view_size            = VIEW_TOTAL_BEATS[15:0];
+        timeout_cycle_limit  =
+            (((expected_total_beats + SLICE_TOTAL_BEATS - 1) / SLICE_TOTAL_BEATS) +
+             TIMEOUT_MARGIN_WINDOWS) * READ_ENABLE_PERIOD_CYCLES +
+            TIMEOUT_MARGIN_CYCLES;
 
-        $display("DDR mock test config: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d",
+        $display("DDR mock test config: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d read_period_us=%0d read_period_cycles=%0d read_window_beats=%0d timeout_cycles=%0d",
                 test_kind_name,
                 sim_view_count, TOTAL_VIEWS,
                 STREAM_INCREMENT_MODE ? "increment" : "frame",
@@ -607,8 +624,10 @@ module tb_ddr4_controller_mock;
                 worst_check_enable,
                 SLICE_NUM,
                 SLICE_TOTAL_BEATS, SLICE_PAYLOAD_BEATS,
-                VIEW_TOTAL_BEATS, VIEW_PERIOD_CYCLES);
-        $fdisplay(log_fd, "CONFIG: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d max_wr_fifo=%0d min_rd_fifo=%0d max_user_underflow=%0d max_app_rdy_stall=%0d max_app_wdf_stall=%0d max_read_data_gap=%0d global_stall=%0d/%0d cmd_stall=%0d/%0d read_stall=%0d/%0d",
+                VIEW_TOTAL_BEATS, VIEW_PERIOD_CYCLES,
+                READ_ENABLE_PERIOD_US, READ_ENABLE_PERIOD_CYCLES,
+                SLICE_TOTAL_BEATS, timeout_cycle_limit);
+        $fdisplay(log_fd, "CONFIG: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d read_period_us=%0d read_period_cycles=%0d read_window_beats=%0d timeout_cycles=%0d max_wr_fifo=%0d min_rd_fifo=%0d max_user_underflow=%0d max_app_rdy_stall=%0d max_app_wdf_stall=%0d max_read_data_gap=%0d global_stall=%0d/%0d cmd_stall=%0d/%0d read_stall=%0d/%0d",
                     test_kind_name,
                     sim_view_count, TOTAL_VIEWS,
                     STREAM_INCREMENT_MODE ? "increment" : "frame",
@@ -617,6 +636,8 @@ module tb_ddr4_controller_mock;
                     SLICE_NUM,
                     SLICE_TOTAL_BEATS, SLICE_PAYLOAD_BEATS,
                     VIEW_TOTAL_BEATS, VIEW_PERIOD_CYCLES,
+                    READ_ENABLE_PERIOD_US, READ_ENABLE_PERIOD_CYCLES,
+                    SLICE_TOTAL_BEATS, timeout_cycle_limit,
                     max_wr_fifo_level_limit, min_rd_fifo_level_limit,
                     max_user_underflow_cycles_limit,
                     max_app_rdy_stall_limit, max_app_wdf_stall_limit,
@@ -632,7 +653,6 @@ module tb_ddr4_controller_mock;
 
         pulse_make_data();
         ddr_rd_req_base = 1'b1;
-        consumer_enable = 1'b1;
         // Startup guard before gap-free stream.
         repeat (256) @(posedge clk);
 
@@ -758,12 +778,56 @@ module tb_ddr4_controller_mock;
     end
 
     always_ff @(posedge clk) begin
-        // Continuous consumer.
+        // The downstream consumer wakes every 90us and drains one slice frame.
         if (reset) begin
-            user_r_rd_en <= 1'b0;
+            read_window_active     <= 1'b0;
+            read_window_period_cnt <= '0;
+            read_window_beat_cnt   <= '0;
+            read_window_count      <= 0;
+        end
+        else if (stream_start) begin
+            read_window_active     <= 1'b0;
+            read_window_period_cnt <= '0;
+            read_window_beat_cnt   <= '0;
+            read_window_count      <= 0;
+        end
+        else if (send_done && (recv_count == sent_count)) begin
+            read_window_active     <= 1'b0;
+            read_window_period_cnt <= '0;
+            read_window_beat_cnt   <= '0;
+        end
+        else if (read_window_active) begin
+            if (read_window_read_fire) begin
+                if (read_window_beat_cnt == (SLICE_TOTAL_BEATS - 1)) begin
+                    if (log_fd != 0) begin
+                        $fdisplay(log_fd,
+                                  "READ_WINDOW: done index=%0d time=%0t beats=%0d recv=%0d sent=%0d",
+                                  read_window_count - 1, $time,
+                                  SLICE_TOTAL_BEATS, recv_count + 1, sent_count);
+                    end
+                    read_window_active     <= 1'b0;
+                    read_window_period_cnt <= '0;
+                    read_window_beat_cnt   <= '0;
+                end
+                else begin
+                    read_window_beat_cnt <= read_window_beat_cnt + 1;
+                end
+            end
+        end
+        else if (read_window_period_cnt >= (READ_ENABLE_PERIOD_CYCLES - 1)) begin
+            if (log_fd != 0) begin
+                $fdisplay(log_fd,
+                          "READ_WINDOW: start index=%0d time=%0t period_cycles=%0d target_beats=%0d",
+                          read_window_count, $time,
+                          READ_ENABLE_PERIOD_CYCLES, SLICE_TOTAL_BEATS);
+            end
+            read_window_active     <= 1'b1;
+            read_window_period_cnt <= '0;
+            read_window_beat_cnt   <= '0;
+            read_window_count      <= read_window_count + 1;
         end
         else begin
-            user_r_rd_en <= user_r_valid;
+            read_window_period_cnt <= read_window_period_cnt + 1;
         end
     end
 
@@ -820,7 +884,8 @@ module tb_ddr4_controller_mock;
     endtask
 
     initial begin
-        repeat (TIMEOUT_CYCLES) @(posedge clk);
+        wait (timeout_cycle_limit > 0);
+        repeat (timeout_cycle_limit) @(posedge clk);
         timeout_count = 1;
     end
 
