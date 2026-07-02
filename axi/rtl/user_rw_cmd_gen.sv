@@ -73,12 +73,12 @@ module user_rw_cmd_gen #(
     input  logic                      wr_fifo_empty,
     input  logic                      wr_fifo_valid,
     input  logic                      wr_fifo_prog_empty,
-    input  logic [13:0]               wr_fifo_rd_data_count,
+    input  logic [14:0]               wr_fifo_rd_data_count,
     input  logic                      wr_fifo_overrun,
     input  logic [127:0]              wr_fifo_dout,
     input  logic                      rd_fifo_prog_full,
     input  logic                      rd_fifo_almost_empty,
-    input  logic [13:0]               rd_fifo_data_count,
+    input  logic [15:0]               rd_fifo_data_count,
     input  logic                      rd_fifo_full,
     input  logic                      rp_back_en,
     input  logic [ADDR_WIDTH-1:0]     rp_back_view_addr
@@ -87,13 +87,13 @@ module user_rw_cmd_gen #(
     // Watermark thresholds.
     // The write-side levels describe how full the upstream staging buffer is.
     // The read-side levels describe how much data should be kept available for replay / refill.
-    localparam logic [13:0] WR_LEVEL_URGENT  = 14'd2560;   // Force writes, block reads.
+    localparam logic [14:0] WR_LEVEL_URGENT  = 15'd5120;   // Force writes, block reads.
     localparam logic [8:0]  WR_BURST_NUM     = 9'd256;
     localparam logic [10:0] WR_TAIL_AGE_LIMIT = 11'd1024;
 
-    localparam logic [13:0] RD_LEVEL_URGENT  = 14'd1024;   // Refill reads urgently.
-    localparam logic [13:0] RD_LEVEL_HIGH    = 14'd3072;   // Stop read prefetch.
-    localparam logic [13:0] RD_FIFO_DEPTH    = 14'd4095;
+    localparam logic [15:0] RD_LEVEL_URGENT  = 16'd4096;   // Refill reads urgently.
+    localparam logic [15:0] RD_LEVEL_HIGH    = 16'd12288;  // Stop read prefetch.
+    localparam logic [15:0] RD_FIFO_DEPTH    = 16'd16383;
 
     localparam logic [8:0]  RD_BURST_NUM     = 9'd256;
     localparam logic [11:0] RD_WAIT_AGE_LIMIT = 12'd2048;
@@ -190,7 +190,7 @@ module user_rw_cmd_gen #(
     logic        wr_has_full_burst;
     logic        rd_level_urgent;
     logic        rd_fifo_can_prefetch;
-    logic [14:0] rd_fifo_free_count;
+    logic [16:0] rd_fifo_free_count;
 
     assign wr_level_urgent       = wr_fifo_rd_data_count >= WR_LEVEL_URGENT;
     assign wr_has_full_burst     = ~wr_fifo_prog_empty;                       // wr_fifo has WR_BURST_NUM beats.
@@ -626,7 +626,7 @@ module user_rw_cmd_gen #(
     endfunction
 
     function automatic logic [8:0] fifo_count_to_burst_len(
-        input logic [13:0] fifo_count,
+        input logic [14:0] fifo_count,
         input logic        fifo_valid
     );
         if (fifo_count >= WR_BURST_NUM) begin
@@ -644,7 +644,7 @@ module user_rw_cmd_gen #(
     endfunction
 
     function automatic logic [8:0] calc_write_burst_len(
-        input logic [13:0] fifo_count,
+        input logic [14:0] fifo_count,
         input logic        fifo_valid,
         input logic [8:0]  boundary_limit
     );

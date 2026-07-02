@@ -301,7 +301,7 @@ module rd_cache_ctrl(/*AUTOARG*/
    assign rd_wr_num_diff = wr_rd_diff_signal ? rd_num_sub_diff_signal : rd_num_sub_same_signal;
    */
    assign rd_wr_num_same  = rd_view_num == wr_view_num;
-   assign rd_wr_num_diff  = ~rd_wr_num_same;
+   assign rd_wr_num_diff  = wr_view_num > rd_view_num;
    assign rd_wr_num_equ   = rd_wr_num_same;
    
    

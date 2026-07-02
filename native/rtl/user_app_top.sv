@@ -49,13 +49,13 @@ module user_app_top #(
 );
 
    localparam int FIFO_DATA_WIDTH        = 128;
-   localparam int WR_DDR_FIFO_DEPTH      = 4096;
-   localparam int WR_DDR_FIFO_COUNT_WIDTH = 13;
-   localparam int RD_DDR_FIFO_DEPTH      = 4096;
-   localparam int RD_DDR_FIFO_COUNT_WIDTH = 13;
+   localparam int WR_DDR_FIFO_DEPTH      = 8192;
+   localparam int WR_DDR_FIFO_COUNT_WIDTH = 14;
+   localparam int RD_DDR_FIFO_DEPTH      = 16384;
+   localparam int RD_DDR_FIFO_COUNT_WIDTH = 15;
    localparam int WR_PROG_EMPTY_THRESH   = 256;
-   localparam int RD_PROG_FULL_THRESH    = 3072;
-   localparam logic [13:0] RD_ALMOST_EMPTY_THRESH = 14'd1024;
+   localparam int RD_PROG_FULL_THRESH    = 12288;
+   localparam logic [15:0] RD_ALMOST_EMPTY_THRESH = 16'd4096;
 
    // Write-side DDR staging FIFO.
    // The upstream producer writes in clk, while the native writer drains in ui_clk.
@@ -65,8 +65,8 @@ module user_app_top #(
    logic         ddr_wr_fifo_full;
    logic         ddr_wr_fifo_overflow;
    logic         ddr_wr_fifo_rd_en;
-   logic [12:0]  ddr_wr_fifo_rd_count_raw;
-   logic [13:0]  ddr_wr_fifo_level;
+   logic [13:0]  ddr_wr_fifo_rd_count_raw;
+   logic [14:0]  ddr_wr_fifo_level;
 
    assign ddr_wr_fifo_level = {1'b0, ddr_wr_fifo_rd_count_raw};
 
@@ -117,8 +117,8 @@ module user_app_top #(
    logic         ddr_rd_fifo_prog_full;
    logic         ddr_rd_fifo_almost_empty_ui;
    logic         ddr_rd_fifo_rd_en;
-   logic [12:0]  ddr_rd_fifo_wr_count_raw;
-   logic [13:0]  ddr_rd_fifo_level;
+   logic [14:0]  ddr_rd_fifo_wr_count_raw;
+   logic [15:0]  ddr_rd_fifo_level;
 
    assign ddr_rd_fifo_level = {1'b0, ddr_rd_fifo_wr_count_raw};
    assign ddr_rd_fifo_almost_empty_ui =
