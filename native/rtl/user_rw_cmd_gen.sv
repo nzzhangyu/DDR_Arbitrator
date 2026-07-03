@@ -59,17 +59,15 @@ module user_rw_cmd_gen #(
     localparam logic [15:0] RD_FIFO_DEPTH     = 16'd16383;
 
     localparam logic [8:0]  WR_BURST_NUM      = 9'd256;
-    localparam logic [9:0]  RD_BURST_NUM      = 10'd256;
+    localparam logic [9:0]  RD_BURST_NUM      = 10'd512;
 
     localparam logic [10:0] WR_TAIL_AGE_LIMIT = 11'd1024;
-    localparam logic [11:0] RD_WAIT_AGE_LIMIT = 12'd2048;
-
     localparam logic [2:0]  APP_CMD_WRITE     = 3'b000;
     localparam logic [2:0]  APP_CMD_READ      = 3'b001;
 
     typedef enum logic [3:0] {
         RW_IDLE,      // Wait/blocked.
-        RW_ARB,       // Fixed-priority arbitration with read aging.
+        RW_ARB,       // 2:1 write/read arbitration.
         RW_WRITE_REQ, // Native write beat.
         RW_READ_CMD,  // Native read command.
         RW_READ_DATA  // Native read data.
@@ -80,6 +78,12 @@ module user_rw_cmd_gen #(
         GRANT_WRITE,
         GRANT_READ
     } grant_t;
+
+    typedef enum logic [1:0] {
+        ARB_SLOT_WRITE0,
+        ARB_SLOT_WRITE1,
+        ARB_SLOT_READ
+    } arb_slot_t;
 
     typedef struct packed {
         logic       valid;
@@ -127,7 +131,6 @@ module user_rw_cmd_gen #(
     logic [10:0] wr_tail_age_cnt;
     logic        wr_tail_age_reached;
     logic        clr_wr_wait_age;
-    logic        clr_rd_wait_age;
 
     assign wr_tail_age_reached = (wr_tail_age_cnt >= WR_TAIL_AGE_LIMIT);
 
@@ -218,23 +221,12 @@ module user_rw_cmd_gen #(
     rw_req_t wr_req;
     rw_req_t rd_req;
 
+    rw_state_t rw_state;
+    rw_state_t rw_next_state;
+
     grant_t arb_grant;
-    logic [11:0] rd_wait_age_cnt;
-    logic        rd_wait_age_reached;
-
-    assign rd_wait_age_reached = (rd_wait_age_cnt >= RD_WAIT_AGE_LIMIT);
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
-            rd_wait_age_cnt <= '0;
-        end
-        else if (clr_rd_wait_age || read_data_fire || (~ddr_rd_req_qual)) begin
-            rd_wait_age_cnt <= '0;
-        end
-        else if (rd_wait_age_cnt < RD_WAIT_AGE_LIMIT) begin
-            rd_wait_age_cnt <= rd_wait_age_cnt + 12'd1;
-        end
-    end
+    arb_slot_t arb_slot;
+    logic      normal_grant_fire;
 
     assign wr_req = build_write_req(ddr_wr_req,
                                     wr_level_urgent,
@@ -246,12 +238,34 @@ module user_rw_cmd_gen #(
                                    rd_level_urgent,
                                    min2_10(rd_available_len,
                                            RD_BURST_NUM));
-    assign arb_grant = choose_grant(wr_req, rd_req, rd_wait_age_reached);
+    assign arb_grant = choose_grant(wr_req, rd_req, arb_slot);
+
+    assign normal_grant_fire = (rw_state == RW_ARB) &&
+                               ((arb_grant == GRANT_WRITE) ||
+                                (arb_grant == GRANT_READ)) &&
+                               (~wr_req.urgent) &&
+                               (~rd_req.urgent) &&
+                               (((arb_slot == ARB_SLOT_WRITE0) &&
+                                 (arb_grant == GRANT_WRITE)) ||
+                                ((arb_slot == ARB_SLOT_WRITE1) &&
+                                 (arb_grant == GRANT_WRITE)) ||
+                                ((arb_slot == ARB_SLOT_READ) &&
+                                 (arb_grant == GRANT_READ)));
+
+    always_ff @(posedge ui_clk) begin
+        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
+            arb_slot <= ARB_SLOT_WRITE0;
+        end
+        else if (normal_grant_fire) begin
+            unique case (arb_slot)
+                ARB_SLOT_WRITE0: arb_slot <= ARB_SLOT_WRITE1;
+                ARB_SLOT_WRITE1: arb_slot <= ARB_SLOT_READ;
+                default:         arb_slot <= ARB_SLOT_WRITE0;
+            endcase
+        end
+    end
 
     // RW arbitration FSM.
-    rw_state_t rw_state;
-    rw_state_t rw_next_state;
-
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
             rw_state <= RW_IDLE;
@@ -261,11 +275,10 @@ module user_rw_cmd_gen #(
         end
     end
 
-    // Arbitration priority: write urgent, read urgent, aged read, normal write, normal read.
+    // Urgent watermarks override normal service; otherwise use 2:1 write/read round-robin.
     always_comb begin
         rw_next_state      = rw_state;
         clr_wr_wait_age    = 1'b0;
-        clr_rd_wait_age    = 1'b0;
 
         if (~init_calib_complete) begin
             rw_next_state = RW_IDLE;
@@ -288,8 +301,7 @@ module user_rw_cmd_gen #(
                             end
 
                             GRANT_READ: begin
-                                rw_next_state   = RW_READ_CMD;
-                                clr_rd_wait_age = 1'b1;
+                                rw_next_state = RW_READ_CMD;
                             end
 
                             default: begin
@@ -622,9 +634,9 @@ module user_rw_cmd_gen #(
     endfunction
 
     function automatic grant_t choose_grant(
-        input rw_req_t wr,
-        input rw_req_t rd,
-        input logic    rd_wait_aged
+        input rw_req_t   wr,
+        input rw_req_t   rd,
+        input arb_slot_t slot
     );
         choose_grant = GRANT_NONE;
 
@@ -634,14 +646,27 @@ module user_rw_cmd_gen #(
         else if (rd.urgent) begin
             choose_grant = GRANT_READ;
         end
-        else if (rd.valid && rd_wait_aged) begin
-            choose_grant = GRANT_READ;
-        end
-        else if (wr.valid) begin
-            choose_grant = GRANT_WRITE;
-        end
-        else if (rd.valid) begin
-            choose_grant = GRANT_READ;
+        else begin
+            unique case (slot)
+                ARB_SLOT_WRITE0,
+                ARB_SLOT_WRITE1: begin
+                    if (wr.valid) begin
+                        choose_grant = GRANT_WRITE;
+                    end
+                    else if (rd.valid) begin
+                        choose_grant = GRANT_READ;
+                    end
+                end
+
+                default: begin
+                    if (rd.valid) begin
+                        choose_grant = GRANT_READ;
+                    end
+                    else if (wr.valid) begin
+                        choose_grant = GRANT_WRITE;
+                    end
+                end
+            endcase
         end
     endfunction
 
