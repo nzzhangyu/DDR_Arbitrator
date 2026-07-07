@@ -51,12 +51,13 @@ module user_rw_cmd_gen #(
 );
 
     // Watermark thresholds.
-    localparam logic [14:0] WR_LEVEL_URGENT   = 15'd5120;   // Force writes, block reads.
+    localparam logic [14:0] WR_LEVEL_URGENT   = 15'd6144;   // Force writes, block reads.
+    localparam logic [14:0] WR_LEVEL_LOW      = 15'd4096;   // Release write urgent.
 
     localparam logic [15:0] RD_LEVEL_URGENT   = 16'd4096;   // Refill reads urgently.
-    localparam logic [15:0] RD_LEVEL_HIGH     = 16'd12288;  // Stop read prefetch.
+    localparam logic [15:0] RD_LEVEL_HIGH     = 16'd6144;   // Stop read prefetch.
     
-    localparam logic [15:0] RD_FIFO_DEPTH     = 16'd16383;
+    localparam logic [15:0] RD_FIFO_DEPTH     = 16'd8192;
 
     localparam logic [8:0]  WR_BURST_NUM      = 9'd256;
     localparam logic [9:0]  RD_BURST_NUM      = 10'd512;
@@ -73,23 +74,9 @@ module user_rw_cmd_gen #(
         RW_READ_DATA  // Native read data.
     } rw_state_t;
 
-    typedef enum logic [1:0] {
-        GRANT_NONE,
-        GRANT_WRITE,
-        GRANT_READ
-    } grant_t;
-
-    typedef enum logic [1:0] {
-        ARB_SLOT_WRITE0,
-        ARB_SLOT_WRITE1,
-        ARB_SLOT_READ
-    } arb_slot_t;
-
-    typedef struct packed {
-        logic       valid;
-        logic       urgent;
-        logic [9:0] len;
-    } rw_req_t;
+    localparam logic [1:0] GRANT_NONE  = 2'd0;
+    localparam logic [1:0] GRANT_WRITE = 2'd1;
+    localparam logic [1:0] GRANT_READ  = 2'd2;
 
     // Start pulse CDC and edge detect.
     (* ASYNC_REG = "true" *) logic make_data_on_rcom_cdc_to_d;
@@ -113,74 +100,18 @@ module user_rw_cmd_gen #(
     assign make_data_on_edge         = make_data_on_dd & (~make_data_on_ddd);
     assign make_data_p_edge_ddr_clk  = make_data_on_edge;
 
-    // Replay settle delay.
-    logic [7:0] rp_back_en_dly_cnt;
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst) begin
-            rp_back_en_dly_cnt <= '0;
-        end
-        else if (rp_back_en) begin
-            rp_back_en_dly_cnt <= 8'd1;
-        end
-        else if (rp_back_en_dly_cnt != 8'd0) begin
-            rp_back_en_dly_cnt <= rp_back_en_dly_cnt + 8'd1;
-        end
-    end
-
-    logic [10:0] wr_tail_age_cnt;
-    logic        wr_tail_age_reached;
-    logic        clr_wr_wait_age;
-
-    assign wr_tail_age_reached = (wr_tail_age_cnt >= WR_TAIL_AGE_LIMIT);
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst) begin
-            wr_tail_age_cnt <= '0;
-        end
-        else if (clr_wr_wait_age || (~wr_fifo_valid)) begin
-            wr_tail_age_cnt <= '0;
-        end
-        else if (wr_tail_age_cnt < WR_TAIL_AGE_LIMIT) begin
-            wr_tail_age_cnt <= wr_tail_age_cnt + 11'd1;
-        end
-    end
-
     // FIFO pressure flags.
+    logic        clr_wr_wait_age;
+    logic        ddr_wr_req;
+    logic        ddr_rd_req_qual;
     logic        wr_level_urgent;
     logic        wr_has_full_burst;
     logic        rd_level_urgent;
     logic        rd_fifo_can_prefetch;
+    logic        rd_fifo_has_grant_space;
     logic [16:0] rd_fifo_free_count;
-
-    assign wr_level_urgent       = wr_fifo_rd_data_count >= WR_LEVEL_URGENT;
-    assign wr_has_full_burst     = ~wr_fifo_prog_empty;                       // wr_fifo has WR_BURST_NUM beats.
-    
-    assign rd_level_urgent       = rd_fifo_almost_empty | (rd_fifo_data_count <= RD_LEVEL_URGENT);
-    assign rd_fifo_free_count    = {1'b0, RD_FIFO_DEPTH} - {1'b0, rd_fifo_data_count};         // Free read FIFO slots.
-    assign rd_fifo_can_prefetch  = (~rd_fifo_prog_full) & (~rd_fifo_full) & (rd_fifo_data_count < RD_LEVEL_HIGH); // Allow read prefetch.
-
-    // Request gating.
-    logic ddr_wr_req;
-    logic ddr_rd_req_d;
-    logic ddr_rd_req_dd;
-    logic ddr_rd_req_qual;
-
-    // Full burst or aged partial tail.
-    assign ddr_wr_req = wr_fifo_valid & (wr_has_full_burst | wr_tail_age_reached);
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst || rst_local_t_ddr_clk) begin
-            ddr_rd_req_d  <= '0;
-            ddr_rd_req_dd <= '0;
-        end
-        else begin
-            ddr_rd_req_d  <= ddr_rd_req;
-            ddr_rd_req_dd <= ddr_rd_req_d;
-        end
-    end
-
-    assign ddr_rd_req_qual = (~ddr_rd_empty) & ddr_rd_req_dd & rd_fifo_can_prefetch;
+    logic [9:0]  rd_available_len;
+    logic        block_for_replay;
 
     // Burst/service tracking.
     // Selected service length for the active native service, in 128-bit beats.
@@ -192,7 +123,6 @@ module user_rw_cmd_gen #(
     logic       write_burst_done;
     logic       read_burst_done;
 
-    logic [9:0] rd_available_len;
     logic [ADDR_WIDTH:0] ddr_rd_avail_count;
 
     logic       app_cmd_fire;
@@ -200,8 +130,6 @@ module user_rw_cmd_gen #(
     logic       write_data_fire;
     logic       read_data_fire;
     logic       write_channel_ready;
-    logic       block_for_replay;
-    logic       rd_fifo_has_grant_space;
     logic       read_cmd_send_en;
     logic       read_cmd_last;
     logic       read_cmd_send_done;
@@ -210,60 +138,77 @@ module user_rw_cmd_gen #(
     logic [9:0] read_cmd_cnt;
     logic [9:0] rd_outstanding;
 
-    // Keep the read service window fixed; FIFO space is only a hard gate.
-    assign rd_available_len = (ddr_rd_avail_count >= RD_BURST_NUM) ?
-                              RD_BURST_NUM : ddr_rd_avail_count[9:0];
-    assign rd_fifo_has_grant_space = rd_fifo_free_count >= RD_BURST_NUM;
-    // Replay blocks arbitration.
-    assign block_for_replay = rp_back_en || (rp_back_en_dly_cnt != 8'd0);
-
-    // Request descriptors and grant selection.
-    rw_req_t wr_req;
-    rw_req_t rd_req;
+    rw_pressure_ctrl #(
+        .ADDR_WIDTH        (ADDR_WIDTH),
+        .WR_LEVEL_URGENT   (WR_LEVEL_URGENT),
+        .WR_LEVEL_LOW      (WR_LEVEL_LOW),
+        .RD_LEVEL_URGENT   (RD_LEVEL_URGENT),
+        .RD_LEVEL_HIGH     (RD_LEVEL_HIGH),
+        .RD_FIFO_DEPTH     (RD_FIFO_DEPTH),
+        .WR_BURST_NUM      (WR_BURST_NUM),
+        .RD_BURST_NUM      (RD_BURST_NUM),
+        .WR_TAIL_AGE_LIMIT (WR_TAIL_AGE_LIMIT)
+    ) pressure_ctrl_u (
+        .ui_clk                  (ui_clk),
+        .ui_clk_sync_rst         (ui_clk_sync_rst),
+        .rst_local_t_ddr_clk     (rst_local_t_ddr_clk),
+        .make_data_on_edge       (make_data_on_edge),
+        .rp_back_en              (rp_back_en),
+        .wr_fifo_valid           (wr_fifo_valid),
+        .wr_fifo_prog_empty      (wr_fifo_prog_empty),
+        .wr_fifo_rd_data_count   (wr_fifo_rd_data_count),
+        .rd_fifo_prog_full       (rd_fifo_prog_full),
+        .rd_fifo_full            (rd_fifo_full),
+        .rd_fifo_almost_empty    (rd_fifo_almost_empty),
+        .rd_fifo_data_count      (rd_fifo_data_count),
+        .ddr_rd_req              (ddr_rd_req),
+        .ddr_rd_empty            (ddr_rd_empty),
+        .ddr_rd_avail_count      (ddr_rd_avail_count),
+        .clr_wr_wait_age         (clr_wr_wait_age),
+        .ddr_wr_req              (ddr_wr_req),
+        .ddr_rd_req_qual         (ddr_rd_req_qual),
+        .wr_level_urgent         (wr_level_urgent),
+        .wr_has_full_burst       (wr_has_full_burst),
+        .rd_level_urgent         (rd_level_urgent),
+        .rd_fifo_can_prefetch    (rd_fifo_can_prefetch),
+        .rd_fifo_has_grant_space (rd_fifo_has_grant_space),
+        .rd_fifo_free_count      (rd_fifo_free_count),
+        .rd_available_len        (rd_available_len),
+        .block_for_replay        (block_for_replay)
+    );
 
     rw_state_t rw_state;
     rw_state_t rw_next_state;
 
-    grant_t arb_grant;
-    arb_slot_t arb_slot;
-    logic      normal_grant_fire;
+    logic [1:0] arb_grant;
+    logic [9:0] wr_req_len;
+    logic [9:0] rd_req_len;
+    logic       wr_req_urgent;
+    logic       rd_req_urgent;
 
-    assign wr_req = build_write_req(ddr_wr_req,
-                                    wr_level_urgent,
-                                    fifo_count_to_burst_len(wr_fifo_rd_data_count,
-                                                            wr_fifo_valid));
-    assign rd_req = build_read_req(ddr_rd_req_qual,
-                                   rd_fifo_has_grant_space,
-                                   wr_level_urgent,
-                                   rd_level_urgent,
-                                   min2_10(rd_available_len,
-                                           RD_BURST_NUM));
-    assign arb_grant = choose_grant(wr_req, rd_req, arb_slot);
-
-    assign normal_grant_fire = (rw_state == RW_ARB) &&
-                               ((arb_grant == GRANT_WRITE) ||
-                                (arb_grant == GRANT_READ)) &&
-                               (~wr_req.urgent) &&
-                               (~rd_req.urgent) &&
-                               (((arb_slot == ARB_SLOT_WRITE0) &&
-                                 (arb_grant == GRANT_WRITE)) ||
-                                ((arb_slot == ARB_SLOT_WRITE1) &&
-                                 (arb_grant == GRANT_WRITE)) ||
-                                ((arb_slot == ARB_SLOT_READ) &&
-                                 (arb_grant == GRANT_READ)));
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
-            arb_slot <= ARB_SLOT_WRITE0;
-        end
-        else if (normal_grant_fire) begin
-            unique case (arb_slot)
-                ARB_SLOT_WRITE0: arb_slot <= ARB_SLOT_WRITE1;
-                ARB_SLOT_WRITE1: arb_slot <= ARB_SLOT_READ;
-                default:         arb_slot <= ARB_SLOT_WRITE0;
-            endcase
-        end
-    end
+    rw_arbiter #(
+        .WR_BURST_NUM (WR_BURST_NUM),
+        .RD_BURST_NUM (RD_BURST_NUM)
+    ) arbiter_u (
+        .ui_clk                  (ui_clk),
+        .ui_clk_sync_rst         (ui_clk_sync_rst),
+        .rst_local_t_ddr_clk     (rst_local_t_ddr_clk),
+        .make_data_on_edge       (make_data_on_edge),
+        .in_arb                  (rw_state == RW_ARB),
+        .ddr_wr_req              (ddr_wr_req),
+        .ddr_rd_req_qual         (ddr_rd_req_qual),
+        .wr_level_urgent         (wr_level_urgent),
+        .rd_level_urgent         (rd_level_urgent),
+        .wr_fifo_valid           (wr_fifo_valid),
+        .wr_fifo_rd_data_count   (wr_fifo_rd_data_count),
+        .rd_fifo_has_grant_space (rd_fifo_has_grant_space),
+        .rd_available_len        (rd_available_len),
+        .arb_grant               (arb_grant),
+        .wr_req_len              (wr_req_len),
+        .rd_req_len              (rd_req_len),
+        .wr_req_urgent           (wr_req_urgent),
+        .rd_req_urgent           (rd_req_urgent)
+    );
 
     // RW arbitration FSM.
     always_ff @(posedge ui_clk) begin
@@ -360,11 +305,6 @@ module user_rw_cmd_gen #(
     logic [ADDR_WIDTH-1:0] user_ad_wr;
     logic [ADDR_WIDTH-1:0] user_ad_rd;
 
-    assign user_ad_wr               = user_ad_wr_i[ADDR_WIDTH-1:0];
-    assign user_ad_rd               = user_ad_rd_i[ADDR_WIDTH-1:0];
-    assign ddr_rd_empty             = (user_ad_wr_i == user_ad_rd_i);
-    assign ddr_rd_avail_count       = user_ad_wr_i - user_ad_rd_i;
-
     // Handshake pulses.
     assign app_cmd_fire        = app_en && app_rdy;
     assign read_cmd_fire       = (rw_state == RW_READ_CMD) && app_cmd_fire;
@@ -397,46 +337,33 @@ module user_rw_cmd_gen #(
         (rd_outstanding == 0) ||
         ((rd_outstanding == 10'd1) && read_data_fire && (!read_cmd_fire));
 
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
-            user_ad_wr_i <= '0;
-        end
-        else if (write_data_fire) begin
-            user_ad_wr_i <= user_ad_wr_i + 1'b1;
-        end
-    end
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
-            user_ad_rd_i <= '0;
-        end
-        // Returned-data pointer. Keep user_ad_rd_i as the consumed boundary.
-        else if (rp_back_en) begin
-            user_ad_rd_i <= {1'b0, rp_back_view_addr};
-        end
-        else if (read_data_fire) begin
-            user_ad_rd_i <= user_ad_rd_i + 1'b1;
-        end
-    end
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
-            rd_cmd_ptr <= '0;
-        end
-        else if (rp_back_en) begin
-            rd_cmd_ptr <= {1'b0, rp_back_view_addr};
-        end
-        else if (read_cmd_fire) begin
-            rd_cmd_ptr <= rd_cmd_ptr + 1'b1;
-        end
-    end
+    ddr_ring_addr_mgr #(
+        .ADDR_WIDTH (ADDR_WIDTH)
+    ) ring_addr_mgr_u (
+        .ui_clk              (ui_clk),
+        .ui_clk_sync_rst     (ui_clk_sync_rst),
+        .rst_local_t_ddr_clk (rst_local_t_ddr_clk),
+        .make_data_on_edge   (make_data_on_edge),
+        .write_data_fire     (write_data_fire),
+        .read_data_fire      (read_data_fire),
+        .read_cmd_fire       (read_cmd_fire),
+        .rp_back_en          (rp_back_en),
+        .rp_back_view_addr   (rp_back_view_addr),
+        .user_ad_wr_i        (user_ad_wr_i),
+        .user_ad_rd_i        (user_ad_rd_i),
+        .rd_cmd_ptr          (rd_cmd_ptr),
+        .user_ad_wr          (user_ad_wr),
+        .user_ad_rd          (user_ad_rd),
+        .ddr_rd_empty        (ddr_rd_empty),
+        .ddr_rd_avail_count  (ddr_rd_avail_count)
+    );
 
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
             write_burst_len <= '0;
         end
         else if (rw_state == RW_ARB) begin
-            write_burst_len <= wr_req.len[8:0];
+            write_burst_len <= wr_req_len[8:0];
         end
     end
 
@@ -445,7 +372,7 @@ module user_rw_cmd_gen #(
             read_burst_len <= '0;
         end
         else if (rw_state == RW_ARB) begin
-            read_burst_len <= rd_req.len;
+            read_burst_len <= rd_req_len;
         end
     end
 
@@ -523,57 +450,21 @@ module user_rw_cmd_gen #(
     assign rd_fifo_wr_en = read_data_fire;
 
     // Circular-buffer warning/overrun.
-    logic [ADDR_WIDTH:0] wr_sub_rd;
-    logic [ADDR_WIDTH:0] wr_sub_rd_diff;
-    logic                wr_rd_same_signal;
-    logic                wr_rd_diff_signal;
-    logic                set_ddr_overrun;
-
-    assign wr_rd_same_signal = (user_ad_wr_i[ADDR_WIDTH] == user_ad_rd_i[ADDR_WIDTH]);
-    assign wr_rd_diff_signal = (user_ad_wr_i[ADDR_WIDTH] ^ user_ad_rd_i[ADDR_WIDTH]);
-    assign set_ddr_overrun   = wr_rd_diff_signal &
-                                (user_ad_wr_i[ADDR_WIDTH-1:0] == user_ad_rd_i[ADDR_WIDTH-1:0]);
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst) begin
-            ddr_overrun <= '0;
-        end
-        else if (rst_local_t_ddr_clk || (~init_calib_complete) || make_data_on_edge) begin
-            ddr_overrun <= '0;
-        end
-        else if (fault_ddr_overrun || set_ddr_overrun) begin
-            ddr_overrun <= 1'b1;
-        end
-        else begin
-            ddr_overrun <= '0;
-        end
-    end
-
-    assign wr_sub_rd      = {1'b0, user_ad_wr_i[ADDR_WIDTH-1:0]} -
-                            {1'b0, user_ad_rd_i[ADDR_WIDTH-1:0]};
-    assign wr_sub_rd_diff = {1'b1, user_ad_wr_i[ADDR_WIDTH-1:0]} -
-                            {1'b0, user_ad_rd_i[ADDR_WIDTH-1:0]};
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst) begin
-            ddr_warning <= '0;
-        end
-        else if (rst_local_t_ddr_clk || (~init_calib_complete) || make_data_on_edge) begin
-            ddr_warning <= '0;
-        end
-        else if (fault_ddr_warning) begin
-            ddr_warning <= 1'b1;
-        end
-        else if (wr_rd_same_signal && (|wr_sub_rd[ADDR_WIDTH:ADDR_WIDTH-2])) begin
-            ddr_warning <= 1'b1;
-        end
-        else if (wr_rd_diff_signal && (|wr_sub_rd_diff[ADDR_WIDTH:ADDR_WIDTH-2])) begin
-            ddr_warning <= 1'b1;
-        end
-        else begin
-            ddr_warning <= '0;
-        end
-    end
+    ddr_overrun_monitor #(
+        .ADDR_WIDTH (ADDR_WIDTH)
+    ) overrun_monitor_u (
+        .ui_clk              (ui_clk),
+        .ui_clk_sync_rst     (ui_clk_sync_rst),
+        .rst_local_t_ddr_clk (rst_local_t_ddr_clk),
+        .init_calib_complete (init_calib_complete),
+        .make_data_on_edge   (make_data_on_edge),
+        .fault_ddr_overrun   (fault_ddr_overrun),
+        .fault_ddr_warning   (fault_ddr_warning),
+        .user_ad_wr_i        (user_ad_wr_i),
+        .user_ad_rd_i        (user_ad_rd_i),
+        .ddr_overrun         (ddr_overrun),
+        .ddr_warning         (ddr_warning)
+    );
 
     // Helper functions.
     function automatic logic [APP_ADDR_WIDTH-1:0] beat_to_app_addr(
@@ -583,105 +474,17 @@ module user_rw_cmd_gen #(
         beat_to_app_addr = ({ {(APP_ADDR_WIDTH-ADDR_WIDTH){1'b0}}, beat_addr } << 3);
     endfunction
 
-    function automatic logic [8:0] fifo_count_to_burst_len(
-        input logic [14:0] fifo_count,
-        input logic        fifo_valid
-    );
-        if (fifo_count >= WR_BURST_NUM) begin
-            fifo_count_to_burst_len = WR_BURST_NUM;
-        end
-        else if (fifo_count != 0) begin
-            fifo_count_to_burst_len = {1'b0, fifo_count[7:0]};
-        end
-        else if (fifo_valid) begin
-            fifo_count_to_burst_len = 9'd1;
-        end
-        else begin
-            fifo_count_to_burst_len = '0;
-        end
-    endfunction
-
-    function automatic logic [9:0] min2_10(
-        input logic [9:0] a,
-        input logic [9:0] b
-    );
-        min2_10 = (a < b) ? a : b;
-    endfunction
-
-    function automatic rw_req_t build_write_req(
-        input logic       raw_valid,
-        input logic       level_urgent,
-        input logic [8:0] burst_len
-    );
-        build_write_req.valid         = raw_valid;
-        build_write_req.urgent        = raw_valid && level_urgent;
-        build_write_req.len           = {1'b0, burst_len};
-    endfunction
-
-    function automatic rw_req_t build_read_req(
-        input logic       raw_valid,
-        input logic       has_grant_space,
-        input logic       write_urgent,
-        input logic       level_urgent,
-        input logic [9:0] service_len
-    );
-        logic allowed;
-
-        allowed = raw_valid && has_grant_space && (~write_urgent);
-        build_read_req.valid         = allowed;
-        build_read_req.urgent        = allowed && level_urgent;
-        build_read_req.len           = service_len;
-    endfunction
-
-    function automatic grant_t choose_grant(
-        input rw_req_t   wr,
-        input rw_req_t   rd,
-        input arb_slot_t slot
-    );
-        choose_grant = GRANT_NONE;
-
-        if (wr.urgent) begin
-            choose_grant = GRANT_WRITE;
-        end
-        else if (rd.urgent) begin
-            choose_grant = GRANT_READ;
-        end
-        else begin
-            unique case (slot)
-                ARB_SLOT_WRITE0,
-                ARB_SLOT_WRITE1: begin
-                    if (wr.valid) begin
-                        choose_grant = GRANT_WRITE;
-                    end
-                    else if (rd.valid) begin
-                        choose_grant = GRANT_READ;
-                    end
-                end
-
-                default: begin
-                    if (rd.valid) begin
-                        choose_grant = GRANT_READ;
-                    end
-                    else if (wr.valid) begin
-                        choose_grant = GRANT_WRITE;
-                    end
-                end
-            endcase
-        end
-    endfunction
-
     // Debug-only ILA counters.
-    // Keep this section at the end so release builds can remove/comment it as one block.
     localparam int DBG_CNT_WIDTH = 32;
 
     logic dbg_cnt_reset;
-    logic dbg_wr_no_service;
-    logic dbg_rd_no_service;
-    logic dbg_replay_block;
-    logic dbg_wr_app_rdy_wait;
-    logic dbg_wr_wdf_rdy_wait;
-    logic dbg_rd_cmd_wait;
-    logic dbg_rd_data_wait;
+    (* mark_debug = "true" *) logic dbg_wr_no_service;
+    (* mark_debug = "true" *) logic dbg_rd_no_service;
+    (* mark_debug = "true" *) logic dbg_replay_block;
+    (* mark_debug = "true" *) logic dbg_wr_app_rdy_wait;
+    (* mark_debug = "true" *) logic dbg_wr_wdf_rdy_wait;
+    (* mark_debug = "true" *) logic dbg_rd_cmd_wait;
+    (* mark_debug = "true" *) logic dbg_rd_data_wait;
 
     (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_cur;
     (* mark_debug = "true" *) logic [DBG_CNT_WIDTH-1:0] dbg_wr_no_service_max;
@@ -700,81 +503,50 @@ module user_rw_cmd_gen #(
 
     assign dbg_cnt_reset         = ui_clk_sync_rst || rst_local_t_ddr_clk ||
                                    make_data_on_edge || (~init_calib_complete);
-    assign dbg_wr_no_service     = ddr_wr_req && (~write_data_fire);
-    assign dbg_rd_no_service     = ddr_rd_req_qual && (~read_data_fire);
-    assign dbg_replay_block      = block_for_replay;
-    assign dbg_wr_app_rdy_wait   = (rw_state == RW_WRITE_REQ) &&
-                                   wr_fifo_valid &&
-                                   (write_burst_len != 0) &&
-                                   app_wdf_rdy &&
-                                   (~app_rdy);
-    assign dbg_wr_wdf_rdy_wait   = (rw_state == RW_WRITE_REQ) &&
-                                   wr_fifo_valid &&
-                                   (write_burst_len != 0) &&
-                                   (~app_wdf_rdy);
-    assign dbg_rd_cmd_wait       = (rw_state == RW_READ_CMD) &&
-                                   (read_burst_len != 0) &&
-                                   rd_fifo_has_grant_space &&
-                                   (~wr_level_urgent) &&
-                                   (~app_rdy);
-    assign dbg_rd_data_wait      = (rw_state == RW_READ_DATA) &&
-                                   (~app_rd_data_valid) &&
-                                   (~rd_fifo_full);
 
-    native_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_wr_no_service (
-        .clk    (ui_clk),
-        .rst    (dbg_cnt_reset),
-        .active (dbg_wr_no_service),
-        .cur    (dbg_wr_no_service_cur),
-        .max    (dbg_wr_no_service_max)
-    );
-
-    native_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_rd_no_service (
-        .clk    (ui_clk),
-        .rst    (dbg_cnt_reset),
-        .active (dbg_rd_no_service),
-        .cur    (dbg_rd_no_service_cur),
-        .max    (dbg_rd_no_service_max)
-    );
-
-    native_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_replay_block (
-        .clk    (ui_clk),
-        .rst    (dbg_cnt_reset),
-        .active (dbg_replay_block),
-        .cur    (dbg_replay_block_cur),
-        .max    (dbg_replay_block_max)
-    );
-
-    native_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_wr_app_rdy_wait (
-        .clk    (ui_clk),
-        .rst    (dbg_cnt_reset),
-        .active (dbg_wr_app_rdy_wait),
-        .cur    (dbg_wr_app_rdy_wait_cur),
-        .max    (dbg_wr_app_rdy_wait_max)
-    );
-
-    native_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_wr_wdf_rdy_wait (
-        .clk    (ui_clk),
-        .rst    (dbg_cnt_reset),
-        .active (dbg_wr_wdf_rdy_wait),
-        .cur    (dbg_wr_wdf_rdy_wait_cur),
-        .max    (dbg_wr_wdf_rdy_wait_max)
-    );
-
-    native_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_rd_cmd_wait (
-        .clk    (ui_clk),
-        .rst    (dbg_cnt_reset),
-        .active (dbg_rd_cmd_wait),
-        .cur    (dbg_rd_cmd_wait_cur),
-        .max    (dbg_rd_cmd_wait_max)
-    );
-
-    native_dbg_streak_counter #(.CNT_WIDTH(DBG_CNT_WIDTH)) u_dbg_rd_data_wait (
-        .clk    (ui_clk),
-        .rst    (dbg_cnt_reset),
-        .active (dbg_rd_data_wait),
-        .cur    (dbg_rd_data_wait_cur),
-        .max    (dbg_rd_data_wait_max)
+    rw_cmd_debug_monitor #(
+        .DBG_CNT_WIDTH (DBG_CNT_WIDTH)
+    ) debug_monitor_u (
+        .ui_clk                      (ui_clk),
+        .rst                         (dbg_cnt_reset),
+        .ddr_wr_req                  (ddr_wr_req),
+        .ddr_rd_req_qual             (ddr_rd_req_qual),
+        .write_data_fire             (write_data_fire),
+        .read_data_fire              (read_data_fire),
+        .block_for_replay            (block_for_replay),
+        .in_write_req                (rw_state == RW_WRITE_REQ),
+        .in_read_cmd                 (rw_state == RW_READ_CMD),
+        .in_read_data                (rw_state == RW_READ_DATA),
+        .wr_fifo_valid               (wr_fifo_valid),
+        .write_burst_len             (write_burst_len),
+        .read_burst_len              (read_burst_len),
+        .app_rdy                     (app_rdy),
+        .app_wdf_rdy                 (app_wdf_rdy),
+        .app_rd_data_valid           (app_rd_data_valid),
+        .rd_fifo_full                (rd_fifo_full),
+        .rd_fifo_has_grant_space     (rd_fifo_has_grant_space),
+        .wr_level_urgent             (wr_level_urgent),
+        .dbg_wr_no_service           (dbg_wr_no_service),
+        .dbg_rd_no_service           (dbg_rd_no_service),
+        .dbg_replay_block            (dbg_replay_block),
+        .dbg_wr_app_rdy_wait         (dbg_wr_app_rdy_wait),
+        .dbg_wr_wdf_rdy_wait         (dbg_wr_wdf_rdy_wait),
+        .dbg_rd_cmd_wait             (dbg_rd_cmd_wait),
+        .dbg_rd_data_wait            (dbg_rd_data_wait),
+        .dbg_wr_no_service_cur       (dbg_wr_no_service_cur),
+        .dbg_wr_no_service_max       (dbg_wr_no_service_max),
+        .dbg_rd_no_service_cur       (dbg_rd_no_service_cur),
+        .dbg_rd_no_service_max       (dbg_rd_no_service_max),
+        .dbg_replay_block_cur        (dbg_replay_block_cur),
+        .dbg_replay_block_max        (dbg_replay_block_max),
+        .dbg_wr_app_rdy_wait_cur     (dbg_wr_app_rdy_wait_cur),
+        .dbg_wr_app_rdy_wait_max     (dbg_wr_app_rdy_wait_max),
+        .dbg_wr_wdf_rdy_wait_cur     (dbg_wr_wdf_rdy_wait_cur),
+        .dbg_wr_wdf_rdy_wait_max     (dbg_wr_wdf_rdy_wait_max),
+        .dbg_rd_cmd_wait_cur         (dbg_rd_cmd_wait_cur),
+        .dbg_rd_cmd_wait_max         (dbg_rd_cmd_wait_max),
+        .dbg_rd_data_wait_cur        (dbg_rd_data_wait_cur),
+        .dbg_rd_data_wait_max        (dbg_rd_data_wait_max)
     );
 
 endmodule

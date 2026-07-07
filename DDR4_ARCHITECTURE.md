@@ -43,6 +43,16 @@
 - `native/rtl/user_rw_cmd_gen.sv`
   - native `app_*` 命令生成。
   - 复用与 AXI 版本一致的水位、仲裁、地址计数、replay 和告警逻辑。
+- `native/rtl/rw_pressure_ctrl.sv`
+  - native pressure/watermark control split out from `user_rw_cmd_gen.sv`.
+- `native/rtl/ddr_overrun_monitor.sv`
+  - native circular-buffer overrun/warning monitor split out from `user_rw_cmd_gen.sv`.
+- `native/rtl/ddr_ring_addr_mgr.sv`
+  - native circular beat-address pointers split out from `user_rw_cmd_gen.sv`.
+- `native/rtl/rw_arbiter.sv`
+  - native request builder and 2:1 arbitration split out from `user_rw_cmd_gen.sv`.
+- `native/rtl/rw_cmd_debug_monitor.sv`
+  - native debug streak counters split out from `user_rw_cmd_gen.sv`.
 - `native/rtl/user_app_top.sv`
   - XPM FIFO 缓冲和 native 命令生成器连接。
 - `native/rtl/ddr4_controller.sv`
@@ -59,8 +69,8 @@
 - 写侧 FIFO：`clk` 写入，`ui_clk` 读出。
 - 读侧 FIFO：`ui_clk` 写入，`clk` 读出。
 - 数据宽度：`128 bit`。
-- 写侧 FIFO 深度：`4096 beat`。
-- 读侧 FIFO 深度：`4096 beat`。
+- 写侧 FIFO 深度：`16384 beat`。
+- 读侧 FIFO 深度：`16384 beat`。
 
 主要水位阈值保持一致：
 

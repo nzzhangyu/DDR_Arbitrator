@@ -58,6 +58,12 @@ Typical syntax checks:
 xvlog -sv axi\rtl\user_rw_cmd_gen.sv
 xvlog -sv axi\rtl\user_app_top.sv
 xvlog -sv axi\rtl\ddr4_controller.sv
+xvlog -sv native\rtl\ddr_overrun_monitor.sv
+xvlog -sv native\rtl\ddr_ring_addr_mgr.sv
+xvlog -sv native\rtl\rw_pressure_ctrl.sv
+xvlog -sv native\rtl\rw_arbiter.sv
+xvlog -sv native\rtl\native_dbg_streak_counter.sv
+xvlog -sv native\rtl\rw_cmd_debug_monitor.sv
 xvlog -sv native\rtl\user_rw_cmd_gen.sv
 xvlog -sv native\rtl\user_app_top.sv
 xvlog -sv native\rtl\ddr4_controller.sv

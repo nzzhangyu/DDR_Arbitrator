@@ -57,7 +57,12 @@ xvlog -sv axi\rtl\ddr4_controller.sv
 Native:
 
 ```powershell
+xvlog -sv native\rtl\ddr_overrun_monitor.sv
+xvlog -sv native\rtl\ddr_ring_addr_mgr.sv
+xvlog -sv native\rtl\rw_pressure_ctrl.sv
+xvlog -sv native\rtl\rw_arbiter.sv
 xvlog -sv native\rtl\native_dbg_streak_counter.sv
+xvlog -sv native\rtl\rw_cmd_debug_monitor.sv
 xvlog -sv native\rtl\user_rw_cmd_gen.sv
 xvlog -sv native\rtl\user_app_top.sv
 xvlog -sv native\rtl\ddr4_controller.sv
@@ -76,7 +81,7 @@ xsim "work.tb_ddr4_controller_mock#work.glbl" -runall
 Native fast mock regression:
 
 ```powershell
-xvlog -sv -i native\sim D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_cdc\hdl\xpm_cdc.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_memory\hdl\xpm_memory.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_fifo\hdl\xpm_fifo.sv native\sim\cross_clk_pulse.sv native\sim\ddr4_fast_mock_periodic_stall.sv native\sim\ddr4_fast_mock_stall_model.sv native\sim\ddr4_fast_mock_read_pending_model.sv native\sim\ddr4_fast_mock.sv native\sim\ddr4_controller_tb_stream_source.sv native\sim\ddr4_controller_tb_monitor.sv native\rtl\rd_cache_ctrl.sv native\rtl\native_dbg_streak_counter.sv native\rtl\user_rw_cmd_gen.sv native\rtl\user_app_top.sv native\sim\tb_ddr4_controller_mock.sv D:\Xilinx\Vivado\2021.1\data\verilog\src\glbl.v
+xvlog -sv -i native\sim D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_cdc\hdl\xpm_cdc.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_memory\hdl\xpm_memory.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_fifo\hdl\xpm_fifo.sv native\sim\cross_clk_pulse.sv native\sim\ddr4_fast_mock_periodic_stall.sv native\sim\ddr4_fast_mock_stall_model.sv native\sim\ddr4_fast_mock_read_pending_model.sv native\sim\ddr4_fast_mock.sv native\sim\ddr4_controller_tb_stream_source.sv native\sim\ddr4_controller_tb_monitor.sv native\rtl\rd_cache_ctrl.sv native\rtl\ddr_overrun_monitor.sv native\rtl\ddr_ring_addr_mgr.sv native\rtl\rw_pressure_ctrl.sv native\rtl\rw_arbiter.sv native\rtl\native_dbg_streak_counter.sv native\rtl\rw_cmd_debug_monitor.sv native\rtl\user_rw_cmd_gen.sv native\rtl\user_app_top.sv native\sim\tb_ddr4_controller_mock.sv D:\Xilinx\Vivado\2021.1\data\verilog\src\glbl.v
 xelab tb_ddr4_controller_mock glbl -debug typical
 xsim "work.tb_ddr4_controller_mock#work.glbl" -runall
 ```
@@ -111,7 +116,7 @@ Define `MIG` either in `native\sim\ddr4_tb_config.svh` or with `xvlog -d MIG`.
 Do not compile `native\sim\ddr4_1200m_fast_wrapper.sv` in this file set.
 
 ```powershell
-xvlog -sv -d MIG -i native\sim -i native\sim\sim_mig D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_cdc\hdl\xpm_cdc.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_memory\hdl\xpm_memory.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_fifo\hdl\xpm_fifo.sv native\sim\sim_mig\arch_package.sv native\sim\sim_mig\proj_package.sv native\sim\sim_mig\interface.sv native\sim\sim_mig\ddr4_model.sv native\sim\sim_mig\ddr4_1200m_sim_netlist.v native\sim\cross_clk_pulse.sv native\sim\ddr4_controller_tb_stream_source.sv native\sim\ddr4_controller_tb_monitor.sv native\rtl\rd_cache_ctrl.sv native\rtl\native_dbg_streak_counter.sv native\rtl\user_rw_cmd_gen.sv native\rtl\user_app_top.sv native\sim\tb_ddr4_controller_mock.sv native\sim\sim_mig\glbl.v
+xvlog -sv -d MIG -i native\sim -i native\sim\sim_mig D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_cdc\hdl\xpm_cdc.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_memory\hdl\xpm_memory.sv D:\Xilinx\Vivado\2021.1\data\ip\xpm\xpm_fifo\hdl\xpm_fifo.sv native\sim\sim_mig\arch_package.sv native\sim\sim_mig\proj_package.sv native\sim\sim_mig\interface.sv native\sim\sim_mig\ddr4_model.sv native\sim\sim_mig\ddr4_1200m_sim_netlist.v native\sim\cross_clk_pulse.sv native\sim\ddr4_controller_tb_stream_source.sv native\sim\ddr4_controller_tb_monitor.sv native\rtl\rd_cache_ctrl.sv native\rtl\ddr_overrun_monitor.sv native\rtl\ddr_ring_addr_mgr.sv native\rtl\rw_pressure_ctrl.sv native\rtl\rw_arbiter.sv native\rtl\native_dbg_streak_counter.sv native\rtl\rw_cmd_debug_monitor.sv native\rtl\user_rw_cmd_gen.sv native\rtl\user_app_top.sv native\sim\tb_ddr4_controller_mock.sv native\sim\sim_mig\glbl.v
 xelab tb_ddr4_controller_mock glbl -debug typical
 xsim "work.tb_ddr4_controller_mock#work.glbl" -testplusarg views=1 -testplusarg scoreboard=hash -runall
 ```

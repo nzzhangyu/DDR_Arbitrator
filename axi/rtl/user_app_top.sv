@@ -83,8 +83,8 @@ module user_app_top #(
 );
 
    localparam int FIFO_DATA_WIDTH        = 128;
-   localparam int WR_DDR_FIFO_DEPTH      = 8192;
-   localparam int WR_DDR_FIFO_COUNT_WIDTH = 14;
+   localparam int WR_DDR_FIFO_DEPTH      = 16384;
+   localparam int WR_DDR_FIFO_COUNT_WIDTH = 15;
    localparam int RD_DDR_FIFO_DEPTH      = 16384;
    localparam int RD_DDR_FIFO_COUNT_WIDTH = 15;
    localparam int WR_PROG_EMPTY_THRESH   = 256;
@@ -99,10 +99,10 @@ module user_app_top #(
    logic         ddr_wr_fifo_full;
    logic         ddr_wr_fifo_overflow;
    logic         ddr_wr_fifo_rd_en;
-   logic [13:0]  ddr_wr_fifo_rd_count_raw;
+   logic [14:0]  ddr_wr_fifo_rd_count_raw;
    logic [14:0]  ddr_wr_fifo_level;
 
-   assign ddr_wr_fifo_level = {1'b0, ddr_wr_fifo_rd_count_raw};
+   assign ddr_wr_fifo_level = ddr_wr_fifo_rd_count_raw;
    
    xpm_fifo_async #(
       .CASCADE_HEIGHT      (0),

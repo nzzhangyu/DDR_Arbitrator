@@ -93,7 +93,7 @@ module user_rw_cmd_gen #(
 
     localparam logic [15:0] RD_LEVEL_URGENT  = 16'd4096;   // Refill reads urgently.
     localparam logic [15:0] RD_LEVEL_HIGH    = 16'd12288;  // Stop read prefetch.
-    localparam logic [15:0] RD_FIFO_DEPTH    = 16'd16383;
+    localparam logic [15:0] RD_FIFO_DEPTH    = 16'd16384;
 
     localparam logic [8:0]  RD_BURST_NUM     = 9'd256;
     localparam logic [11:0] RD_WAIT_AGE_LIMIT = 12'd2048;
