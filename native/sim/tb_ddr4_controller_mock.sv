@@ -48,7 +48,6 @@ module tb_ddr4_controller_mock;
     localparam int READ_ENABLE_PERIOD_US = 90;
     localparam int READ_ENABLE_PERIOD_CYCLES =
         (READ_ENABLE_PERIOD_US * 1000000) / CLK_PERIOD_PS;
-    localparam int UI_1US_CYCLES = 1000000 / CLK_PERIOD_PS;
     localparam int TIMEOUT_MARGIN_WINDOWS = 4;
     localparam int TIMEOUT_MARGIN_CYCLES  = VIEW_PERIOD_CYCLES + 1024;
     localparam logic [2:0] APP_CMD_WRITE = 3'b000;
@@ -165,20 +164,6 @@ module tb_ddr4_controller_mock;
     logic                  ddr_wr_fifo_empty;
     logic                  ddr_rd_empty;
     logic                  make_data_p_edge_ddr_clk;
-    logic                  view_Reading_Done;
-    logic                  last_view_wr_done;
-    logic                  idle_process_en;
-    logic                  refresh_process_en;
-    logic                  TX_CHANNEL_UP_in;
-    logic                  aurora_asy_fifo_almost_full;
-    logic                  rp_back_en_i;
-    logic                  rp_back_en_rst;
-    logic                  uiclk_pulse_1us;
-    logic                  view_trans_ok;
-    logic                  last_view_trans_ok;
-    logic                  sample_frame_rd_done;
-    logic [1:0]            rd_cache_state;
-    logic                  rd_wr_num_equ;
 
     logic [APP_ADDR_WIDTH-1:0] app_addr;
     logic [2:0]                app_cmd;
@@ -273,9 +258,6 @@ module tb_ddr4_controller_mock;
     logic                  read_window_read_fire;               // Accepted beat in read window.
     int unsigned           read_window_period_cnt;              // 90us window scheduler.
     int unsigned           read_window_beat_cnt;                // Accepted beats in current window.
-    int unsigned           written_view_beat_cnt;               // TB-side view done model.
-    int unsigned           written_view_count;                  // TB-side view done model.
-    int unsigned           ui_1us_cycle_cnt;                    // TB-side 1us pulse model.
     logic                  global_stall_active;                 // Mock-only pressure flag.
     logic                  cmd_stall_active;                    // Mock-only pressure flag.
     logic                  read_stall_active;                   // Mock-only pressure flag.
@@ -354,7 +336,6 @@ module tb_ddr4_controller_mock;
         .c0_ddr4_app_addr         (app_addr),
         .c0_ddr4_app_cmd          (app_cmd),
         .c0_ddr4_app_en           (app_en),
-        .c0_ddr4_app_hi_pri       (1'b0),
         .c0_ddr4_app_rdy          (app_rdy),
         .c0_ddr4_app_wdf_data     (app_wdf_data),
         .c0_ddr4_app_wdf_mask     (app_wdf_mask),
@@ -418,8 +399,7 @@ module tb_ddr4_controller_mock;
         .SAMPLE_BITS    (SAMPLE_BITS),
         .APP_DATA_BITS  (APP_DATA_BITS),
         .INCREMENT_MODE (STREAM_INCREMENT_MODE),
-        .MODEL_HEADER_GAPS (1'b0),
-        .MODEL_VIEW_PERIOD (1'b0)
+        .MODEL_HEADER_GAPS (1'b0)
     ) stream_source_u (
         .clk            (clk),
         .reset          (reset),
@@ -430,47 +410,9 @@ module tb_ddr4_controller_mock;
         .send_done      (send_done)
     );
 
-    assign idle_process_en             = 1'b0;
-    assign refresh_process_en          = 1'b0;
-    assign TX_CHANNEL_UP_in            = init_calib_complete;
-    assign aurora_asy_fifo_almost_full = 1'b0;
-    assign rp_back_en_i                = 1'b0;
-    assign rp_back_en_rst              = 1'b0;
-    assign view_trans_ok               = 1'b1;
-
-    rd_cache_ctrl #(
-        .ADDR_WIDTH                 (ADDR_WIDTH),
-        .GTX_CLK2UI_CLK_PULSE_WIDTH (8),
-        .SYS_CLK2UI_CLK_PULSE_WIDTH (8),
-        .UI_CLK2GTX_CLK_PULSE_WIDTH (12)
-    ) rd_cache_ctrl_u (
-        .ddr_rd_req                 (ddr_rd_req),
-        .req_stop                   (req_stop),
-        .rp_back_view_addr          (rp_back_view_addr),
-        .last_view_trans_ok         (last_view_trans_ok),
-        .sample_frame_rd_done       (sample_frame_rd_done),
-        .rd_cache_state             (rd_cache_state),
-        .rd_wr_num_equ              (rd_wr_num_equ),
-        .ui_clk                     (ui_clk),
-        .ddr_user_rst               (ui_clk_sync_rst),
-        .rst_local_t_ddr_clk        (rst_local_t_ddr_clk),
-        .clk_sysclk_in              (clk),
-        .sys_rst                    (reset),
-        .view_Reading_Done          (view_Reading_Done),
-        .last_view_wr_done          (last_view_wr_done),
-        .idle_process_en            (idle_process_en),
-        .refresh_process_en         (refresh_process_en),
-        .TX_CHANNEL_UP_in           (TX_CHANNEL_UP_in),
-        .aurora_asy_fifo_almost_full(aurora_asy_fifo_almost_full),
-        .ddr_rd_empty               (ddr_rd_empty),
-        .make_data_on               (make_data_on),
-        .view_size                  (view_size),
-        .user_r_valid               (user_r_valid),
-        .rp_back_en_i               (rp_back_en_i),
-        .rp_back_en_rst             (rp_back_en_rst),
-        .uiclk_pulse_1us            (uiclk_pulse_1us),
-        .view_trans_ok              (view_trans_ok)
-    );
+    assign ddr_rd_req  = read_window_active;
+    assign req_stop    = ~read_window_active;
+    assign user_r_rd_en = read_window_active && user_r_valid;
 
     // Accepted native command pulses.
     assign native_read_cmd_fire  = app_en && app_rdy && (app_cmd == APP_CMD_READ);
@@ -480,9 +422,8 @@ module tb_ddr4_controller_mock;
     assign urgent_read_data_event_fire =
         in_read_data_state && dut.user_rw_cmd_gen_uut.wr_level_urgent;
     assign expected_data_remaining = (recv_count < sent_count);
-    assign consumer_enable = user_r_valid;
+    assign consumer_enable = read_window_active;
     assign read_window_read_fire = user_r_rd_en && user_r_valid;
-    assign user_r_rd_en = user_r_valid;
 
     initial clk = 1'b0;
     always #(CLK_PERIOD_PS / 2000.0) clk = ~clk;
@@ -493,46 +434,6 @@ module tb_ddr4_controller_mock;
     initial c0_sys_clk_p = 1'b0;
     always #(MIG_SYS_PERIOD_PS / 2000.0) c0_sys_clk_p = ~c0_sys_clk_p;
     assign c0_sys_clk_n = ~c0_sys_clk_p;
-
-    always_ff @(posedge clk) begin
-        if (reset || stream_start) begin
-            view_Reading_Done    <= 1'b0;
-            last_view_wr_done    <= 1'b0;
-            written_view_beat_cnt <= '0;
-            written_view_count   <= '0;
-        end
-        else begin
-            view_Reading_Done <= 1'b0;
-            last_view_wr_done <= 1'b0;
-
-            if (data_from_ddr_en) begin
-                if (written_view_beat_cnt == (VIEW_TOTAL_BEATS - 1)) begin
-                    view_Reading_Done    <= 1'b1;
-                    last_view_wr_done    <= (written_view_count == (sim_view_count - 1));
-                    written_view_beat_cnt <= '0;
-                    written_view_count   <= written_view_count + 1;
-                end
-                else begin
-                    written_view_beat_cnt <= written_view_beat_cnt + 1;
-                end
-            end
-        end
-    end
-
-    always_ff @(posedge ui_clk) begin
-        if (ui_clk_sync_rst) begin
-            uiclk_pulse_1us <= 1'b0;
-            ui_1us_cycle_cnt <= '0;
-        end
-        else if (ui_1us_cycle_cnt >= (UI_1US_CYCLES - 1)) begin
-            uiclk_pulse_1us <= 1'b1;
-            ui_1us_cycle_cnt <= '0;
-        end
-        else begin
-            uiclk_pulse_1us <= 1'b0;
-            ui_1us_cycle_cnt <= ui_1us_cycle_cnt + 1;
-        end
-    end
 
     // Passive monitor.
     ddr4_controller_tb_monitor monitor_u (
@@ -798,8 +699,8 @@ module tb_ddr4_controller_mock;
             monitor_u.write_summary("FAIL_TIMEOUT");
             $fdisplay(log_fd, "FATAL: DDR controller mock test timed out after receiving %0d of %0d beats, wr_ptr=%0d rd_ptr=%0d state=%0d read_len=%0d read_cnt=%0d wr_urgent=%0b rd_cmds=%0d wr_cmds=%0d",
                     recv_count, sent_count,
-                    dut.user_rw_cmd_gen_uut.user_ad_wr_i,
-                    dut.user_rw_cmd_gen_uut.user_ad_rd_i,
+                    dut.user_rw_cmd_gen_uut.ddr_cache_wr_ptr,
+                    dut.user_rw_cmd_gen_uut.ddr_cache_rd_ptr,
                     dut.user_rw_cmd_gen_uut.rw_state,
                     dut.user_rw_cmd_gen_uut.read_burst_len,
                     dut.user_rw_cmd_gen_uut.read_beat_cnt,
@@ -808,8 +709,8 @@ module tb_ddr4_controller_mock;
                     native_write_cmd_count);
             $fatal(1, "DDR controller mock test timed out after receiving %0d of %0d beats, wr_ptr=%0d rd_ptr=%0d state=%0d read_len=%0d read_cnt=%0d wr_urgent=%0b rd_cmds=%0d wr_cmds=%0d",
                     recv_count, sent_count,
-                    dut.user_rw_cmd_gen_uut.user_ad_wr_i,
-                    dut.user_rw_cmd_gen_uut.user_ad_rd_i,
+                    dut.user_rw_cmd_gen_uut.ddr_cache_wr_ptr,
+                    dut.user_rw_cmd_gen_uut.ddr_cache_rd_ptr,
                     dut.user_rw_cmd_gen_uut.rw_state,
                     dut.user_rw_cmd_gen_uut.read_burst_len,
                     dut.user_rw_cmd_gen_uut.read_beat_cnt,

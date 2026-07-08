@@ -45,10 +45,10 @@
   - 复用与 AXI 版本一致的水位、仲裁、地址计数、replay 和告警逻辑。
 - `native/rtl/rw_pressure_ctrl.sv`
   - native pressure/watermark control split out from `user_rw_cmd_gen.sv`.
-- `native/rtl/ddr_overrun_monitor.sv`
-  - native circular-buffer overrun/warning monitor split out from `user_rw_cmd_gen.sv`.
 - `native/rtl/ddr_ring_addr_mgr.sv`
-  - native circular beat-address pointers split out from `user_rw_cmd_gen.sv`.
+  - native circular beat-address pointers and overrun/warning status split out from `user_rw_cmd_gen.sv`.
+- `native/rtl/ddr_overrun_monitor.sv`
+  - legacy standalone circular-buffer overrun/warning monitor; active native path uses `ddr_ring_addr_mgr.sv`.
 - `native/rtl/rw_arbiter.sv`
   - native request builder and 2:1 arbitration split out from `user_rw_cmd_gen.sv`.
 - `native/rtl/rw_cmd_debug_monitor.sv`

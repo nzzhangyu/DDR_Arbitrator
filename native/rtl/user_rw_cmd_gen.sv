@@ -204,11 +204,11 @@ module user_rw_cmd_gen #(
     // Burst length calculation.
     logic [9:0] wr_req_len_calc;
     logic [9:0] rd_req_len_calc;
-    logic [ADDR_WIDTH:0] ddr_rd_avail_count;
+    logic [ADDR_WIDTH:0] ddr_cache_data_count;
     logic [9:0] rd_available_len;
 
-    assign rd_available_len = (ddr_rd_avail_count >= RD_BURST_NUM) ?
-                              RD_BURST_NUM : ddr_rd_avail_count[9:0];
+    assign rd_available_len = (ddr_cache_data_count >= RD_BURST_NUM) ?
+                              RD_BURST_NUM : ddr_cache_data_count[9:0];
     assign wr_req_len_calc = {1'b0, fifo_count_to_burst_len(wr_fifo_rd_data_count,
                                                             wr_fifo_valid)};
     assign rd_req_len_calc = min2_10(rd_available_len, RD_BURST_NUM);
@@ -260,13 +260,13 @@ module user_rw_cmd_gen #(
         .o_arb_grant          (arb_grant_raw)
     );
 
-    // Burst and handshake signals.
     logic [8:0] write_burst_len;
     logic [9:0] read_burst_len;
     logic [8:0] write_beat_cnt;
     logic [9:0] read_beat_cnt;
     logic       write_burst_done;
     logic       read_burst_done;
+
     logic       app_cmd_fire;
     logic       read_cmd_fire;
     logic       write_data_fire;
@@ -364,7 +364,46 @@ module user_rw_cmd_gen #(
     end
 
     // FSM output logic.
-    // Burst and outstanding counters.
+    always_comb begin
+        clr_wr_wait_age = init_calib_complete && (rw_state == RW_WRITE_REQ);
+    end
+
+    // Circular DDR address signals.
+    logic [ADDR_WIDTH:0]   ddr_cache_wr_ptr;
+    logic [ADDR_WIDTH:0]   ddr_cache_rd_ptr;
+    logic [ADDR_WIDTH:0]   ddr_cache_rd_cmd_ptr;
+    logic [ADDR_WIDTH-1:0] ddr_cache_wr_addr;
+    logic                  ring_addr_rst;
+    logic                  ring_addr_clear;
+
+    assign ring_addr_rst   = ui_clk_sync_rst | rst_local_t_ddr_clk;
+    assign ring_addr_clear = make_data_on_edge | (~init_calib_complete);
+
+    // Circular DDR address manager.
+    ddr_ring_addr_mgr #(
+        .ADDR_WIDTH (ADDR_WIDTH)
+    ) ring_addr_mgr_u (
+        .i_ui_clk                    (ui_clk),
+        .i_ring_addr_rst             (ring_addr_rst),
+        .i_ring_addr_clear           (ring_addr_clear),
+        .i_fault_ddr_overrun         (fault_ddr_overrun),
+        .i_fault_ddr_warning         (fault_ddr_warning),
+        .i_wr_fire                   (write_data_fire),
+        .i_rd_fire                   (read_data_fire),
+        .i_rd_cmd_fire               (read_cmd_fire),
+        .i_replay_en                 (rp_back_en),
+        .i_replay_addr               (rp_back_view_addr),
+        .o_wr_ptr                    (ddr_cache_wr_ptr),
+        .o_rd_ptr                    (ddr_cache_rd_ptr),
+        .o_rd_cmd_ptr                (ddr_cache_rd_cmd_ptr),
+        .o_wr_addr                   (ddr_cache_wr_addr),
+        .o_empty                     (ddr_rd_empty),
+        .o_data_count                (ddr_cache_data_count),
+        .o_ddr_cache_overrun         (ddr_overrun),
+        .o_ddr_cache_overrun_warning (ddr_warning)
+    );
+
+    // Burst progress tracking.
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge) begin
             write_burst_len <= '0;
@@ -407,39 +446,11 @@ module user_rw_cmd_gen #(
         end
     end
 
-    always_comb begin
-        clr_wr_wait_age = init_calib_complete && (rw_state == RW_WRITE_REQ);
-    end
-
-    // Circular DDR address signals.
-    logic [ADDR_WIDTH:0]   user_ad_wr_i;
-    logic [ADDR_WIDTH:0]   user_ad_rd_i;
-    logic [ADDR_WIDTH:0]   rd_cmd_ptr;
-    logic [ADDR_WIDTH-1:0] user_ad_wr;
-    logic [ADDR_WIDTH-1:0] user_ad_rd;
-
-    // Circular DDR address manager.
-    ddr_ring_addr_mgr #(
-        .ADDR_WIDTH (ADDR_WIDTH)
-    ) ring_addr_mgr_u (
-        .ui_clk              (ui_clk),
-        .ui_clk_sync_rst     (ui_clk_sync_rst),
-        .rst_local_t_ddr_clk (rst_local_t_ddr_clk),
-        .make_data_on_edge   (make_data_on_edge),
-        .write_data_fire     (write_data_fire),
-        .read_data_fire      (read_data_fire),
-        .read_cmd_fire       (read_cmd_fire),
-        .rp_back_en          (rp_back_en),
-        .rp_back_view_addr   (rp_back_view_addr),
-        .user_ad_wr_i        (user_ad_wr_i),
-        .user_ad_rd_i        (user_ad_rd_i),
-        .rd_cmd_ptr          (rd_cmd_ptr),
-        .user_ad_wr          (user_ad_wr),
-        .user_ad_rd          (user_ad_rd),
-        .ddr_rd_empty        (ddr_rd_empty),
-        .ddr_rd_avail_count  (ddr_rd_avail_count)
-    );
-
+    assign write_burst_done = write_data_fire &&
+                              (write_beat_cnt == (write_burst_len - 1'b1));
+    assign read_burst_done  = read_data_fire &&
+                              (read_beat_cnt == (read_burst_len - 1'b1));
+    
     // Handshake and service conditions.
     assign app_cmd_fire        = app_en && app_rdy;
     assign read_cmd_fire       = (rw_state == RW_READ_CMD) && app_cmd_fire;
@@ -454,7 +465,7 @@ module user_rw_cmd_gen #(
     assign read_cmd_send_en    = (rw_state == RW_READ_CMD) &&
                                  (read_burst_len != 0) &&
                                  (read_cmd_cnt < read_burst_len) &&
-                                 (rd_cmd_ptr != user_ad_wr_i) &&
+                                 (ddr_cache_rd_cmd_ptr != ddr_cache_wr_ptr) &&
                                  (rd_fifo_free_count > {7'd0, rd_outstanding}) &&
                                  (~wr_level_urgent) &&
                                  (~req_stop) &&
@@ -464,39 +475,12 @@ module user_rw_cmd_gen #(
     assign read_cmd_send_done  = (read_cmd_cnt >= read_burst_len) || read_cmd_last;
     assign read_cmd_stop       = (read_burst_len == 0) ||
                                  read_cmd_send_done ||
-                                 (rd_cmd_ptr == user_ad_wr_i) ||
+                                 (ddr_cache_rd_cmd_ptr == ddr_cache_wr_ptr) ||
                                  (rd_fifo_free_count <= {7'd0, rd_outstanding}) ||
                                  wr_level_urgent ||
                                  req_stop ||
                                  block_for_replay;
-    assign rd_outstanding_empty_next =
-        (rd_outstanding == 0) ||
-        ((rd_outstanding == 10'd1) && read_data_fire && (!read_cmd_fire));
-    assign write_burst_done = write_data_fire &&
-                              (write_beat_cnt == (write_burst_len - 1'b1));
-    assign read_burst_done  = read_data_fire &&
-                              (read_beat_cnt == (read_burst_len - 1'b1));
-
     
-
-
-    
-
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge ||
             rp_back_en || block_for_replay) begin
@@ -524,12 +508,15 @@ module user_rw_cmd_gen #(
             endcase
         end
     end
-
+    
+    assign rd_outstanding_empty_next = (rd_outstanding == 0) ||
+                                        ((rd_outstanding == 10'd1) && read_data_fire && (!read_cmd_fire));
+    
     // Native app channel drive.
     assign wr_fifo_rd_en = write_data_fire;
     assign app_addr      = (rw_state == RW_READ_CMD) ?
-                           beat_to_app_addr(rd_cmd_ptr[ADDR_WIDTH-1:0]) :
-                           beat_to_app_addr(user_ad_wr);
+                           beat_to_app_addr(ddr_cache_rd_cmd_ptr[ADDR_WIDTH-1:0]) :
+                           beat_to_app_addr(ddr_cache_wr_addr);
     assign app_cmd       = (rw_state == RW_READ_CMD) ? APP_CMD_READ : APP_CMD_WRITE;
     assign app_en        = write_data_fire || read_cmd_send_en;
     assign app_wdf_data  = wr_fifo_dout;
@@ -538,23 +525,6 @@ module user_rw_cmd_gen #(
     assign app_wdf_end   = app_wdf_wren;
     assign rd_fifo_din   = app_rd_data;
     assign rd_fifo_wr_en = read_data_fire;
-
-    // Circular-buffer warning/overrun.
-    ddr_overrun_monitor #(
-        .ADDR_WIDTH (ADDR_WIDTH)
-    ) overrun_monitor_u (
-        .ui_clk              (ui_clk),
-        .ui_clk_sync_rst     (ui_clk_sync_rst),
-        .rst_local_t_ddr_clk (rst_local_t_ddr_clk),
-        .init_calib_complete (init_calib_complete),
-        .make_data_on_edge   (make_data_on_edge),
-        .fault_ddr_overrun   (fault_ddr_overrun),
-        .fault_ddr_warning   (fault_ddr_warning),
-        .user_ad_wr_i        (user_ad_wr_i),
-        .user_ad_rd_i        (user_ad_rd_i),
-        .ddr_overrun         (ddr_overrun),
-        .ddr_warning         (ddr_warning)
-    );
 
     // Helper functions.
     function automatic logic [APP_ADDR_WIDTH-1:0] beat_to_app_addr(
