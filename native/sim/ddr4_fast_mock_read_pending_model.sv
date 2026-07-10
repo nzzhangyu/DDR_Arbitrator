@@ -75,15 +75,6 @@ module ddr4_fast_mock_read_pending_model #(
     assign read_pending_full_active =
         init_calib_complete && (read_pending_count_q >= read_pending_depth_cfg);
 
-    // A queued read becomes ready when its countdown reaches the final cycle.
-    // A data stall holds both the countdowns and the visible return beat.
-    assign read_return_ready = (read_pending_count_q != 0) && (read_pending_latency_q[read_pending_head_q] <= 1);
-    assign read_return_fire = read_return_ready && (~data_stall_active);
-
-    // Backpressure new read commands once the effective outstanding-read limit
-    // is reached. It is gated by calibration to avoid pre-calibration stalls.
-    assign read_pending_full_active = init_calib_complete && (read_pending_count_q >= read_pending_depth_cfg);
-
     // Wrap a circular FIFO pointer at the runtime-configured depth.
     function automatic logic [READ_PENDING_PTR_BITS-1:0] next_read_pending_index(
         input logic [READ_PENDING_PTR_BITS-1:0] index

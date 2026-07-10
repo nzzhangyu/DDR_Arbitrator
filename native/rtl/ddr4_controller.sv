@@ -25,7 +25,7 @@ module ddr4_controller #(
    output logic                  ui_clk_sync_rst,
    output logic                  init_calib_complete,
    output logic                  user_r_valid,
-   output logic [127:0]          user_r_data,
+   output logic [63:0]           user_r_data,
    output logic                  user_r_empty,
    output logic                  ddr_overrun,
    output logic                  ddr_warning,

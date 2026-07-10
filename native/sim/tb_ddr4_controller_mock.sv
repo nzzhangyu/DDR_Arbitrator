@@ -17,7 +17,7 @@ module tb_ddr4_controller_mock;
     localparam int CLK_PERIOD_PS      = 5000;
     localparam int MIG_SYS_PERIOD_PS  = 4998;
     localparam int CONV_PERIOD_US     = 232;
-    localparam int DEFAULT_SIM_VIEWS  = 2;
+    localparam int DEFAULT_SIM_VIEWS  = 10;
     localparam int TOTAL_VIEWS        = 2320;
     localparam int FTP_NUM            = 30;
     localparam int CH_NUM             = 48;
@@ -42,14 +42,17 @@ module tb_ddr4_controller_mock;
     localparam int SLICE_PAYLOAD_SAMPLES = FTP_NUM * CH_NUM;
     localparam int SLICE_PAYLOAD_BEATS   = (SLICE_PAYLOAD_SAMPLES + SAMPLES_PER_BEAT - 1) / SAMPLES_PER_BEAT;
     localparam int SLICE_TOTAL_BEATS     = SLICE_HEADER_BEATS + SLICE_PAYLOAD_BEATS + SLICE_TRAILER_BEATS;
+    localparam int USER_WORDS_PER_BEAT   = APP_DATA_BITS / 64;
+    localparam int SLICE_USER_WORDS      = SLICE_TOTAL_BEATS * USER_WORDS_PER_BEAT;
     localparam int VIEW_TOTAL_BEATS      = READING_HEADER_BEATS + (SLICE_NUM * SLICE_TOTAL_BEATS);
     localparam int MOCK_MEM_WORDS        = 1 << ADDR_WIDTH;
     localparam int MOCK_MAX_VIEWS        = MOCK_MEM_WORDS / VIEW_TOTAL_BEATS;
-    localparam int READ_ENABLE_PERIOD_US = 90;
+    localparam int READ_ENABLE_PERIOD_US = 1;
     localparam int READ_ENABLE_PERIOD_CYCLES =
         (READ_ENABLE_PERIOD_US * 1000000) / CLK_PERIOD_PS;
-    localparam int TIMEOUT_MARGIN_WINDOWS = 4;
-    localparam int TIMEOUT_MARGIN_CYCLES  = VIEW_PERIOD_CYCLES + 1024;
+    localparam int SIM_TIMEOUT_US = 4000;
+    localparam longint SIM_TIMEOUT_CYCLES =
+        (64'(SIM_TIMEOUT_US) * 1000000) / CLK_PERIOD_PS;
     localparam logic [2:0] APP_CMD_WRITE = 3'b000;
     localparam logic [2:0] APP_CMD_READ  = 3'b001;
     localparam bit STREAM_INCREMENT_MODE = 1'b0;    // 0: frame, 1: 8-bit repeated increment.
@@ -156,7 +159,7 @@ module tb_ddr4_controller_mock;
     logic                  ui_clk_sync_rst;
     logic                  init_calib_complete;
     logic                  user_r_valid;
-    logic [127:0]          user_r_data;
+    logic [63:0]           user_r_data;
     logic                  user_r_empty;
     logic                  ddr_overrun;
     logic                  ddr_warning;
@@ -210,8 +213,12 @@ module tb_ddr4_controller_mock;
     // Scoreboard and monitor state.
     logic [127:0]          expected_q[$];                       // Expected queue.
     logic [127:0]          expected_word;                       // Queue compare word.
+    logic [127:0]          actual_word;                         // Reassembled read beat.
+    logic [63:0]           read_half_high;                      // First 64-bit output.
+    logic                  read_half_pending;                   // Waiting for low half.
     int                    sent_count;                          // Sent beats.
     int                    recv_count;                          // Received beats.
+    int                    user_word_count;                     // Received 64-bit words.
     int                    mismatch_count;                      // Data mismatches.
     int                    overflow_count;                      // Overflow/warning events.
     int                    timeout_count;                       // Timeout flag.
@@ -256,8 +263,8 @@ module tb_ddr4_controller_mock;
     logic                  stream_start;                        // Stream start pulse.
     logic                  read_window_active;                  // Periodic downstream read window.
     logic                  read_window_read_fire;               // Accepted beat in read window.
-    int unsigned           read_window_period_cnt;              // 90us window scheduler.
-    int unsigned           read_window_beat_cnt;                // Accepted beats in current window.
+    int unsigned           read_window_period_cnt;              // Periodic window scheduler.
+    int unsigned           read_window_beat_cnt;                // Accepted 64-bit words in current window.
     logic                  global_stall_active;                 // Mock-only pressure flag.
     logic                  cmd_stall_active;                    // Mock-only pressure flag.
     logic                  read_stall_active;                   // Mock-only pressure flag.
@@ -412,7 +419,7 @@ module tb_ddr4_controller_mock;
 
     assign ddr_rd_req  = read_window_active;
     assign req_stop    = ~read_window_active;
-    assign user_r_rd_en = read_window_active && user_r_valid;
+    assign user_r_rd_en = 1'b1;
 
     // Accepted native command pulses.
     assign native_read_cmd_fire  = app_en && app_rdy && (app_cmd == APP_CMD_READ);
@@ -422,7 +429,7 @@ module tb_ddr4_controller_mock;
     assign urgent_read_data_event_fire =
         in_read_data_state && dut.user_rw_cmd_gen_uut.wr_level_urgent;
     assign expected_data_remaining = (recv_count < sent_count);
-    assign consumer_enable = read_window_active;
+    assign consumer_enable = user_r_valid;
     assign read_window_read_fire = user_r_rd_en && user_r_valid;
 
     initial clk = 1'b0;
@@ -499,6 +506,9 @@ module tb_ddr4_controller_mock;
         make_data_p_edge     = 1'b0;
         sent_count           = 0;
         recv_count           = 0;
+        user_word_count      = 0;
+        read_half_high       = '0;
+        read_half_pending    = 1'b0;
         mismatch_count       = 0;
         overflow_count       = 0;
         timeout_count        = 0;
@@ -607,33 +617,30 @@ module tb_ddr4_controller_mock;
         
         expected_total_beats = sim_view_count * VIEW_TOTAL_BEATS;
         view_size            = VIEW_TOTAL_BEATS[15:0];
-        timeout_cycle_limit  =
-            (((expected_total_beats + SLICE_TOTAL_BEATS - 1) / SLICE_TOTAL_BEATS) +
-             TIMEOUT_MARGIN_WINDOWS) * READ_ENABLE_PERIOD_CYCLES +
-            TIMEOUT_MARGIN_CYCLES;
+        timeout_cycle_limit  = SIM_TIMEOUT_CYCLES;
 
-        $display("DDR mock test config: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d read_period_us=%0d read_period_cycles=%0d read_window_beats=%0d timeout_cycles=%0d",
+        $display("DDR mock test config: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d user_words/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d read_period_us=%0d read_period_cycles=%0d timeout_cycles=%0d",
                 test_kind_name,
                 sim_view_count, TOTAL_VIEWS,
                 STREAM_INCREMENT_MODE ? "increment" : "frame",
                 use_hash_scoreboard ? "hash" : "queue",
                 worst_check_enable,
                 SLICE_NUM,
-                SLICE_TOTAL_BEATS, SLICE_PAYLOAD_BEATS,
+                SLICE_TOTAL_BEATS, SLICE_USER_WORDS, SLICE_PAYLOAD_BEATS,
                 VIEW_TOTAL_BEATS, VIEW_PERIOD_CYCLES,
                 READ_ENABLE_PERIOD_US, READ_ENABLE_PERIOD_CYCLES,
-                SLICE_TOTAL_BEATS, timeout_cycle_limit);
-        $fdisplay(log_fd, "CONFIG: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d read_period_us=%0d read_period_cycles=%0d read_window_beats=%0d timeout_cycles=%0d max_wr_fifo=%0d min_rd_fifo=%0d max_user_underflow=%0d max_app_rdy_stall=%0d max_app_wdf_stall=%0d max_read_data_gap=%0d global_stall=%0d/%0d cmd_stall=%0d/%0d read_stall=%0d/%0d",
+                timeout_cycle_limit);
+        $fdisplay(log_fd, "CONFIG: test_kind=%s views=%0d/%0d stream_mode=%s scoreboard=%s worst_check=%0d slices/view=%0d beats/slice=%0d user_words/slice=%0d payload_beats/slice=%0d view_beats=%0d period_cycles=%0d read_period_us=%0d read_period_cycles=%0d timeout_cycles=%0d max_wr_fifo=%0d min_rd_fifo=%0d max_user_underflow=%0d max_app_rdy_stall=%0d max_app_wdf_stall=%0d max_read_data_gap=%0d global_stall=%0d/%0d cmd_stall=%0d/%0d read_stall=%0d/%0d",
                     test_kind_name,
                     sim_view_count, TOTAL_VIEWS,
                     STREAM_INCREMENT_MODE ? "increment" : "frame",
                     use_hash_scoreboard ? "hash" : "queue",
                     worst_check_enable,
                     SLICE_NUM,
-                    SLICE_TOTAL_BEATS, SLICE_PAYLOAD_BEATS,
+                    SLICE_TOTAL_BEATS, SLICE_USER_WORDS, SLICE_PAYLOAD_BEATS,
                     VIEW_TOTAL_BEATS, VIEW_PERIOD_CYCLES,
                     READ_ENABLE_PERIOD_US, READ_ENABLE_PERIOD_CYCLES,
-                    SLICE_TOTAL_BEATS, timeout_cycle_limit,
+                    timeout_cycle_limit,
                     max_wr_fifo_level_limit, min_rd_fifo_level_limit,
                     max_user_underflow_cycles_limit,
                     max_app_rdy_stall_limit, max_app_wdf_stall_limit,
@@ -695,6 +702,12 @@ module tb_ddr4_controller_mock;
                     urgent_interrupt_error_count);
         end
 
+        if ((timeout_count == 0) && read_half_pending) begin
+            monitor_u.write_summary("FAIL_HALF_WORD");
+            $fdisplay(log_fd, "FATAL: DDR controller mock ended with an unmatched high 64-bit word");
+            $fatal(1, "DDR controller mock ended with an unmatched high 64-bit word");
+        end
+
         if (timeout_count != 0) begin
             monitor_u.write_summary("FAIL_TIMEOUT");
             $fdisplay(log_fd, "FATAL: DDR controller mock test timed out after receiving %0d of %0d beats, wr_ptr=%0d rd_ptr=%0d state=%0d read_len=%0d read_cnt=%0d wr_urgent=%0b rd_cmds=%0d wr_cmds=%0d",
@@ -735,13 +748,15 @@ module tb_ddr4_controller_mock;
                     expected_q.size());
         end
 
-        $display("DDR controller mock slice test passed: test_kind=%s views=%0d sent=%0d received=%0d read_cmds=%0d write_cmds=%0d urgent_read_events=%0d",
+        $display("DDR controller mock slice test passed: test_kind=%s views=%0d sent_beats=%0d received_beats=%0d user_words=%0d read_cmds=%0d write_cmds=%0d urgent_read_events=%0d",
                 test_kind_name, sim_view_count, sent_count, recv_count,
+                user_word_count,
                 native_read_cmd_count, native_write_cmd_count,
                 urgent_read_data_event_count);
         monitor_u.write_summary("PASS");
-        $fdisplay(log_fd, "PASS: test_kind=%s views=%0d sent=%0d received=%0d read_cmds=%0d write_cmds=%0d urgent_read_events=%0d",
+        $fdisplay(log_fd, "PASS: test_kind=%s views=%0d sent_beats=%0d received_beats=%0d user_words=%0d read_cmds=%0d write_cmds=%0d urgent_read_events=%0d",
                     test_kind_name, sim_view_count, sent_count, recv_count,
+                    user_word_count,
                     native_read_cmd_count, native_write_cmd_count,
                     urgent_read_data_event_count);
         $fclose(log_fd);
@@ -773,7 +788,7 @@ module tb_ddr4_controller_mock;
     end
 
     always_ff @(posedge clk) begin
-        // The downstream consumer wakes every 90us and drains one slice frame.
+        // The downstream consumer periodically drains one slice as 64-bit words.
         if (reset) begin
             read_window_active     <= 1'b0;
             read_window_period_cnt <= '0;
@@ -793,12 +808,12 @@ module tb_ddr4_controller_mock;
         end
         else if (read_window_active) begin
             if (read_window_read_fire) begin
-                if (read_window_beat_cnt == (SLICE_TOTAL_BEATS - 1)) begin
+                if (read_window_beat_cnt == (SLICE_USER_WORDS - 1)) begin
                     if (log_fd != 0) begin
                         $fdisplay(log_fd,
-                                  "READ_WINDOW: done index=%0d time=%0t beats=%0d recv=%0d sent=%0d",
+                                  "READ_WINDOW: done index=%0d time=%0t user_words=%0d recv_beats=%0d sent_beats=%0d",
                                   read_window_count - 1, $time,
-                                  SLICE_TOTAL_BEATS, recv_count + 1, sent_count);
+                                  SLICE_USER_WORDS, recv_count, sent_count);
                     end
                     read_window_active     <= 1'b0;
                     read_window_period_cnt <= '0;
@@ -812,9 +827,9 @@ module tb_ddr4_controller_mock;
         else if (read_window_period_cnt >= (READ_ENABLE_PERIOD_CYCLES - 1)) begin
             if (log_fd != 0) begin
                 $fdisplay(log_fd,
-                          "READ_WINDOW: start index=%0d time=%0t period_cycles=%0d target_beats=%0d",
+                          "READ_WINDOW: start index=%0d time=%0t period_cycles=%0d target_user_words=%0d",
                           read_window_count, $time,
-                          READ_ENABLE_PERIOD_CYCLES, SLICE_TOTAL_BEATS);
+                          READ_ENABLE_PERIOD_CYCLES, SLICE_USER_WORDS);
             end
             read_window_active     <= 1'b1;
             read_window_period_cnt <= '0;
@@ -827,28 +842,43 @@ module tb_ddr4_controller_mock;
     end
 
     always @(posedge clk) begin
-        // End-to-end data checker.
-        if (!reset && user_r_rd_en && user_r_valid) begin
-            if (use_hash_scoreboard) begin
-                actual_hash = update_hash(actual_hash, user_r_data, recv_count);
-            end
-            else if (expected_q.size() == 0) begin
-                mismatch_count++;
-                $fdisplay(log_fd, "ERROR: Unexpected read beat at %0t: data=%h",
-                        $time, user_r_data);
-                $error("Unexpected read beat at %0t: data=%h", $time, user_r_data);
+        // Reassemble high-half-first 64-bit FIFO output into 128-bit DDR beats.
+        if (reset) begin
+            read_half_high    = '0;
+            read_half_pending = 1'b0;
+            user_word_count   = 0;
+        end
+        else if (user_r_rd_en && user_r_valid) begin
+            user_word_count++;
+            if (!read_half_pending) begin
+                read_half_high    = user_r_data;
+                read_half_pending = 1'b1;
             end
             else begin
-                expected_word = expected_q.pop_front();
-                if (user_r_data !== expected_word) begin
-                mismatch_count++;
-                $fdisplay(log_fd, "ERROR: Read mismatch at beat %0d: data=%h expected=%h",
-                            recv_count, user_r_data, expected_word);
-                $error("Read mismatch at beat %0d: data=%h expected=%h",
-                        recv_count, user_r_data, expected_word);
+                actual_word       = {read_half_high, user_r_data};
+                read_half_pending = 1'b0;
+
+                if (use_hash_scoreboard) begin
+                    actual_hash = update_hash(actual_hash, actual_word, recv_count);
                 end
+                else if (expected_q.size() == 0) begin
+                    mismatch_count++;
+                    $fdisplay(log_fd, "ERROR: Unexpected read beat at %0t: data=%h",
+                            $time, actual_word);
+                    $error("Unexpected read beat at %0t: data=%h", $time, actual_word);
+                end
+                else begin
+                    expected_word = expected_q.pop_front();
+                    if (actual_word !== expected_word) begin
+                        mismatch_count++;
+                        $fdisplay(log_fd, "ERROR: Read mismatch at beat %0d: data=%h expected=%h",
+                                  recv_count, actual_word, expected_word);
+                        $error("Read mismatch at beat %0d: data=%h expected=%h",
+                               recv_count, actual_word, expected_word);
+                    end
+                end
+                recv_count++;
             end
-            recv_count++;
         end
     end
 

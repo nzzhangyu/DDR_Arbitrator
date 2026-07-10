@@ -37,6 +37,7 @@ module user_rw_cmd_gen #(
     input  logic                      fault_ddr_overrun,
     input  logic                      fault_ddr_warning,
     input  logic                      wr_fifo_empty,
+    input  logic                      wr_fifo_full,
     input  logic                      wr_fifo_valid,
     input  logic                      wr_fifo_prog_empty,
     input  logic [14:0]               wr_fifo_rd_data_count,
@@ -276,6 +277,7 @@ module user_rw_cmd_gen #(
     logic       read_cmd_last;
     logic       read_cmd_send_done;
     logic       read_cmd_stop;
+    logic       read_cmd_stop_event;
     logic       rd_outstanding_empty_next;
     logic [9:0] read_cmd_cnt;
     logic [9:0] rd_outstanding;
@@ -480,6 +482,10 @@ module user_rw_cmd_gen #(
                                  wr_level_urgent ||
                                  req_stop ||
                                  block_for_replay;
+    assign read_cmd_stop_event = (rw_state == RW_READ_CMD) &&
+                                 (read_cmd_cnt < read_burst_len) &&
+                                 ((rd_fifo_free_count <= {7'd0, rd_outstanding}) ||
+                                  wr_level_urgent || req_stop || block_for_replay);
     
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst || rst_local_t_ddr_clk || make_data_on_edge ||
@@ -590,27 +596,44 @@ module user_rw_cmd_gen #(
                            make_data_on_edge || (~init_calib_complete);
 
     rw_cmd_debug_monitor #(
-        .DBG_CNT_WIDTH (DBG_CNT_WIDTH)
+        .DBG_CNT_WIDTH      (DBG_CNT_WIDTH),
+        .PERF_COUNTER_WIDTH (48),
+        .PERF_WINDOW_CYCLES (139200)
     ) debug_monitor_u (
         .ui_clk                      (ui_clk),
         .rst                         (dbg_cnt_reset),
         .ddr_wr_req                  (ddr_wr_req),
         .ddr_rd_req_qual             (ddr_rd_req_qual),
         .write_data_fire             (write_data_fire),
+        .read_cmd_fire               (read_cmd_fire),
         .read_data_fire              (read_data_fire),
         .block_for_replay            (block_for_replay),
+        .in_idle                     (rw_state == RW_IDLE),
+        .in_arb                      (rw_state == RW_ARB),
         .in_write_req                (rw_state == RW_WRITE_REQ),
         .in_read_cmd                 (rw_state == RW_READ_CMD),
         .in_read_data                (rw_state == RW_READ_DATA),
+        .grant_write                 (arb_grant == GRANT_WRITE),
+        .grant_read                  (arb_grant == GRANT_READ),
         .wr_fifo_valid               (wr_fifo_valid),
         .write_burst_len             (write_burst_len),
         .read_burst_len              (read_burst_len),
+        .read_cmd_send_en            (read_cmd_send_en),
         .app_rdy                     (app_rdy),
         .app_wdf_rdy                 (app_wdf_rdy),
         .app_rd_data_valid           (app_rd_data_valid),
         .rd_fifo_full                (rd_fifo_full),
         .rd_fifo_has_grant_space     (rd_fifo_has_grant_space),
         .wr_level_urgent             (wr_level_urgent),
+        .rd_level_urgent             (rd_level_urgent),
+        .req_stop                    (req_stop),
+        .wr_fifo_full                (wr_fifo_full),
+        .wr_fifo_data_count          (wr_fifo_rd_data_count),
+        .rd_fifo_data_count          (rd_fifo_data_count),
+        .write_burst_done            (write_burst_done),
+        .read_burst_done             (read_burst_done),
+        .read_cmd_stop_event         (read_cmd_stop_event),
+        .rd_outstanding              (rd_outstanding),
         .dbg_wr_no_service           (dbg_wr_no_service),
         .dbg_rd_no_service           (dbg_rd_no_service),
         .dbg_replay_block            (dbg_replay_block),

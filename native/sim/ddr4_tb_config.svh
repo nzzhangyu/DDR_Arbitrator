@@ -1,5 +1,7 @@
 // Native DDR controller simulation configuration.
 //
-// Leave MIG undefined for the fast mock regression. Define MIG here, or pass
-// +define+MIG from the simulator compile options, to use the real MIG model.
+// The checked-in default uses the real MIG model. Define FAST_MOCK from the
+// simulator command line to select the lightweight native-app model instead.
+`ifndef FAST_MOCK
 `define MIG
+`endif

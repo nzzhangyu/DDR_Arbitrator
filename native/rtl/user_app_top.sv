@@ -18,7 +18,7 @@ module user_app_top #(
     input  logic                      app_rd_data_valid,
     input  logic                      app_rd_data_end,
 
-    output logic [127:0]              user_r_data,
+    output logic [63:0]               user_r_data,
     output logic                      user_r_valid,
     output logic                      user_r_empty,
     output logic                      ddr_overrun,
@@ -48,13 +48,15 @@ module user_app_top #(
     input  logic [ADDR_WIDTH-1:0]     rp_back_view_addr
 );
 
-    localparam int FIFO_DATA_WIDTH        = 128;
-    localparam int WR_DDR_FIFO_DEPTH      = 8192;
+    localparam int FIFO_DATA_WIDTH          = 128;
+    localparam int RD_FIFO_DATA_WIDTH       = 64;
+    localparam int WR_DDR_FIFO_DEPTH        = 8192;
     localparam int WR_DDR_FIFO_COUNT_WIDTH = 14;
-    localparam int RD_DDR_FIFO_DEPTH      = 8192;
-    localparam int RD_DDR_FIFO_COUNT_WIDTH = 14;
-    localparam int WR_PROG_EMPTY_THRESH   = 256;
-    localparam int RD_PROG_FULL_THRESH    = 6144;
+    localparam int RD_DDR_FIFO_DEPTH        = 8192;
+    localparam int RD_DDR_FIFO_WR_COUNT_WIDTH = 14;
+    localparam int RD_DDR_FIFO_RD_COUNT_WIDTH = 15;
+    localparam int WR_PROG_EMPTY_THRESH     = 256;
+    localparam int RD_PROG_FULL_THRESH      = 6144;
     localparam logic [15:0] RD_ALMOST_EMPTY_THRESH = 16'd4096;
 
     // Write-side DDR staging FIFO.
@@ -112,6 +114,7 @@ module user_app_top #(
     // Read-side DDR staging FIFO.
     // Native read data is captured in ui_clk and exposed as a pull FIFO in clk.
     logic [127:0] ddr_rd_fifo_din;
+    logic [127:0] ddr_rd_fifo_din_swapped;
     logic         ddr_rd_fifo_wr_en;
     logic         ddr_rd_fifo_full;
     logic         ddr_rd_fifo_prog_full;
@@ -121,6 +124,10 @@ module user_app_top #(
     logic [15:0]  ddr_rd_fifo_level;
 
     assign ddr_rd_fifo_level = {2'b0, ddr_rd_fifo_wr_count_raw};
+    assign ddr_rd_fifo_din_swapped = {
+        ddr_rd_fifo_din[63:0],
+        ddr_rd_fifo_din[127:64]
+    };
     assign ddr_rd_fifo_almost_empty_ui =
         ddr_rd_fifo_level <= RD_ALMOST_EMPTY_THRESH;
     assign ddr_rd_fifo_rd_en = user_r_rd_en && user_r_valid;
@@ -136,15 +143,15 @@ module user_app_top #(
         .FULL_RESET_VALUE    (0),
         .PROG_EMPTY_THRESH   (WR_PROG_EMPTY_THRESH),
         .PROG_FULL_THRESH    (RD_PROG_FULL_THRESH),
-        .RD_DATA_COUNT_WIDTH (RD_DDR_FIFO_COUNT_WIDTH),
-        .READ_DATA_WIDTH     (FIFO_DATA_WIDTH),
+        .RD_DATA_COUNT_WIDTH (RD_DDR_FIFO_RD_COUNT_WIDTH),
+        .READ_DATA_WIDTH     (RD_FIFO_DATA_WIDTH),
         .READ_MODE           ("fwft"),
         .RELATED_CLOCKS      (0),
         .SIM_ASSERT_CHK      (0),
         .USE_ADV_FEATURES    ("1F1F"),
         .WAKEUP_TIME         (0),
         .WRITE_DATA_WIDTH    (FIFO_DATA_WIDTH),
-        .WR_DATA_COUNT_WIDTH (RD_DDR_FIFO_COUNT_WIDTH)
+        .WR_DATA_COUNT_WIDTH (RD_DDR_FIFO_WR_COUNT_WIDTH)
     ) ddr_rd_fifo_uut (
         .data_valid    (user_r_valid),
         .dout          (user_r_data),
@@ -152,7 +159,7 @@ module user_app_top #(
         .full          (ddr_rd_fifo_full),
         .prog_full     (ddr_rd_fifo_prog_full),
         .wr_data_count (ddr_rd_fifo_wr_count_raw),
-        .din           (ddr_rd_fifo_din),
+        .din           (ddr_rd_fifo_din_swapped),
         .injectdbiterr (1'b0),
         .injectsbiterr (1'b0),
         .rd_clk        (clk),
@@ -199,6 +206,7 @@ module user_app_top #(
         .fault_ddr_overrun        (fault_ddr_overrun),
         .fault_ddr_warning        (fault_ddr_warning),
         .wr_fifo_empty            (ddr_wr_fifo_empty),
+        .wr_fifo_full             (ddr_wr_fifo_full),
         .wr_fifo_valid            (ddr_wr_fifo_valid),
         .wr_fifo_prog_empty       (ddr_wr_fifo_prog_empty),
         .wr_fifo_rd_data_count    (ddr_wr_fifo_level),

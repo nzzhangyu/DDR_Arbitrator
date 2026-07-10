@@ -64,13 +64,13 @@
 
 ## 3. FIFO 与水位
 
-两套实现都使用相同 FIFO 策略：
+两套实现都使用 XPM FIFO 跨时钟缓存：
 
-- 写侧 FIFO：`clk` 写入，`ui_clk` 读出。
-- 读侧 FIFO：`ui_clk` 写入，`clk` 读出。
-- 数据宽度：`128 bit`。
-- 写侧 FIFO 深度：`16384 beat`。
-- 读侧 FIFO 深度：`16384 beat`。
+- 写侧 FIFO：`clk` 写入，`ui_clk` 读出，数据宽度为 `128 bit`。
+- AXI 读侧 FIFO：`ui_clk` 写入，`clk` 读出，输入和输出均为 `128 bit`。
+- Native 读侧 FIFO：`ui_clk` 写入 `128 bit`，`clk` 读出 `64 bit`；每个 DDR beat 按高 64 位、低 64 位顺序输出。
+- Native 读侧 FIFO 容量为 8192 个 128-bit 写 beat，即 16384 个 64-bit 读 word。
+- Native 读侧水位、`prog_full` 和预取空间判断仍按 128-bit 写 beat 计数。
 
 主要水位阈值保持一致：
 
